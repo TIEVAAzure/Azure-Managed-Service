@@ -1,0 +1,643 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>TIEVA — Backup Prioritizer (v3.20)</title>
+<style>
+  :root{ --brand-green:#2DA58E; --critical:#ef4444; --moderate:#f59e0b; --excellent:#10b981;
+         --fg:#111827; --muted:#6b7280; --border:#e5e7eb; --canvas: var(--brand-green); --link:#0f5eff; --content-max: 1440px; }
+  *{box-sizing:border-box} html{scroll-behavior:smooth}
+  body{margin:0;background:var(--canvas);color:var(--fg);font:14px/1.45 system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif}
+  a{color:#0f5eff;text-decoration:none} a:hover{text-decoration:underline}
+  .wrap{max-width:var(--content-max);margin:0 auto;padding:24px}
+  .brandbar{background:#000;color:#fff}
+  .brandwrap{max-width:var(--content-max);margin:0 auto;padding:14px 24px;display:flex;align-items:center;justify-content:space-between;gap:12px}
+  .brandtitle{font-size:18px;font-weight:600}
+  .btnrow{display:flex;gap:8px;flex-wrap:wrap}
+  .header-btn{appearance:none;border:1px solid rgba(255,255,255,.25);background:transparent;color:#fff;border-radius:8px;padding:8px 12px;cursor:pointer}
+  .row{display:flex;gap:20px;flex-wrap:wrap} .col{flex:1 1 360px}
+  .card{background:#fff;border:1px solid var(--border);border-radius:10px;padding:16px;margin:18px 0}
+  h2{margin:0 0 10px;font-size:18px} h3{margin:0 0 10px;font-size:16px}
+  .muted{color:var(--muted)} .pill{display:inline-block;font-size:12px;border-radius:999px;padding:2px 8px;border:1px solid var(--border)}
+  .btn{padding:8px 12px;border:1px solid var(--border);border-radius:8px;background:#f9fafb;cursor:pointer}
+  .btn.primary{background:#0f5eff;color:#fff;border-color:#0f5eff}
+  input[type=file]{border:1px solid var(--border);border-radius:8px;padding:6px 8px}
+  table{border-collapse:collapse;width:100%} thead th{background:#fafafa}
+  th,td{border-bottom:1px solid var(--border);padding:6px 8px;text-align:left;font-size:13px;vertical-align:top}
+  .scroller{max-height:520px;overflow:auto}
+  .tiles{display:flex;gap:12px;flex-wrap:wrap}
+  .tile{flex:1 1 160px;border:1px solid var(--border);border-radius:10px;padding:12px;background:#fff}
+  .tile h4{margin:0 0 6px;font-size:12px;color:#6b7280;text-transform:uppercase;letter-spacing:.3px}
+  .tile .big{font-size:22px;font-weight:700}
+  tbody tr[data-filter]{cursor:pointer} tbody tr[data-filter]:hover{background:#f5f7fb}
+  .filterbar{display:flex;gap:8px;align-items:center;margin-bottom:8px;flex-wrap:wrap}
+  .key{font-size:12px;color:#374151;padding:4px 8px;border:1px solid var(--border);border-radius:8px;background:#f9fafb}
+  .tag{display:inline-block;padding:2px 8px;border-radius:999px;font-size:12px;color:#fff}
+  .tag.high{background:var(--critical)} .tag.medium{background:var(--moderate)} .tag.low{background:var(--excellent)} .tag.pillar{background:#334155}
+  .desc{font-size:13px;color:#111827;line-height:1.5;margin-top:6px}
+  tr.expandable td:first-child::before{content:'▸'; display:inline-block; margin-right:6px}
+  tr.expandable.open td:first-child::before{content:'▾'}
+  tr.exp-row td{border-top:none}
+  /* #vmCardWidthFix */
+  #vmCard { flex: 1 1 360px; }
+</style>
+<script>
+/* SheetJS loader with multiple CDNs */
+(function () {
+  var tries = ["https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js",
+               "https://unpkg.com/xlsx@0.18.5/dist/xlsx.full.min.js",
+               "https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"];
+  function loadNext(i){ if (window.XLSX || i>=tries.length) return; var s=document.createElement("script"); s.src=tries[i]; s.async=true; s.onload=function(){}; s.onerror=function(){loadNext(i+1)}; document.head.appendChild(s); }
+  loadNext(0);
+})();
+</script>
+</head>
+<body>
+  <div class="brandbar">
+    <div class="brandwrap">
+      <div class="brandtitle">TIEVA — Backup Prioritizer (v3.20)</div>
+      <div class="btnrow">
+        <button id="btnExportHTML" class="header-btn">Export HTML</button>
+        <button id="btnDownloadDetail" class="header-btn">Download Detail CSV</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="wrap">
+    <div class="pagetitle" style="color:#fff;font-weight:700">Well-Architected backup & DR decision view</div>
+    <div class="status" style="color:#fff;opacity:.95">
+      Upload your <strong>Backup_Audit.xlsx</strong> and <strong>Backup_Effort_Mapping_v3.xlsx</strong>. We’ll produce findings, prioritise effort, and show selection-based details.
+    </div>
+
+    <div class="card">
+      <div class="row">
+        <div class="col">
+          <h3>1) Backup audit (.xlsx)</h3>
+          <input id="auditXlsx" type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" />
+        </div>
+        <div class="col">
+          <h3>2) Effort Mapping v3 (.xlsx)</h3>
+          <input id="mapXlsx" type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" />
+        </div>
+        <div class="col" style="display:flex;align-items:flex-end;gap:8px">
+          <div class="btn primary" id="go" role="button" tabindex="0" onclick="handleGenerate()">Generate report</div>
+          <div class="btn" id="clearFilter">Clear filter</div>
+          <span id="status" class="muted" style="align-self:center"></span>
+        </div>
+      </div>
+    </div>
+
+    <div id="kpiSec" class="row" style="display:none">
+      <div class="col card">
+        <h2>At a glance</h2>
+        <div class="tiles">
+          <div class="tile"><h4>Total remediation hours</h4><div class="big" id="kpiHours">0</div></div>
+          <div class="tile"><h4>Items</h4><div class="big" id="kpiItems">0</div></div>
+          <div class="tile"><h4>Unique findings</h4><div class="big" id="kpiRecs">0</div></div>
+          <div class="tile"><h4>% Change Windows</h4><div class="big" id="kpiChange">0%</div></div>
+          <div class="tile"><h4>High-Risk share</h4><div class="big" id="kpiHighRisk">0%</div></div>
+        </div>
+      </div>
+    </div>
+
+    <div id="summarySec" class="row" style="display:none">
+      <div class="col card">
+        <h2>Summary</h2>
+        <div class="row">
+          <div class="col"><h3>Top Effort by Finding</h3><div id="tblRecEffort" class="scroller"></div></div>
+          <div class="col"><h3>By Owner</h3><div id="tblOwner" class="scroller"></div></div>
+          <div class="col"><h3>By Risk</h3><div id="tblRisk" class="scroller"></div></div>
+        </div>
+        <div class="row">
+          <div class="col"><h3>By Pillar</h3><div id="tblPillar" class="scroller"></div></div>
+          <div class="col"><h3>By Change Window?</h3><div id="tblChange" class="scroller"></div></div>
+          <div class="col"><h3>By Category</h3><div id="tblCategory" class="scroller"></div></div>
+        </div>
+      </div>
+    </div>
+
+    <div id="focusSec" class="row" style="display:none">
+      <div class="col card">
+        <h2>Details</h2>
+        <div id="focusHeader" class="muted" style="margin-bottom:8px"></div>
+        <div class="desc" id="focusWhat"></div>
+        <div class="desc" id="focusWhyEnable"></div>
+        <div class="desc" id="focusWhyNot"></div>
+      </div>
+    </div>
+
+    <div id="detailSec" class="row" style="display:none">
+      <div class="col card">
+        <div class="filterbar">
+          <h2 style="margin:0">Item Details</h2>
+          <span class="key"><strong>Hint:</strong> Click a row to expand and see everything else.</span>
+          <span class="pill" id="activeFilter" style="display:none"></span>
+        </div>
+        <div id="tblDetail" class="scroller"></div>
+      </div>
+    </div>
+
+    <div id="vmSec" class="row" style="display:none">
+      <div class="col card" id="vmCard">
+        <div class="filterbar">
+          <h2 style="margin:0">VM Details</h2>
+          <span class="key"><strong>Hint:</strong> Click a VM to expand for full metadata.</span>
+        </div>
+        <div id="tblVM" class="scroller"></div>
+      </div>
+    </div>
+  </div>
+
+<script>
+const $ = id => document.getElementById(id);
+const fmt = n => isFinite(n) ? Math.round(n*10)/10 : 0;
+const norm = s => String(s||"").trim().replace(/\s+/g," ").replace(/\.*$/," ").toLowerCase();
+function status(t){ $("status").textContent = t||""; }
+
+function riskClass(v){ const s=(v||"").toString().toLowerCase(); if(s.startsWith('h')) return 'high'; if(s.startsWith('m')) return 'medium'; if(s.startsWith('l')) return 'low'; return ''; }
+function yes(v){ return /^enabled|^yes|^true|^on/i.test(String(v||"")); }
+function groupBy(arr, key){ const m={}; arr.forEach(x=>{ const k=x[key]??""; (m[k]??=[]).push(x); }); return m; }
+function getCI(obj, key){ const t = String(key).toLowerCase(); for(const k of Object.keys(obj)){ if(String(k).toLowerCase()===t) return obj[k]; } return undefined; }
+function getCIflex(obj, key){ if(!obj) return undefined; const t=String(key||'').toLowerCase().trim(); const t2=t.replace(/[^a-z0-9]/g,''); for(const k of Object.keys(obj)){ const kn=String(k||'').toLowerCase().trim(); if(kn===t) return obj[k]; const kn2=kn.replace(/[^a-z0-9]/g,''); if(kn2===t2) return obj[k]; } return undefined; }
+
+/* Basic table with clickable rows -> filter */
+function renderTable(el, columns, rows, clickKey){
+  let html='<table><thead><tr>';
+  columns.forEach(c=> html+=`<th>${c.header}</th>`);
+  html+='</tr></thead><tbody>';
+  rows.forEach(r=>{
+    const val = clickKey ? r[clickKey] : null;
+    const attr = (clickKey && val!=null) ? ` data-filter="${clickKey}" data-value="${encodeURIComponent(val)}"` : '';
+    html+=`<tr${attr}>`;
+    columns.forEach(c=>{
+      let cell = c.render ? c.render(r) : (r[c.key]??"");
+      html+=`<td>${cell}</td>`;
+    });
+    html+='</tr>';
+  });
+  html+='</tbody></table>';
+  el.innerHTML = html;
+  if(clickKey){
+    el.querySelectorAll('tbody tr[data-filter]').forEach(tr=>{
+      tr.addEventListener('click', ()=> {
+        const key = tr.getAttribute('data-filter');
+        const val = decodeURIComponent(tr.getAttribute('data-value')||"");
+        applyFilter(key, val);
+      });
+    });
+  }
+}
+
+/* Expandable Item Details (hours excluded from columns) */
+function renderItemDetails(data){
+  const cols = [
+    {key:'Category', header:'Category'},
+    {key:'Subscription', header:'Subscription'},
+    {key:'ResourceGroup', header:'Resource Group'},
+    {key:'Location', header:'Location'},
+    {key:'Type', header:'Type'},
+    {key:'Name', header:'Vault/Name'},
+    {key:'Finding', header:'Finding'},
+    {key:'Pillar', header:'Pillar'},
+    {key:'EffortKey', header:'EffortKey'},
+    {key:'Owner', header:'Owner'},
+    {key:'Risk', header:'Risk', render:(r)=>r.Risk},
+    {key:'Change', header:'Change Window?'}
+  ];
+  let h = '<table><thead><tr>';
+  cols.forEach(c=> h += `<th>${c.header}</th>`);
+  h += '</tr></thead><tbody>';
+  data.forEach((r, idx)=>{
+    const expId = `exp_${idx}`;
+    h += `<tr class="expandable" data-exp="${expId}">`;
+    cols.forEach(c=>{ const cell = c.render ? c.render(r) : (r[c.key] ?? ""); h += `<td>${cell}</td>`; });
+    h += '</tr>';
+    const visibleKeys = new Set(cols.map(c=>c.key));
+    const all = r.__all || {};
+    const excludeKeys = new Set(["RemediationSteps","WhyEnableIt","WhyNotEnableIt","BaseHoursConfigured","PerResourceHours","BaseShareHours","TotalHours","remediation","whyenable","whynot","Remediation","WhyEnable","WhyNot"].map(x=>x.toLowerCase()));
+    const extraPairs = [];
+    Object.keys(all).forEach(k=>{
+      if(visibleKeys.has(k)) return;
+      if(/^__/.test(k)) return;
+      if(excludeKeys.has(String(k).toLowerCase())) return;
+      const s = all[k]; if(s==='' || s==null || s==='undefined') return;
+      extraPairs.push([k, s]);
+    });
+    const grid = extraPairs.length ? ('<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;padding:8px 6px">' +
+      extraPairs.map(([k,v])=>`<div><div class="muted" style="font-size:12px">${k}</div><div style="font-size:13px">${v}</div></div>`).join('') +
+      '</div>') : '<div class="desc" style="padding:8px 6px">No additional fields.</div>';
+    h += `<tr id="${expId}" class="exp-row" style="display:none"><td colspan="${cols.length}" style="background:#fbfdff">${grid}</td></tr>`;
+  });
+  h += '</tbody></table>';
+  $("tblDetail").innerHTML = h;
+  document.querySelectorAll('#tblDetail table tbody tr.expandable').forEach(tr=>{
+    tr.addEventListener('click', ()=>{
+      const exp = document.getElementById(tr.getAttribute('data-exp'));
+      if(!exp) return;
+      const open = exp.style.display !== 'none';
+      exp.style.display = open ? 'none' : '';
+      tr.classList.toggle('open', !open);
+    });
+  });
+}
+
+/* VM Details (prefers VM_Details; fallback VM_Coverage; include if VM Name present) */
+let VMDETAIL = [];
+function mapVMRow(r){
+  const sub = getCIflex(r,"SubscriptionName") || getCIflex(r,"Subscription Name") || getCIflex(r,"Subscription") || "";
+  const rg  = getCIflex(r,"VMResourceGroup") || getCIflex(r,"ResourceGroup") || getCIflex(r,"Resource Group") || getCIflex(r,"ResourceGroupName") || getCIflex(r,"VaultResourceGroup") || "";
+  const loc = getCIflex(r,"Location") || getCIflex(r,"Region") || "";
+  const vmn = getCIflex(r,"VMName") || getCIflex(r,"VM Name") || getCIflex(r,"Name") || getCIflex(r,"VirtualMachine") || getCIflex(r,"Virtual Machine") || "";
+  const pol = getCIflex(r,"PolicyName") || getCIflex(r,"Policy Name") || getCIflex(r,"BackupPolicy") || getCIflex(r,"Backup Policy") || "";
+  const vault = getCIflex(r,"VaultName") || getCIflex(r,"Vault/Name") || getCIflex(r,"BackupVaultName") || getCIflex(r,"RSVName") || "";
+  const last = getCIflex(r,"LastBackupStatus") || getCIflex(r,"Last Backup Status") || getCIflex(r,"LastBackupState") || getCIflex(r,"Last Job Status") || "";
+  const rpo  = getCIflex(r,"ObservedRPOHours") || getCIflex(r,"Observed RPO (h)") || getCIflex(r,"ObservedRpoHours") || getCIflex(r,"RPOHours") || "";
+  return {
+    Subscription: sub, ResourceGroup: rg, Location: loc, VMName: vmn, VaultName: vault,
+    PolicyName: pol, LastBackupStatus: last, ObservedRPOHours: rpo,
+    __all: Object.assign({}, r)
+  };
+}
+function renderVMDetails(data){
+  const cols = [
+    {key:'Subscription', header:'Subscription'},
+    {key:'ResourceGroup', header:'Resource Group'},
+    {key:'Location', header:'Location'},
+    {key:'VMName', header:'VM Name'},
+    {key:'VaultName', header:'Vault/Name'},
+    {key:'PolicyName', header:'Policy Name'},
+    {key:'LastBackupStatus', header:'Last Backup Status'},
+    {key:'ObservedRPOHours', header:'Observed RPO (h)'}
+  ];
+  let h = '<table><thead><tr>';
+  cols.forEach(c=> h += `<th>${c.header}</th>`);
+  h += '</tr></thead><tbody>';
+  data.forEach((r, idx)=>{
+    const expId = `vmexp_${idx}`;
+    h += `<tr class="expandable" data-exp="${expId}">`;
+    cols.forEach(c=>{ const cell = (r[c.key] == null ? "" : r[c.key]); h += `<td>${cell}</td>`; });
+    h += '</tr>';
+    const visible = new Set(cols.map(c=>c.key));
+    const all = r.__all || {};
+    const extra = [];
+    Object.keys(all).forEach(k=>{
+      if(visible.has(k)) return;
+      if(/^__/.test(k)) return;
+      const v = all[k]; if(v==null) return;
+      const s = String(v); if(!s) return;
+      extra.push([k, s]);
+    });
+    const grid = extra.length ? ('<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;padding:8px 6px">' +
+      extra.map(([k,v])=>`<div><div class="muted" style="font-size:12px">${k}</div><div style="font-size:13px">${v}</div></div>`).join('') +
+      '</div>') : '<div class="desc" style="padding:8px 6px">No additional fields.</div>';
+    h += `<tr id="${expId}" class="exp-row" style="display:none"><td colspan="${cols.length}" style="background:#fbfdff">${grid}</td></tr>`;
+  });
+  h += '</tbody></table>';
+  $("tblVM").innerHTML = h;
+  document.querySelectorAll('#tblVM table tbody tr.expandable').forEach(tr=>{
+    tr.addEventListener('click', ()=>{
+      const exp = document.getElementById(tr.getAttribute('data-exp'));
+      if(!exp) return;
+      const open = exp.style.display !== 'none';
+      exp.style.display = open ? 'none' : '';
+      tr.classList.toggle('open', !open);
+    });
+  });
+}
+
+/* Mapping workbook */
+let MAPPING = {};
+function parseMapping(wb){
+  const sh = wb.Sheets["Mapping"];
+  if(!sh) throw new Error('Mapping workbook must have a sheet named "Mapping".');
+  const rows = XLSX.utils.sheet_to_json(sh, {defval:""});
+  const map = {}; const toNum = v => { const n = parseFloat(String(v).toString().replace(/,/g,'').trim()); return isFinite(n)?n:0; };
+  rows.forEach(r=>{
+    const finding = String(getCI(r,"Finding")||"").trim(); if(!finding) return;
+    const key = norm(finding);
+    map[key] = {
+      effortKey: getCI(r,"EffortKey")||"",
+      example: getCI(r,"ExampleDescription")||"",
+      base: toNum(getCI(r,"BaseHours")),
+      per: toNum(getCI(r,"PerResourceHours")),
+      owner: getCI(r,"Owner")||"",
+      risk:  getCI(r,"DefaultRisk")||"",
+      impact: getCI(r,"BusinessImpact")||"",
+      change: getCI(r,"ChangeWindowRequired")||"",
+      pillar: getCI(r,"Pillar")||"",
+      remediation: getCI(r,"RemediationSteps")||"",
+      whyEnable: getCI(r,"WhyEnableIt")||"",
+      whyNot: getCI(r,"WhyNotEnableIt")||""
+    };
+  });
+  MAPPING = map; return map;
+}
+
+/* Audit parsing */
+function parseAudit(wb){
+  VMDETAIL = [];
+  const out=[];
+  const sheetNames = wb.SheetNames||[];
+  const nameAudit = sheetNames.includes("Audit") ? "Audit" : sheetNames[0];
+  const AUD = XLSX.utils.sheet_to_json(wb.Sheets[nameAudit], {defval:""});
+  const VMD = (wb.Sheets['VM_Details']||wb.Sheets['VM_Detail']) ? XLSX.utils.sheet_to_json((wb.Sheets['VM_Details']||wb.Sheets['VM_Detail']), {defval:""}) : [];
+  const VMC = wb.Sheets['VM_Coverage'] ? XLSX.utils.sheet_to_json(wb.Sheets['VM_Coverage'], {defval:""}) : [];
+
+  function pushFinding(base, finding, extra){
+    out.push({
+      category: base.Category || base.category || base.VaultType || "",
+      subscription: base.SubscriptionName || base.subscription || "",
+      subscriptionId: base.SubscriptionId || "",
+      resourceGroup: base.ResourceGroup || "",
+      location: base.Location || "",
+      vaultType: base.VaultType || "",
+      vaultName: base.VaultName || base.BackupVaultName || base.RSVName || "",
+      type: base.Type || base.Workload || "",
+      finding: finding,
+      context: extra?.context || "",
+      impact: extra?.impact || "",
+      // pass-throughs for expansion
+      lastBackupStatus: base.LastBackupStatus || "",
+      observedRPOHours: base.ObservedRPOHours || base.ObservedRpoHours || "",
+      policyName: base.PolicyName || "",
+      expectedPolicy: base.ExpectedPolicy || "",
+      softDeleteRetentionDays: base.SoftDeleteRetentionDays || "",
+      storageRedundancy: base.StorageRedundancy || "",
+      publicNetworkAccess: base.PublicNetworkAccess || "",
+      crossRegionRestoreFlag: base.CrossRegionRestore || "",
+      alwaysOnSoftDeleteFlag: base.AlwaysOnSoftDelete || "",
+      muaEnabledFlag: base.MUAEnabled || base.MuaEnabled || "",
+      crossSubRestoreFlag: base.CrossSubRestore || base.CrossSubscriptionRestore || "",
+      immutableFlag: base.Immutable || ""
+    });
+  }
+
+  // Example rule set (same as earlier): derive findings from Audit
+  AUD.forEach(r=>{
+    const cat = (r.Category||"").toString();
+    const name = r.VaultName || r.BackupVaultName || r.RSVName || "";
+    const sr = String(r.StorageRedundancy||"");
+    if(cat && /backupvault|rsv/i.test(cat)){
+      if(!yes(r.CloudSoftDeleteState)) pushFinding(r, "Enable soft delete", {context:name, impact:"High"});
+      if(!yes(r.AlwaysOnSoftDelete)) pushFinding(r, "Enable always-on soft delete", {context:name, impact:"High"});
+      if(!yes(r.CrossRegionRestore)) pushFinding(r, "Enable cross-region restore", {context:name, impact:"High"});
+      if(String(r.PublicNetworkAccess||"").toLowerCase()==="enabled") pushFinding(r, "Restrict public network access", {context:name, impact:"Medium"});
+      if(!yes(r.MUAEnabled)) pushFinding(r, "Enable multi-user authorisation (MUA)", {context:name, impact:"High"});
+      if(sr && !/grs|gzrs/i.test(sr)) pushFinding(r, "Increase vault storage redundancy (GRS/GZRS)", {context:name, impact:"Medium"});
+      if(String(r.Immutable||"").toLowerCase()==="disabled") pushFinding(r, "Enable immutability", {context:name, impact:"High"});
+      const sdr = Number(r.SoftDeleteRetentionDays||0); if(sdr>0 && sdr<14) pushFinding(r, "Soft delete retention below 14 days", {context:name, impact:"Medium"});
+      if(String(r.CrossSubRestore||"").toLowerCase()==="disabled") pushFinding(r, "Enable cross-subscription restore", {context:name, impact:"Low"});
+      if(sr && sr.toLowerCase()==='lrs') pushFinding(r, "Vault not zone-redundant", {context:name, impact:"Medium"});
+      if(r.LastBackupStatus && String(r.LastBackupStatus).toLowerCase()!=="succeeded") pushFinding(r, "Last backup failed or stale", {context:name, impact:"High"});
+      const rpo = Number(r.ObservedRPOHours||0); if(rpo && rpo>24) pushFinding(r, "Last backup failed or stale", {context:name, impact:"High"});
+      if(r.PolicyName && r.ExpectedPolicy && String(r.PolicyName)!==String(r.ExpectedPolicy)) pushFinding(r, "Backup policy misalignment", {context:name, impact:"Medium"});
+    }
+  });
+
+  // VM details: use VM_Details ONLY; include row if VM Name present; no fallback to VM_Coverage
+  if(VMD && VMD.length){
+    VMDETAIL = VMD.filter(r=>{
+      const vmn = getCIflex(r,"VMName") || getCIflex(r,"VM Name") || getCIflex(r,"Name") || getCIflex(r,"VirtualMachine") || getCIflex(r,"Virtual Machine");
+      return String(vmn||"").trim() !== "";
+    }).map(mapVMRow);
+  } else {
+    VMDETAIL = [];
+  }
+
+  // Still flag unprotected VMs from VMC (if present) using lenient headers
+  (VMC||[]).forEach(r=>{
+    const backed = String(getCIflex(r,"IsBackedUp") || getCIflex(r,"Is Backed Up") || getCIflex(r,"Backed Up") || getCIflex(r,"BackupEnabled") || getCIflex(r,"Backup Enabled") || "");
+    if(!/^true$|^yes$|^enabled$/i.test(backed)){
+      const vmn = getCIflex(r,"VMName") || getCIflex(r,"VM Name") || getCIflex(r,"Name") || "";
+      if(vmn) pushFinding(r, "VM not protected", {context: vmn, impact:"High"});
+    }
+  });
+
+  return out;
+}
+
+/* Effort estimation */
+let DETAIL=[]; let FILTER=null;
+function estimate(detailRows, mapping){
+  const rows = detailRows.map(ad=>{
+    const key = norm(ad.finding);
+    const m = mapping[key] || null;
+    return {
+      category: ad.category||"", subscription: ad.subscription||"", subscriptionId: ad.subscriptionId||"",
+      resourceGroup: ad.resourceGroup||"", location: ad.location||"", type: ad.type||"",
+      vaultName: ad.vaultName||"", context: ad.context||"", finding: ad.finding||"",
+      pillar: m ? (m.pillar||"") : "", effortKey: m ? (m.effortKey||"") : "Unmapped - Review",
+      owner: m ? (m.owner||"") : "", risk:  m ? (m.risk||"")  : "", impact: ad.impact || (m ? (m.impact||"") : ""),
+      change:m ? (m.change||"") : "", baseConfigured: m ? Number(m.base||0) : 0, per:  m ? Number(m.per||0)  : 0,
+      remediation: m ? (m.remediation||"") : "", whyEnable: m ? (m.whyEnable||"") : "", whyNot: m ? (m.whyNot||"") : "",
+      example: m ? (m.example||"") : "",
+      lastBackupStatus: ad.lastBackupStatus||"", observedRPOHours: ad.observedRPOHours||"",
+      policyName: ad.policyName||"", expectedPolicy: ad.expectedPolicy||"",
+      softDeleteRetentionDays: ad.softDeleteRetentionDays||"", storageRedundancy: ad.storageRedundancy||"",
+      publicNetworkAccess: ad.publicNetworkAccess||"", crossRegionRestoreFlag: ad.crossRegionRestoreFlag||"",
+      alwaysOnSoftDeleteFlag: ad.alwaysOnSoftDeleteFlag||"", muaEnabledFlag: ad.muaEnabledFlag||"",
+      crossSubRestoreFlag: ad.crossSubRestoreFlag||"", immutableFlag: ad.immutableFlag||"",
+      baseShown: 0, totalHours: 0
+    };
+  });
+  const groups = {}; rows.forEach(r=>{ const gk = "FIND:" + norm(r.finding); (groups[gk]??=[]).push(r); });
+  Object.values(groups).forEach(arr=>{
+    const base = Number(arr[0].baseConfigured||0), per  = Number(arr[0].per||0), n = arr.length;
+    const basePer = n>0 ? (base/n) : 0;
+    arr.forEach(r=>{ r.baseShown = basePer; r.totalHours = per + basePer; });
+  });
+  return rows;
+}
+
+/* Filtering + rendering */
+function applyFilter(key, value){
+  FILTER = { key, value,
+    fn: (d)=>{
+      switch(key){
+        case "effortKey": return (d.effortKey||"")===value;
+        case "owner": return (d.owner||"")===value;
+        case "risk": return (d.risk||"")===value;
+        case "pillar": return (d.pillar||"")===value;
+        case "category": return (d.category||"")===value;
+        case "finding": return norm(d.finding)===norm(value);
+        default: return true;
+      }
+    }
+  };
+  $("activeFilter").style.display = "";
+  $("activeFilter").textContent = "Filter: " + key + " = " + value;
+  renderAll(); renderFocus();
+}
+$("clearFilter").addEventListener("click", ()=>{ FILTER=null; $("activeFilter").style.display="none"; renderAll(); renderFocus(); });
+
+function badgeRisk(r){ return `<span class="tag ${riskClass(r.risk)}">${r.risk||"(n/a)"}</span>`; }
+
+function renderAll(){
+  const data = FILTER ? DETAIL.filter(FILTER.fn) : DETAIL.slice();
+  const sum = (arr,sel)=>arr.reduce((s,x)=>s+Number(sel(x)||0),0);
+
+  $("kpiHours").textContent = fmt(sum(data,x=>x.totalHours));
+  $("kpiItems").textContent = data.length;
+  $("kpiRecs").textContent = new Set(data.map(d=>d.finding)).size;
+  const changeYes = data.filter(d=>String(d.change||"").toLowerCase().startsWith("y")).length;
+  const highRisk  = data.filter(d=>String(d.risk||"").toLowerCase().startsWith("h")).length;
+  $("kpiChange").textContent = (data.length?Math.round((changeYes/data.length)*100):0) + "%";
+  $("kpiHighRisk").textContent = (data.length?Math.round((highRisk/data.length)*100):0) + "%";
+
+  const byFinding = Object.entries(groupBy(data,"finding")).map(([f,arr])=>({
+    finding:f, pillar:(arr[0]?.pillar)||"", owner:(arr[0]?.owner)||"", risk:(arr[0]?.risk)||"",
+    items:arr.length, hours:fmt(sum(arr,x=>x.totalHours))
+  })).sort((a,b)=>b.hours-a.hours);
+  const byOwner = Object.entries(groupBy(data,"owner")).map(([o,arr])=>({
+    owner:o||"(Unassigned)", items:arr.length, hours:fmt(sum(arr,x=>x.totalHours))
+  })).sort((a,b)=>b.hours-a.hours);
+  const byRisk = Object.entries(groupBy(data,"risk")).map(([r,arr])=>({
+    risk:r||"(n/a)", items:arr.length, hours:fmt(sum(arr,x=>x.totalHours))
+  })).sort((a,b)=>b.hours-a.hours);
+  const byPillar = Object.entries(groupBy(data,"pillar")).map(([p,arr])=>({
+    pillar:p||"(n/a)", items:arr.length, hours:fmt(sum(arr,x=>x.totalHours))
+  })).sort((a,b)=>b.hours-a.hours);
+  const byCat = Object.entries(groupBy(data,"category")).map(([c,arr])=>({
+    category:c||"(n/a)", items:arr.length, hours:fmt(sum(arr,x=>x.totalHours))
+  })).sort((a,b)=>b.hours-a.hours);
+
+  renderTable($("tblRecEffort"),
+    [{key:"finding",header:"Finding"},
+     {key:"pillar",header:"Pillar"},
+     {key:"owner",header:"Owner"},
+     {key:"risk",header:"Risk", render: r=>badgeRisk(r)},
+     {key:"items",header:"# Items"},
+     {key:"hours",header:"Hours"}],
+    byFinding, "finding");
+  renderTable($("tblOwner"),
+    [{key:"owner",header:"Owner"},{key:"items",header:"# Items"},{key:"hours",header:"Hours"}],
+    byOwner, "owner");
+  renderTable($("tblRisk"),
+    [{key:"risk",header:"Risk", render: r=>badgeRisk(r)},{key:"items",header:"# Items"},{key:"hours",header:"Hours"}],
+    byRisk, "risk");
+  renderTable($("tblPillar"),
+    [{key:"pillar",header:"Pillar"},{key:"items",header:"# Items"},{key:"hours",header:"Hours"}],
+    byPillar, "pillar");
+  renderTable($("tblChange"),
+    [{key:"change",header:"Change Window?"},{key:"items",header:"# Items"},{key:"hours",header:"Hours"}],
+    Object.entries(groupBy(data,"change")).map(([c,arr])=>({change:c||"(n/a)",items:arr.length,hours:fmt(sum(arr,x=>x.totalHours))})).sort((a,b)=>b.hours-a.hours),
+    "change");
+  renderTable($("tblCategory"),
+    [{key:"category",header:"Category"},{key:"items",header:"# Items"},{key:"hours",header:"Hours"}],
+    byCat, "category");
+
+  const prev = data.slice(0,5000).map(d=>({
+    Category:d.category, Subscription:d.subscription, ResourceGroup:d.resourceGroup, Location:d.location,
+    Type:d.type, Name:d.vaultName||d.context, Finding:d.finding, Pillar:d.pillar,
+    EffortKey:d.effortKey, Owner:d.owner, Risk:`<span class="tag ${riskClass(d.risk)}">${d.risk||"(n/a)"}</span>`,
+    Change:d.change,
+    __all: Object.assign({}, d.__all || {}, d)
+  }));
+  renderItemDetails(prev);
+
+  const show = data.length>0 ? '' : 'none';
+  ["kpiSec","summarySec","focusSec","detailSec"].forEach(id=>{ $(id).style.display=show; });
+  const vmShow = VMDETAIL.length>0 ? '' : 'none';
+  const vmCard = $("vmCard"); const vmSec = $("vmSec"); if(vmCard) vmCard.style.display = vmShow; if(vmSec) vmSec.style.display = vmShow;
+  if(VMDETAIL.length>0) renderVMDetails(VMDETAIL); else status('No VM_Details rows found (showing none).');
+  renderFocus();
+}
+
+function renderFocus(){
+  const data = FILTER ? DETAIL.filter(FILTER.fn) : [];
+  if(!FILTER || !data.length){ $("focusSec").style.display = "none"; return; }
+  $("focusSec").style.display = "";
+  $("focusHeader").textContent = `You selected ${FILTER.key} = "${FILTER.value}".`;
+  let selectedFinding = null;
+  if(FILTER.key === "finding"){ selectedFinding = FILTER.value; }
+  else { const uniq = Array.from(new Set(data.map(d=>d.finding))).filter(Boolean); if(uniq.length === 1) selectedFinding = uniq[0]; }
+  if(!selectedFinding){ $("focusWhat").innerHTML = "<em>Select a specific finding to view remediation guidance.</em>"; $("focusWhyEnable").innerHTML = ""; $("focusWhyNot").innerHTML = ""; return; }
+  const m = MAPPING[norm(selectedFinding)] || {};
+  $("focusWhat").innerHTML = `<strong>What to do:</strong> ${m.remediation ? m.remediation : "—"}`;
+  $("focusWhyEnable").innerHTML = `<strong>Why enable it:</strong> ${m.whyEnable ? m.whyEnable : "—"}`;
+  $("focusWhyNot").innerHTML = `<strong>Why not enable it:</strong> ${m.whyNot ? m.whyNot : "—"}`;
+}
+
+/* === Revert-style Generate wiring with XLSX wait === */
+async function waitForXLSX(ms=200, maxMs=6000){
+  const start = Date.now();
+  while(typeof XLSX === 'undefined' && (Date.now()-start)<maxMs){
+    await new Promise(r=>setTimeout(r, ms));
+  }
+  return typeof XLSX !== 'undefined';
+}
+window.handleGenerate = async function(){
+  try{
+    status('');
+    const auditEl = $("auditXlsx"), mapEl = $("mapXlsx");
+    if(!auditEl || !mapEl){ status('UI not ready'); return; }
+    const auditFile = auditEl.files[0]; const mapFile = mapEl.files[0];
+    if(!auditFile){ status('Choose the Backup audit workbook.'); return; }
+    if(!mapFile){ status('Choose the Effort Mapping workbook.'); return; }
+    const ready = await waitForXLSX();
+    if(!ready){ status('XLSX library failed to load.'); return; }
+    const btn = $("go"); if(btn){ btn.textContent="Generating…"; btn.style.opacity=".7"; btn.style.pointerEvents="none"; }
+
+    const [auditBuf, mapBuf] = await Promise.all([auditFile.arrayBuffer(), mapFile.arrayBuffer()]);
+    const auditWb = XLSX.read(auditBuf, {type:'array'});
+    const mapWb   = XLSX.read(mapBuf, {type:'array'});
+
+    parseMapping(mapWb);
+    const findings = parseAudit(auditWb);
+    DETAIL = estimate(findings, MAPPING);
+    FILTER = null;
+    $("activeFilter").style.display="none";
+    renderAll();
+    status('Report generated.');
+  }catch(err){
+    console.error(err);
+    status('Error: ' + (err?.message||err));
+  } finally {
+    const btn = $("go"); if(btn){ btn.textContent="Generate report"; btn.style.opacity=""; btn.style.pointerEvents=""; }
+  }
+};
+
+document.addEventListener('DOMContentLoaded', ()=>{
+  const go = $("go");
+  if(go){
+    go.addEventListener('click', window.handleGenerate);
+    go.addEventListener('keydown', (e)=>{ if(e.key==='Enter'||e.key===' '){ e.preventDefault(); window.handleGenerate(); }});
+  }
+  $("clearFilter").addEventListener("click", ()=>{ FILTER=null; $("activeFilter").style.display="none"; renderAll(); renderFocus(); });
+
+  $("btnDownloadDetail").addEventListener('click', ()=>{
+    const data = FILTER ? DETAIL.filter(FILTER.fn) : DETAIL;
+    if(!data.length){ alert('Generate report first.'); return; }
+    const rows = data.map(d=>({
+      Category:d.category, Subscription:d.subscription, ResourceGroup:d.resourceGroup, Location:d.location, Type:d.type,
+      Name:d.vaultName||d.context, Finding:d.finding, Pillar:d.pillar, EffortKey:d.effortKey, Owner:d.owner,
+      Risk:d.risk, Impact:d.impact, ChangeWindow:d.change, BaseHoursConfigured:d.baseConfigured, BaseHoursPerItemShare:d.baseShown,
+      PerResourceHours:d.per, TotalHours:d.totalHours, RemediationSteps:MAPPING[norm(d.finding)]?.remediation||"", WhyEnableIt:MAPPING[norm(d.finding)]?.whyEnable||"", WhyNotEnableIt:MAPPING[norm(d.finding)]?.whyNot||""
+    }));
+    const headers = Object.keys(rows[0]||{});
+    let csv = headers.join(",")+"\n";
+    rows.forEach(r=>{
+      const vals = headers.map(h=>{
+        const v = r[h]==null ? "" : String(r[h]).replace(/\n/g,' ');
+        return /[",\n]/.test(v) ? '"' + v.replace(/"/g,'""') + '"' : v;
+      });
+      csv += vals.join(",")+"\n";
+    });
+    const blob = new Blob([csv], {type:'text/csv'});
+    const url = URL.createObjectURL(blob);
+    const a=document.createElement('a'); a.href=url; a.download='backup_prioritizer_detail.csv'; a.click();
+    setTimeout(()=>URL.revokeObjectURL(url),1000);
+  });
+
+  $("btnExportHTML").addEventListener('click', ()=>{
+    const html = '<!doctype html>'+document.documentElement.outerHTML;
+    const blob = new Blob([html], {type:'text/html'});
+    const url = URL.createObjectURL(blob);
+    const a=document.createElement('a'); a.href=url; a.download='TIEVA — Backup Prioritizer (v3.20).html'; a.click();
+    setTimeout(()=>URL.revokeObjectURL(url),1000);
+  });
+});
+</script>
+</body>
+</html>

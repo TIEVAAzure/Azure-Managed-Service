@@ -1,0 +1,327 @@
+﻿Business Impact,Recommendation,Resource Group,Resource Name,Type
+High,Windows virtual machines should enable Azure Disk Encryption or EncryptionAtHost.,masterimage,w10master,Virtual machine
+High,Windows virtual machines should enable Azure Disk Encryption or EncryptionAtHost.,w10_cad_vdi,w10-cad-0,Virtual machine
+High,Machines should be configured to periodically check for missing system updates,w10_cad_vdi,w10-cad-0,Virtual machine
+High,Role-Based Access Control should be used on Azure Keyvault Services (AKV),rg-avantdata-prod-ukwest-001,kv-avant-prod-ukw-001,Key vault
+High,Machines should be configured to periodically check for missing system updates,avant-prod-rg,avazes01,Virtual machine
+High,Windows virtual machines should enable Azure Disk Encryption or EncryptionAtHost.,avant-prod-rg,avazdc01,Virtual machine
+High,Windows virtual machines should enable Azure Disk Encryption or EncryptionAtHost.,avant-prod-rg,avazdc02,Virtual machine
+High,Windows virtual machines should enable Azure Disk Encryption or EncryptionAtHost.,avant-prod-rg,avazlg01,Virtual machine
+High,Windows virtual machines should enable Azure Disk Encryption or EncryptionAtHost.,avant-prod-rg,avazes01,Virtual machine
+High,Secure transfer to storage accounts should be enabled,avant-prod-rg,avantprodrgdiag,Storage Account
+High,Machines should be configured to periodically check for missing system updates,avant-prod-rg,avld5db001,Virtual machine
+High,Windows virtual machines should enable Azure Disk Encryption or EncryptionAtHost.,avant-prod-rg,avazbi001,Virtual machine
+High,Linux virtual machines should enable Azure Disk Encryption or EncryptionAtHost.,avant-prod-rg,avlinux,Virtual machine
+High,Machines should be configured to periodically check for missing system updates,avant-prod-rg,avazlg01,Virtual machine
+High,Machines should be configured to periodically check for missing system updates,avant-prod-rg,avazdc01,Virtual machine
+High,Windows virtual machines should enable Azure Disk Encryption or EncryptionAtHost.,avant-prod-rg,avazex01,Virtual machine
+High,Machines should be configured to periodically check for missing system updates,avant-prod-rg,avazfs01,Virtual machine
+High,Secure transfer to storage accounts should be enabled,avant-prod-rg,avanthomes,Storage Account
+High,Machines should be configured to periodically check for missing system updates,avant-prod-rg,avazbi001,Virtual machine
+High,Machines should be configured to periodically check for missing system updates,avant-prod-rg,avazdc02,Virtual machine
+High,Machines should be configured to periodically check for missing system updates,avant-prod-rg,avazex01,Virtual machine
+High,All network ports should be restricted on network security groups associated to your virtual machine,avant-prod-rg,avazprt002,Virtual machine
+High,Windows virtual machines should enable Azure Disk Encryption or EncryptionAtHost.,avant-prod-rg,avazprt002,Virtual machine
+High,SQL servers should have an Azure Active Directory administrator provisioned,avant-prod-rg,avant1,SQL server
+High,Microsoft Defender for SQL should be enabled for unprotected Azure SQL servers,avant-prod-rg,avant1,SQL server
+High,Windows virtual machines should enable Azure Disk Encryption or EncryptionAtHost.,avant-prod-rg,avazca01,Virtual machine
+High,Machines should be configured to periodically check for missing system updates,avant-prod-rg,avlinux,Virtual machine
+High,Machines should be configured to periodically check for missing system updates,avant-prod-rg,avazprt002,Virtual machine
+High,Machines should be configured to periodically check for missing system updates,avant-prod-rg,avazca01,Virtual machine
+High,Secure transfer to storage accounts should be enabled,avant-prod-rg,avantprodrgdiag220,Storage Account
+High,Windows virtual machines should enable Azure Disk Encryption or EncryptionAtHost.,avant-prod-rg,avazfs01,Virtual machine
+High,Windows virtual machines should enable Azure Disk Encryption or EncryptionAtHost.,avant-prod-rg,avld5db001,Virtual machine
+High,All network ports should be restricted on network security groups associated to your virtual machine,avant-prod-rg,avlinux,Virtual machine
+High,SQL servers should have vulnerability assessment configured,avant-prod-rg,avant1,SQL server
+High,TLS should be updated to the latest version for function apps,esb-avantdynamics-dev-rg,avantdynamics-dev-azf-otm,App service
+High,TLS should be updated to the latest version for function apps,esb-avantdynamics-dev-rg,avantdynamics-dev-azf-enrichmessage,App service
+High,TLS should be updated to the latest version for function apps,esb-avantdynamics-dev-rg,avantdynamics-dev-azf-cdsfetchxml,App service
+High,TLS should be updated to the latest version for function apps,esb-avantdynamics-dev-rg,avantdynamics-dev-azf-transformerflow,App service
+High,Key vaults should have soft delete enabled,esb-avantdynamics-dev-rg,avantdynamics-dev-akv,Key vault
+High,TLS should be updated to the latest version for function apps,esb-avantdynamics-dev-rg,avantdynamics-dev-azf-upsertcrmflow,App service
+High,Role-Based Access Control should be used on Azure Keyvault Services (AKV),esb-avantdynamics-dev-rg,avantdynamics-dev-akv,Key vault
+High,TLS should be updated to the latest version for function apps,esb-avantdynamics-dev-rg,avantdynamics-dev-azf-messagesplitter,App service
+High,TLS should be updated to the latest version for function apps,esb-avantdynamics-dev-rg,avantdynamics-dev-azf-transformer,App service
+High,TLS should be updated to the latest version for function apps,esb-avantdynamics-dev-rg,avantdynamics-dev-azf-endpointforavantwebsite,App service
+High,TLS should be updated to the latest version for function apps,esb-avantdynamics-dev-rg,avantdynamics-dev-azf-upsertcrm,App service
+High,TLS should be updated to the latest version for function apps,esb-avantdynamics-dev-rg,avantdynamics-dev-azf-nhfs,App service
+High,TLS should be updated to the latest version for function apps,esb-avantdynamics-dev-rg,avantdynamics-dev-azf-rightmove,App service
+High,TLS should be updated to the latest version for function apps,esb-avantdynamics-dev-rg,avantdynamics-dev-azf-endpointforcoins,App service
+High,TLS should be updated to the latest version for function apps,esb-avantdynamics-dev-rg,avantdynamics-dev-azf-noncrmresponsecreate,App service
+High,TLS should be updated to the latest version for function apps,esb-avantdynamics-dev-rg,avantdynamics-dev-azf-zoopla,App service
+High,TLS should be updated to the latest version for function apps,esb-avantdynamics-dev-rg,avantdynamics-dev-azf-crmresponseupdate,App service
+High,TLS should be updated to the latest version for function apps,esb-avantdynamics-dev-rg,avantdynamics-dev-azf-pushtocoins,App service
+High,TLS should be updated to the latest version for function apps,esb-avantdynamics-dev-rg,avantdynamics-dev-azf-crmmessageextract,App service
+High,TLS should be updated to the latest version for function apps,esb-avantdynamics-dev-rg,avantdynamics-dev-azf-cryptor,App service
+High,Secure transfer to storage accounts should be enabled,site-recovery-vault-rg,c9zpe2siterecovasrcache,Storage Account
+High,Machines should be configured to periodically check for missing system updates,avant-vmx-lan-rg,meraki-to-crowdstrike-datashipper,Virtual machine
+High,Windows virtual machines should enable Azure Disk Encryption or EncryptionAtHost.,avant-vmx-lan-rg,meraki-to-crowdstrike-datashipper,Virtual machine
+High,Linux virtual machines should enable Azure Disk Encryption or EncryptionAtHost.,rubrik-avant,rbrk-avant-cl1-vm-0,Virtual machine
+High,TLS should be updated to the latest version for function apps,esb-avantdynamics-prd-rg,avantdynamics-prd-azf-upsertcrmflow,App service
+High,TLS should be updated to the latest version for function apps,esb-avantdynamics-prd-rg,avantdynamics-prd-azf-endpointforcoins,App service
+High,TLS should be updated to the latest version for function apps,esb-avantdynamics-prd-rg,avantdynamics-prd-azf-crmresponseupdate,App service
+High,TLS should be updated to the latest version for function apps,esb-avantdynamics-prd-rg,avantdynamics-prd-azf-transformerflow,App service
+High,TLS should be updated to the latest version for function apps,esb-avantdynamics-prd-rg,avantdynamics-prd-azf-cdsfetchxml,App service
+High,Role-Based Access Control should be used on Azure Keyvault Services (AKV),esb-avantdynamics-prd-rg,avantdynamics-prd-akv,Key vault
+High,TLS should be updated to the latest version for web apps,esb-avantdynamics-prd-rg,avantdynamics-prd-api-crm,App service
+High,TLS should be updated to the latest version for function apps,esb-avantdynamics-prd-rg,avantdynamics-prd-azf-enrichmessage,App service
+High,TLS should be updated to the latest version for function apps,esb-avantdynamics-prd-rg,avantdynamics-prd-azf-noncrmresponsecreate,App service
+High,TLS should be updated to the latest version for function apps,esb-avantdynamics-prd-rg,avantdynamics-prd-azf-nhfs,App service
+High,TLS should be updated to the latest version for function apps,esb-avantdynamics-prd-rg,avantdynamics-prd-azf-zoopla,App service
+High,TLS should be updated to the latest version for function apps,esb-avantdynamics-prd-rg,avantdynamics-prd-azf-transformer,App service
+High,TLS should be updated to the latest version for function apps,esb-avantdynamics-prd-rg,avantdynamics-prd-azf-messagesplitter,App service
+High,Web Application should only be accessible over HTTPS,esb-avantdynamics-prd-rg,avantdynamics-prd-api-crm,App service
+High,TLS should be updated to the latest version for function apps,esb-avantdynamics-prd-rg,avantdynamics-prd-azf-endpointforavantwebsite,App service
+High,TLS should be updated to the latest version for function apps,esb-avantdynamics-prd-rg,avantdynamics-prd-azf-upsertcrm,App service
+High,FTPS should be required in web apps,esb-avantdynamics-prd-rg,avantdynamics-prd-api-crm,App service
+High,TLS should be updated to the latest version for function apps,esb-avantdynamics-prd-rg,avantdynamics-prd-azf-rightmove,App service
+High,TLS should be updated to the latest version for function apps,esb-avantdynamics-prd-rg,avantdynamics-prd-azf-cryptor,App service
+High,TLS should be updated to the latest version for function apps,esb-avantdynamics-prd-rg,avantdynamics-prd-azf-pushtocoins,App service
+High,Key vaults should have soft delete enabled,esb-avantdynamics-prd-rg,avantdynamics-prd-akv,Key vault
+High,TLS should be updated to the latest version for function apps,esb-avantdynamics-prd-rg,avantdynamics-prd-azf-otm,App service
+High,TLS should be updated to the latest version for function apps,esb-avantdynamics-prd-rg,avantdynamics-prd-azf-crmmessageextract,App service
+High,A maximum of 3 owners should be designated for subscriptions,No resource group,99079279-b359-4c66-aeed-9cafbdb84097,Subscription
+High,Microsoft Defender for Key Vault should be enabled,No resource group,99079279-b359-4c66-aeed-9cafbdb84097,Subscription
+High,Microsoft Defender CSPM should be enabled,No resource group,99079279-b359-4c66-aeed-9cafbdb84097,Subscription
+High,Microsoft Defender for App Service should be enabled,No resource group,99079279-b359-4c66-aeed-9cafbdb84097,Subscription
+High,Microsoft Defender for Azure SQL Database servers should be enabled,No resource group,99079279-b359-4c66-aeed-9cafbdb84097,Subscription
+High,Microsoft Defender for Resource Manager should be enabled,No resource group,99079279-b359-4c66-aeed-9cafbdb84097,Subscription
+High,Microsoft Defender for Storage plan should be enabled with Malware Scanning and Sensitive Data Threat Detection,No resource group,99079279-b359-4c66-aeed-9cafbdb84097,Subscription
+High,Disabled accounts with owner permissions on Azure resources should be removed,No resource group,99079279-b359-4c66-aeed-9cafbdb84097,Subscription
+High,Microsoft Defender for servers should be enabled,No resource group,99079279-b359-4c66-aeed-9cafbdb84097,Subscription
+High,Role-Based Access Control should be used on Azure Keyvault Services (AKV),esb-avantdynamics-ppd-rg,avantdynamics-ppd-akv,Key vault
+High,TLS should be updated to the latest version for function apps,esb-avantdynamics-ppd-rg,avantdynamics-ppd-azf-cdsfetchxml,App service
+High,TLS should be updated to the latest version for function apps,esb-avantdynamics-ppd-rg,avantdynamics-ppd-azf-endpointforcoins,App service
+High,TLS should be updated to the latest version for function apps,esb-avantdynamics-ppd-rg,avantdynamics-ppd-azf-otm,App service
+High,TLS should be updated to the latest version for function apps,esb-avantdynamics-ppd-rg,avantdynamics-ppd-azf-nhfs,App service
+High,TLS should be updated to the latest version for function apps,esb-avantdynamics-ppd-rg,avantdynamics-ppd-azf-pushtocoins,App service
+High,TLS should be updated to the latest version for function apps,esb-avantdynamics-ppd-rg,avantdynamics-ppd-azf-crmmessageextract,App service
+High,TLS should be updated to the latest version for function apps,esb-avantdynamics-ppd-rg,avantdynamics-ppd-azf-transformerflow,App service
+High,TLS should be updated to the latest version for function apps,esb-avantdynamics-ppd-rg,avantdynamics-ppd-azf-noncrmresponsecreate,App service
+High,TLS should be updated to the latest version for function apps,esb-avantdynamics-ppd-rg,avantdynamics-ppd-azf-enrichmessage,App service
+High,TLS should be updated to the latest version for function apps,esb-avantdynamics-ppd-rg,avantdynamics-ppd-azf-crmresponseupdate,App service
+High,TLS should be updated to the latest version for function apps,esb-avantdynamics-ppd-rg,avantdynamics-ppd-azf-transformer,App service
+High,TLS should be updated to the latest version for function apps,esb-avantdynamics-ppd-rg,avantdynamics-ppd-azf-endpointforavantwebsite,App service
+High,TLS should be updated to the latest version for function apps,esb-avantdynamics-ppd-rg,avantdynamics-ppd-azf-zoopla,App service
+High,TLS should be updated to the latest version for function apps,esb-avantdynamics-ppd-rg,avantdynamics-ppd-azf-upsertcrm,App service
+High,TLS should be updated to the latest version for function apps,esb-avantdynamics-ppd-rg,avantdynamics-ppd-azf-cryptor,App service
+High,TLS should be updated to the latest version for function apps,esb-avantdynamics-ppd-rg,avantdynamics-ppd-azf-upsertcrmflow,App service
+High,TLS should be updated to the latest version for function apps,esb-avantdynamics-ppd-rg,avantdynamics-ppd-azf-messagesplitter,App service
+High,TLS should be updated to the latest version for function apps,esb-avantdynamics-ppd-rg,avantdynamics-ppd-azf-rightmove,App service
+High,Microsoft Defender for SQL should be enabled for unprotected Azure SQL servers,coins_azure,coinsazure,SQL server
+High,SQL servers should have vulnerability assessment configured,coins_azure,coinsazure,SQL server
+High,Microsoft Defender for Resource Manager should be enabled,No resource group,215ac9bf-7032-4d13-af23-4a35c2b8d656,Subscription
+High,Disabled accounts with read and write permissions on Azure resources should be removed,No resource group,215ac9bf-7032-4d13-af23-4a35c2b8d656,Subscription
+High,Microsoft Defender CSPM should be enabled,No resource group,215ac9bf-7032-4d13-af23-4a35c2b8d656,Subscription
+High,Microsoft Defender for Storage plan should be enabled with Malware Scanning and Sensitive Data Threat Detection,No resource group,215ac9bf-7032-4d13-af23-4a35c2b8d656,Subscription
+High,Windows virtual machines should enable Azure Disk Encryption or EncryptionAtHost.,avant-secure-rg,avazin01,Virtual machine
+High,All network ports should be restricted on network security groups associated to your virtual machine,avant-secure-rg,avazin01,Virtual machine
+High,Linux virtual machines should enable Azure Disk Encryption or EncryptionAtHost.,avant-secure-rg,avazlinux,Virtual machine
+High,Machines should be configured to periodically check for missing system updates,avant-secure-rg,avazin01,Virtual machine
+High,All network ports should be restricted on network security groups associated to your virtual machine,avant-secure-rg,avazlinux,Virtual machine
+High,Machines should be configured to periodically check for missing system updates,mrg-cisco-meraki-vmx-20210514151620,avant-vmx-vm,Virtual machine
+High,Linux virtual machines should enable Azure Disk Encryption or EncryptionAtHost.,mrg-cisco-meraki-vmx-20210514151620,avant-vmx-vm,Virtual machine
+High,Internet-facing virtual machines should be protected with network security groups,mrg-cisco-meraki-vmx-20210514151620,avant-vmx-vm,Virtual machine
+High,Linux virtual machines should enable Azure Disk Encryption or EncryptionAtHost.,avant-asav-fw1-rg,avant-asav-fw1-vm,Virtual machine
+High,Secure transfer to storage accounts should be enabled,avant-dr-rg,yvnyoaavantdrrasrcache,Storage Account
+High,Secure transfer to storage accounts should be enabled,avant-dr-rg,avantdrrgdiag,Storage Account
+Low,Azure Backup should be enabled for virtual machines,masterimage,w10master,Virtual machine
+Low,Diagnostic logs in Logic Apps should be enabled,w10_cad_vdi,w10-cad-start,Workflow
+Low,Non-internet-facing virtual machines should be protected with network security groups,w10_cad_vdi,w10-cad-0,Virtual machine
+Low,Azure Backup should be enabled for virtual machines,w10_cad_vdi,w10-cad-0,Virtual machine
+Low,Access to storage accounts with firewall and virtual network configurations should be restricted,rg-avantdata-prod-ukwest-001,dlsavantdataprod,Storage Account
+Low,Diagnostic logs in Key Vault should be enabled,rg-avantdata-prod-ukwest-001,kv-avant-prod-ukw-001,Key vault
+Low,Diagnostic logs in Event Hub should be enabled,crowdstrike-entraid-connector,crowdstrike-entraid-avant,Event hub namespace
+Low,Non-internet-facing virtual machines should be protected with network security groups,avant-prod-rg,avld5db001,Virtual machine
+Low,Azure Backup should be enabled for virtual machines,avant-prod-rg,avazes01,Virtual machine
+Low,Non-internet-facing virtual machines should be protected with network security groups,avant-prod-rg,avazfs01,Virtual machine
+Low,Azure Backup should be enabled for virtual machines,avant-prod-rg,avazca01,Virtual machine
+Low,Access to storage accounts with firewall and virtual network configurations should be restricted,avant-prod-rg,avantprodrgdiag,Storage Account
+Low,Access to storage accounts with firewall and virtual network configurations should be restricted,avant-prod-rg,avantprodrgdiag220,Storage Account
+Low,Auditing on SQL server should be enabled,avant-prod-rg,avant1,SQL server
+Low,Access to storage accounts with firewall and virtual network configurations should be restricted,avant-prod-rg,avanthomes,Storage Account
+Low,Azure Backup should be enabled for virtual machines,avant-prod-rg,avazprt002,Virtual machine
+Low,Azure Backup should be enabled for virtual machines,avant-prod-rg,avlinux,Virtual machine
+Low,Subnets should be associated with a network security group,avant-prod-rg,avant-prod-sub,Subnet
+Low,Diagnostic logs in Key Vault should be enabled,esb-avantdynamics-dev-rg,avantdynamics-dev-akv,Key vault
+Low,Diagnostic logs in Logic Apps should be enabled,esb-avantdynamics-dev-rg,avantdynamics-dev-lap-entrasecretalert,Workflow
+Low,Diagnostic logs in Logic Apps should be enabled,esb-avantdynamics-dev-rg,avantdynamics-dev-lap-kvevent,Workflow
+Low,Access to storage accounts with firewall and virtual network configurations should be restricted,esb-avantdynamics-dev-rg,avantdynamicsdevsa,Storage Account
+Low,Diagnostic logs in Service Bus should be enabled,esb-avantdynamics-dev-rg,avantdynamics-dev-asb,Service bus namespace
+Low,Diagnostic logs in Logic Apps should be enabled,rg-amba-monitoring-001,tievamonitoring,Workflow
+Low,Access to storage accounts with firewall and virtual network configurations should be restricted,site-recovery-vault-rg,c9zpe2siterecovasrcache,Storage Account
+Low,Azure Backup should be enabled for virtual machines,avant-vmx-lan-rg,meraki-to-crowdstrike-datashipper,Virtual machine
+Low,Guest Attestation extension should be installed on supported Windows virtual machines,avant-vmx-lan-rg,meraki-to-crowdstrike-datashipper,Virtual machine
+Low,Subnets should be associated with a network security group,avant-vmx-lan-rg,avant-vmx-net,Subnet
+Low,Subnets should be associated with a network security group,avant-vmx-lan-rg,avant-vpn-client-net,Subnet
+Low,Access to storage accounts with firewall and virtual network configurations should be restricted,cloud-shell-storage-westeurope,csb10032001298ed458,Storage Account
+Low,Access to storage accounts with firewall and virtual network configurations should be restricted,cloud-shell-storage-westeurope,csb10032000b8a859fb,Storage Account
+Low,Azure Backup should be enabled for virtual machines,rubrik-avant,rbrk-avant-cl1-vm-0,Virtual machine
+Low,Subnets should be associated with a network security group,rubrik-avant,default,Subnet
+Low,Diagnostic logs in Logic Apps should be enabled,esb-avantdynamics-prd-rg,avantdynamics-prd-lap-entrasecretalert,Workflow
+Low,Diagnostic logs in Key Vault should be enabled,esb-avantdynamics-prd-rg,avantdynamics-prd-akv,Key vault
+Low,Diagnostic logs in Logic Apps should be enabled,esb-avantdynamics-prd-rg,avantdynamics-prd-lap-kvevent,Workflow
+Low,Access to storage accounts with firewall and virtual network configurations should be restricted,esb-avantdynamics-prd-rg,avantdynamicsprdsa,Storage Account
+Low,Diagnostic logs in Service Bus should be enabled,esb-avantdynamics-prd-rg,avantdynamics-prd-asb,Service bus namespace
+Low,Subscriptions should have a contact email address for security issues,No resource group,99079279-b359-4c66-aeed-9cafbdb84097,Subscription
+Low,Email notification for high severity alerts should be enabled,No resource group,99079279-b359-4c66-aeed-9cafbdb84097,Subscription
+Low,Diagnostic logs in Logic Apps should be enabled,esb-avantdynamics-ppd-rg,avantdynamics-ppd-lap-kvevent,Workflow
+Low,Diagnostic logs in Key Vault should be enabled,esb-avantdynamics-ppd-rg,avantdynamics-ppd-akv,Key vault
+Low,Diagnostic logs in Service Bus should be enabled,esb-avantdynamics-ppd-rg,avantdynamics-ppd-asb,Service bus namespace
+Low,Access to storage accounts with firewall and virtual network configurations should be restricted,esb-avantdynamics-ppd-rg,avantdynamicsppdsa,Storage Account
+Low,Diagnostic logs in Logic Apps should be enabled,esb-avantdynamics-ppd-rg,avantdynamics-ppd-lap-entrasecretalert,Workflow
+Low,Access to storage accounts with firewall and virtual network configurations should be restricted,coins_azure,coinsazurebulkstorage,Storage Account
+Low,Auditing on SQL server should be enabled,coins_azure,coinsazure,SQL server
+Low,Subscriptions should have a contact email address for security issues,No resource group,215ac9bf-7032-4d13-af23-4a35c2b8d656,Subscription
+Low,Email notification for high severity alerts should be enabled,No resource group,215ac9bf-7032-4d13-af23-4a35c2b8d656,Subscription
+Low,Azure Backup should be enabled for virtual machines,avant-secure-rg,avazin01,Virtual machine
+Low,Virtual networks should be protected by Azure Firewall,avant-secure-rg,avant-web-vnet,Virtual network
+Low,Azure Backup should be enabled for virtual machines,mrg-cisco-meraki-vmx-20210514151620,avant-vmx-vm,Virtual machine
+Low,Subnets should be associated with a network security group,rubrikpso-rg,default,Subnet
+Low,Azure Backup should be enabled for virtual machines,avant-asav-fw1-rg,avant-asav-fw1-vm,Virtual machine
+Low,Subnets should be associated with a network security group,avant-asav-fw1-rg,avant-asav-fw1-outside,Subnet
+Low,Subnets should be associated with a network security group,avant-asav-fw1-rg,subnet4,Subnet
+Low,Subnets should be associated with a network security group,avant-asav-fw1-rg,subnet3,Subnet
+Low,Subnets should be associated with a network security group,avant-asav-fw1-rg,avant-asav-fw1-inside,Subnet
+Low,Access to storage accounts with firewall and virtual network configurations should be restricted,avant-asav-fw1-rg,avantasavfw1vmaad012,Storage Account
+Low,Access to storage accounts with firewall and virtual network configurations should be restricted,avant-dr-rg,avantdrrgdiag,Storage Account
+Low,Access to storage accounts with firewall and virtual network configurations should be restricted,avant-dr-rg,yvnyoaavantdrrasrcache,Storage Account
+Low,Subnets should be associated with a network security group,avant-dr-rg,avant-dr-subnet,Subnet
+Medium,Machines should have a vulnerability assessment solution,masterimage,w10master,Virtual machine
+Medium,Guest Configuration extension should be installed on machines,masterimage,w10master,Virtual machine
+Medium,Virtual machines and virtual machine scale sets should have encryption at host enabled,masterimage,w10master,Virtual machine
+Medium,Machines should have a vulnerability assessment solution,w10_cad_vdi,w10-cad-0,Virtual machine
+Medium,Guest Configuration extension should be installed on machines,w10_cad_vdi,w10-cad-0,Virtual machine
+Medium,Virtual machines and virtual machine scale sets should have encryption at host enabled,w10_cad_vdi,w10-cad-0,Virtual machine
+Medium,Key vaults should have deletion protection enabled,rg-avantdata-prod-ukwest-001,kv-avant-prod-ukw-001,Key vault
+Medium,Storage accounts should restrict network access using virtual network rules,rg-avantdata-prod-ukwest-001,dlsavantdataprod,Storage Account
+Medium,Storage account should use a private link connection,rg-avantdata-prod-ukwest-001,dlsavantdataprod,Storage Account
+Medium,Storage accounts should prevent shared key access,rg-avantdata-prod-ukwest-001,dlsavantdataprod,Storage Account
+Medium,Firewall should be enabled on Key Vault,rg-avantdata-prod-ukwest-001,kv-avant-prod-ukw-001,Key vault
+Medium,Azure Key Vaults should use private link,rg-avantdata-prod-ukwest-001,kv-avant-prod-ukw-001,Key vault
+Medium,Guest Configuration extension should be installed on machines,avant-prod-rg,avazlg01,Virtual machine
+Medium,Machines should have a vulnerability assessment solution,avant-prod-rg,avazes01,Virtual machine
+Medium,Public network access on Azure SQL Database should be disabled,avant-prod-rg,avant1,SQL server
+Medium,Management ports should be closed on your virtual machines,avant-prod-rg,avazprt002,Virtual machine
+Medium,Guest Configuration extension should be installed on machines,avant-prod-rg,avazfs01,Virtual machine
+Medium,Guest Configuration extension should be installed on machines,avant-prod-rg,avazprt002,Virtual machine
+Medium,Machines should have a vulnerability assessment solution,avant-prod-rg,avld5db001,Virtual machine
+Medium,Storage account public access should be disallowed,avant-prod-rg,avantprodrgdiag220,Storage Account
+Medium,Storage accounts should prevent shared key access,avant-prod-rg,avantprodrgdiag220,Storage Account
+Medium,Virtual machines and virtual machine scale sets should have encryption at host enabled,avant-prod-rg,avazprt002,Virtual machine
+Medium,Storage account should use a private link connection,avant-prod-rg,avantprodrgdiag,Storage Account
+Medium,Guest Configuration extension should be installed on machines,avant-prod-rg,avld5db001,Virtual machine
+Medium,Guest Configuration extension should be installed on machines,avant-prod-rg,avazdc01,Virtual machine
+Medium,Machines should have a vulnerability assessment solution,avant-prod-rg,avazbi001,Virtual machine
+Medium,Storage accounts should prevent shared key access,avant-prod-rg,avantprodrgdiag,Storage Account
+Medium,Virtual machines and virtual machine scale sets should have encryption at host enabled,avant-prod-rg,avazes01,Virtual machine
+Medium,Guest Configuration extension should be installed on machines,avant-prod-rg,avazbi001,Virtual machine
+Medium,Virtual machines and virtual machine scale sets should have encryption at host enabled,avant-prod-rg,avazlg01,Virtual machine
+Medium,Machines should have a vulnerability assessment solution,avant-prod-rg,avazca01,Virtual machine
+Medium,Azure SQL Database should have Azure Active Directory Only Authentication enabled,avant-prod-rg,avant1,SQL server
+Medium,Machines should have a vulnerability assessment solution,avant-prod-rg,avazdc01,Virtual machine
+Medium,Virtual machines and virtual machine scale sets should have encryption at host enabled,avant-prod-rg,avazfs01,Virtual machine
+Medium,Virtual machines and virtual machine scale sets should have encryption at host enabled,avant-prod-rg,avazdc02,Virtual machine
+Medium,Machines should have a vulnerability assessment solution,avant-prod-rg,avazlg01,Virtual machine
+Medium,Guest Configuration extension should be installed on machines,avant-prod-rg,avazes01,Virtual machine
+Medium,Virtual machines and virtual machine scale sets should have encryption at host enabled,avant-prod-rg,avazex01,Virtual machine
+Medium,Virtual machines and virtual machine scale sets should have encryption at host enabled,avant-prod-rg,avazbi001,Virtual machine
+Medium,Storage accounts should prevent shared key access,avant-prod-rg,avanthomes,Storage Account
+Medium,Private endpoint connections on Azure SQL Database should be enabled,avant-prod-rg,avant1,SQL server
+Medium,Machines should have a vulnerability assessment solution,avant-prod-rg,avazfs01,Virtual machine
+Medium,Guest Configuration extension should be installed on machines,avant-prod-rg,avazex01,Virtual machine
+Medium,Machines should have a vulnerability assessment solution,avant-prod-rg,avazdc02,Virtual machine
+Medium,Storage account public access should be disallowed,avant-prod-rg,avantprodrgdiag,Storage Account
+Medium,Management ports should be closed on your virtual machines,avant-prod-rg,avlinux,Virtual machine
+Medium,Guest Configuration extension should be installed on machines,avant-prod-rg,avazdc02,Virtual machine
+Medium,Virtual machines and virtual machine scale sets should have encryption at host enabled,avant-prod-rg,avlinux,Virtual machine
+Medium,Storage accounts should restrict network access using virtual network rules,avant-prod-rg,avantprodrgdiag220,Storage Account
+Medium,Storage account public access should be disallowed,avant-prod-rg,avanthomes,Storage Account
+Medium,Storage accounts should restrict network access using virtual network rules,avant-prod-rg,avantprodrgdiag,Storage Account
+Medium,Machines should have a vulnerability assessment solution,avant-prod-rg,avlinux,Virtual machine
+Medium,Machines should have a vulnerability assessment solution,avant-prod-rg,avazprt002,Virtual machine
+Medium,Storage accounts should restrict network access using virtual network rules,avant-prod-rg,avanthomes,Storage Account
+Medium,Guest Configuration extension should be installed on machines,avant-prod-rg,avazca01,Virtual machine
+Medium,Guest Configuration extension should be installed on machines,avant-prod-rg,avlinux,Virtual machine
+Medium,Machines should have a vulnerability assessment solution,avant-prod-rg,avazex01,Virtual machine
+Medium,Storage account should use a private link connection,avant-prod-rg,avantprodrgdiag220,Storage Account
+Medium,Storage account should use a private link connection,avant-prod-rg,avanthomes,Storage Account
+Medium,Virtual machines and virtual machine scale sets should have encryption at host enabled,avant-prod-rg,avazca01,Virtual machine
+Medium,Virtual machines and virtual machine scale sets should have encryption at host enabled,avant-prod-rg,avazdc01,Virtual machine
+Medium,Virtual machines and virtual machine scale sets should have encryption at host enabled,avant-prod-rg,avld5db001,Virtual machine
+Medium,Storage account public access should be disallowed,esb-avantdynamics-dev-rg,avantdynamicsdevsa,Storage Account
+Medium,Storage account should use a private link connection,esb-avantdynamics-dev-rg,avantdynamicsdevsa,Storage Account
+Medium,Key vaults should have deletion protection enabled,esb-avantdynamics-dev-rg,avantdynamics-dev-akv,Key vault
+Medium,Storage accounts should restrict network access using virtual network rules,esb-avantdynamics-dev-rg,avantdynamicsdevsa,Storage Account
+Medium,Storage accounts should prevent shared key access,esb-avantdynamics-dev-rg,avantdynamicsdevsa,Storage Account
+Medium,Firewall should be enabled on Key Vault,esb-avantdynamics-dev-rg,avantdynamics-dev-akv,Key vault
+Medium,Azure Key Vaults should use private link,esb-avantdynamics-dev-rg,avantdynamics-dev-akv,Key vault
+Medium,Storage accounts should restrict network access using virtual network rules,site-recovery-vault-rg,c9zpe2siterecovasrcache,Storage Account
+Medium,Storage accounts should prevent shared key access,site-recovery-vault-rg,c9zpe2siterecovasrcache,Storage Account
+Medium,Storage account public access should be disallowed,site-recovery-vault-rg,c9zpe2siterecovasrcache,Storage Account
+Medium,Storage account should use a private link connection,site-recovery-vault-rg,c9zpe2siterecovasrcache,Storage Account
+Medium,Guest Configuration extension should be installed on machines,avant-vmx-lan-rg,meraki-to-crowdstrike-datashipper,Virtual machine
+Medium,Virtual machines and virtual machine scale sets should have encryption at host enabled,avant-vmx-lan-rg,meraki-to-crowdstrike-datashipper,Virtual machine
+Medium,Machines should have a vulnerability assessment solution,avant-vmx-lan-rg,meraki-to-crowdstrike-datashipper,Virtual machine
+Medium,Storage account should use a private link connection,cloud-shell-storage-westeurope,csb10032001298ed458,Storage Account
+Medium,Storage accounts should prevent shared key access,cloud-shell-storage-westeurope,csb10032000b8a859fb,Storage Account
+Medium,Storage accounts should restrict network access using virtual network rules,cloud-shell-storage-westeurope,csb10032001298ed458,Storage Account
+Medium,Storage accounts should prevent shared key access,cloud-shell-storage-westeurope,csb10032001298ed458,Storage Account
+Medium,Storage accounts should restrict network access using virtual network rules,cloud-shell-storage-westeurope,csb10032000b8a859fb,Storage Account
+Medium,Storage account should use a private link connection,cloud-shell-storage-westeurope,csb10032000b8a859fb,Storage Account
+Medium,Machines should have a vulnerability assessment solution,rubrik-avant,rbrk-avant-cl1-vm-0,Virtual machine
+Medium,Guest Configuration extension should be installed on machines,rubrik-avant,rbrk-avant-cl1-vm-0,Virtual machine
+Medium,Storage accounts should prevent shared key access,rubrik-avant,rubrikavantstorage,Storage Account
+Medium,Storage account should use a private link connection,rubrik-avant,rubrikavantstorage,Storage Account
+Medium,Virtual machines and virtual machine scale sets should have encryption at host enabled,rubrik-avant,rbrk-avant-cl1-vm-0,Virtual machine
+Medium,Storage accounts should restrict network access using virtual network rules,esb-avantdynamics-prd-rg,avantdynamicsprdsa,Storage Account
+Medium,Key vaults should have deletion protection enabled,esb-avantdynamics-prd-rg,avantdynamics-prd-akv,Key vault
+Medium,Firewall should be enabled on Key Vault,esb-avantdynamics-prd-rg,avantdynamics-prd-akv,Key vault
+Medium,Storage account public access should be disallowed,esb-avantdynamics-prd-rg,avantdynamicsprdsa,Storage Account
+Medium,Diagnostic logs in App Service should be enabled,esb-avantdynamics-prd-rg,avantdynamics-prd-api-crm,App service
+Medium,Storage account should use a private link connection,esb-avantdynamics-prd-rg,avantdynamicsprdsa,Storage Account
+Medium,Storage accounts should prevent shared key access,esb-avantdynamics-prd-rg,avantdynamicsprdsa,Storage Account
+Medium,Azure Key Vaults should use private link,esb-avantdynamics-prd-rg,avantdynamics-prd-akv,Key vault
+Medium,Email notification to subscription owner for high severity alerts should be enabled,No resource group,99079279-b359-4c66-aeed-9cafbdb84097,Subscription
+Medium,Firewall should be enabled on Key Vault,esb-avantdynamics-ppd-rg,avantdynamics-ppd-akv,Key vault
+Medium,Storage account should use a private link connection,esb-avantdynamics-ppd-rg,avantdynamicsppdsa,Storage Account
+Medium,Storage accounts should restrict network access using virtual network rules,esb-avantdynamics-ppd-rg,avantdynamicsppdsa,Storage Account
+Medium,Storage accounts should prevent shared key access,esb-avantdynamics-ppd-rg,avantdynamicsppdsa,Storage Account
+Medium,Storage account public access should be disallowed,esb-avantdynamics-ppd-rg,avantdynamicsppdsa,Storage Account
+Medium,Azure Key Vaults should use private link,esb-avantdynamics-ppd-rg,avantdynamics-ppd-akv,Key vault
+Medium,Storage account public access should be disallowed,coins_azure,coinsazurebulkstorage,Storage Account
+Medium,Storage accounts should restrict network access using virtual network rules,coins_azure,coinsazurebulkstorage,Storage Account
+Medium,Private endpoint connections on Azure SQL Database should be enabled,coins_azure,coinsazure,SQL server
+Medium,Public network access on Azure SQL Database should be disabled,coins_azure,coinsazure,SQL server
+Medium,Azure SQL Database should have Azure Active Directory Only Authentication enabled,coins_azure,coinsazure,SQL server
+Medium,Storage account should use a private link connection,coins_azure,coinsazurebulkstorage,Storage Account
+Medium,Storage accounts should prevent shared key access,coins_azure,coinsazurebulkstorage,Storage Account
+Medium,Email notification to subscription owner for high severity alerts should be enabled,No resource group,215ac9bf-7032-4d13-af23-4a35c2b8d656,Subscription
+Medium,Management ports should be closed on your virtual machines,avant-secure-rg,avazlinux,Virtual machine
+Medium,Guest Configuration extension should be installed on machines,avant-secure-rg,avazlinux,Virtual machine
+Medium,Virtual machines and virtual machine scale sets should have encryption at host enabled,avant-secure-rg,avazlinux,Virtual machine
+Medium,Guest Configuration extension should be installed on machines,avant-secure-rg,avazin01,Virtual machine
+Medium,Machines should have a vulnerability assessment solution,avant-secure-rg,avazin01,Virtual machine
+Medium,Management ports should be closed on your virtual machines,avant-secure-rg,avazin01,Virtual machine
+Medium,Machines should have a vulnerability assessment solution,avant-secure-rg,avazlinux,Virtual machine
+Medium,Virtual machines and virtual machine scale sets should have encryption at host enabled,avant-secure-rg,avazin01,Virtual machine
+Medium,Machines should have a vulnerability assessment solution,mrg-cisco-meraki-vmx-20210514151620,avant-vmx-vm,Virtual machine
+Medium,Guest Configuration extension should be installed on machines,mrg-cisco-meraki-vmx-20210514151620,avant-vmx-vm,Virtual machine
+Medium,IP forwarding on your virtual machine should be disabled,mrg-cisco-meraki-vmx-20210514151620,avant-vmx-vm,Virtual machine
+Medium,Virtual machines and virtual machine scale sets should have encryption at host enabled,mrg-cisco-meraki-vmx-20210514151620,avant-vmx-vm,Virtual machine
+Medium,Storage accounts should prevent shared key access,rubrikpso-rg,rubrikpsostorageaccount,Storage Account
+Medium,Storage account should use a private link connection,rubrikpso-rg,rubrikpsostorageaccount,Storage Account
+Medium,Guest Configuration extension should be installed on machines,avant-asav-fw1-rg,avant-asav-fw1-vm,Virtual machine
+Medium,Virtual machines and virtual machine scale sets should have encryption at host enabled,avant-asav-fw1-rg,avant-asav-fw1-vm,Virtual machine
+Medium,Storage accounts should restrict network access using virtual network rules,avant-asav-fw1-rg,avantasavfw1vmaad012,Storage Account
+Medium,Storage account public access should be disallowed,avant-asav-fw1-rg,avantasavfw1vmaad012,Storage Account
+Medium,Storage accounts should prevent shared key access,avant-asav-fw1-rg,avantasavfw1vmaad012,Storage Account
+Medium,Storage account should use a private link connection,avant-asav-fw1-rg,avantasavfw1vmaad012,Storage Account
+Medium,Storage account public access should be disallowed,avant-dr-rg,yvnyoaavantdrrasrcache,Storage Account
+Medium,Storage accounts should prevent shared key access,avant-dr-rg,avantdrrgdiag,Storage Account
+Medium,Storage accounts should prevent shared key access,avant-dr-rg,yvnyoaavantdrrasrcache,Storage Account
+Medium,Storage account should use a private link connection,avant-dr-rg,yvnyoaavantdrrasrcache,Storage Account
+Medium,Storage accounts should restrict network access using virtual network rules,avant-dr-rg,yvnyoaavantdrrasrcache,Storage Account
+Medium,Storage account should use a private link connection,avant-dr-rg,avantdrrgdiag,Storage Account
+Medium,Storage account public access should be disallowed,avant-dr-rg,avantdrrgdiag,Storage Account
+Medium,Storage accounts should restrict network access using virtual network rules,avant-dr-rg,avantdrrgdiag,Storage Account

@@ -1,0 +1,1315 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>TIEVA – Azure Landing Zone Report</title>
+<style>
+  :root{
+    /* Brand */
+    --brand-green:#2DA58E; --white:#FFFFFF;
+
+    /* Status */
+    --critical:#ef4444; --moderate:#f59e0b; --excellent:#10b981;
+
+    /* UI */
+    --bg:#ffffff; --fg:#111827; --muted:#6b7280; --border:#e5e7eb;
+    --canvas: var(--brand-green);
+    --link:#0f5eff;
+  }
+
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{margin:0;background:var(--canvas);color:var(--fg);font:14px/1.45 system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif}
+  a{color:var(--link);text-decoration:none}
+  a:hover{text-decoration:underline}
+  .wrap{max-width:1100px;margin:0 auto;padding:24px}
+
+  /* Header */
+  .brandbar{background:#000;color:#fff}
+  .brandwrap{max-width:1100px;margin:0 auto;padding:14px 24px;display:flex;align-items:center;justify-content:space-between;gap:12px}
+  .brandtitle{font-size:18px;font-weight:600;letter-spacing:.2px}
+  .btnrow{display:flex;gap:8px;flex-wrap:wrap}
+  .header-btn{appearance:none;border:1px solid rgba(255,255,255,.25);background:transparent;color:#fff;border-radius:8px;padding:8px 12px;cursor:pointer}
+  .header-btn:hover{border-color:#fff}
+
+  /* Intro */
+  .pagetitle{font-size:22px;font-weight:700;color:#fff;margin:12px 0 6px}
+  .status{font-size:12px;color:#fff;opacity:.95;margin-bottom:10px}
+
+  /* Uploader */
+  .uploader{background:#fff;border:1px solid var(--border);border-radius:10px;padding:12px;margin-bottom:16px}
+  .picker-row{display:grid;grid-template-columns:1fr;gap:12px}
+  .filepicker{display:flex;align-items:center;gap:8px;background:#fff;border:1px solid var(--border);border-radius:10px;padding:8px 10px}
+  .filepicker input[type="file"]{position:absolute;left:-9999px}
+  .filepicker .pickbtn{appearance:none;border:1px solid var(--border);background:#f9fafb;border-radius:8px;padding:6px 10px;cursor:pointer;font-size:13px}
+  .filepicker .name{font-size:13px;color:#374151;min-width:180px}
+  .filepicker .desc{font-size:12px;color:#6b7280}
+
+  /* Layout & cards */
+  .two-col{display:grid;grid-template-columns:1.2fr 1fr;gap:16px}
+  .card{background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:16px}
+  h2{margin:0 0 10px;font-size:18px}
+  h3{margin:0 0 8px;font-size:16px}
+  .muted{color:var(--muted)}
+  .mono{font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,"Courier New",monospace}
+  .spacer{height:16px}
+
+  /* Pills */
+  .pill{display:inline-block;font-size:12px;border-radius:999px;padding:2px 8px;border:1px solid var(--border)}
+  .pill.critical{background:var(--critical);color:#fff;border-color:transparent}
+  .pill.moderate{background:var(--moderate);color:#fff;border-color:transparent}
+  .pill.excellent{background:var(--excellent);color:#fff;border-color:transparent}
+
+  /* Priority traffic lights */
+  .prio{display:inline-block;font-size:11px;border-radius:999px;padding:2px 8px;margin-left:6px;color:#fff}
+  .prio.high{background:#ef4444}
+  .prio.medium{background:#f59e0b}
+  .prio.low{background:#10b981}
+
+  /* Bars */
+  .kv{display:grid;grid-template-columns:210px 1fr;gap:10px;align-items:center}
+  .kv + .kv{margin-top:8px}
+  .bar{position:relative;height:12px;border-radius:999px;background:#eef2f7;overflow:hidden;margin-top:6px}
+  .seg{position:absolute;top:0;bottom:0}
+  .seg.red{left:0;background:var(--critical)}
+  .seg.amber{background:var(--moderate)}
+  .seg.green{right:0;background:var(--excellent)}
+  .marker{position:absolute;top:-5px;width:2px;height:22px;background:#111;border-radius:1px}
+  .legend{display:flex;gap:16px;margin-top:6px;font-size:12px;color:var(--muted)}
+  .legend span::before{content:"";display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:6px;vertical-align:middle}
+  .lred::before{background:var(--critical)} .lamber::before{background:var(--moderate)} .lgreen::before{background:var(--excellent)}
+
+  /* Category list */
+  .catlist{display:grid;grid-template-columns:1fr auto auto;gap:8px 12px;align-items:center}
+  .catname a{color:inherit}
+  .microbar{height:10px;position:relative;border-radius:999px;background:#f1f3f7;min-width:280px}
+  .microbar .seg{height:100%}
+  .microbar .marker{top:-4px;height:18px}
+  .ratingtext{font-weight:600;text-transform:uppercase;font-size:12px;color:#374151}
+
+  /* Improve (collapsible details) */
+  details.improve-card{border:1px solid var(--border);border-radius:10px;background:#fff}
+  details.improve-card + details.improve-card{margin-top:12px}
+  summary.improve-head{list-style:none;cursor:pointer;padding:14px;display:flex;justify-content:space-between;align-items:center;gap:12px}
+  summary.improve-head::-webkit-details-marker{display:none}
+  .improve-title{font-size:16px;font-weight:700}
+  .rec-count{font-size:12px;color:#6b7280}
+  .improve-body{padding:0 14px 14px}
+
+  .breakdown{border:1px solid var(--border);border-radius:8px;padding:10px;margin-top:6px}
+  .breakdown .label{font-size:12px;color:#6b7280;margin-bottom:6px}
+  .result-meta{display:flex;justify-content:space-between;margin-top:6px;font-size:12px;color:#6b7280}
+
+  /* Recommendations table */
+  .rectable{width:100%;border-collapse:collapse;margin-top:12px}
+  .rectable th, .rectable td{padding:10px 8px;border-bottom:1px solid var(--border);text-align:left;vertical-align:top;white-space:pre-wrap}
+  .rectable th{background:#fafafa;font-weight:600}
+  .rectable td:first-child{width:35%}
+  .rectable th:nth-child(2), .rectable td:nth-child(2){width:35%}
+  .rectable th:nth-child(3), .rectable td:nth-child(3){width:30%}
+  .rectable td ul{margin:6px 0 6px 18px; padding:0}
+  .rectable td ul li{margin:0 0 4px}
+  .reasonline{font-size:12px;color:#6b7280;margin-top:6px}
+
+  /* Callouts / banners */
+  .callout{background:#fffef7;border:1px solid var(--border);border-left:4px solid #f59e0b;border-radius:8px;padding:12px;margin:0 0 16px}
+  .callout .t{font-weight:700;margin-bottom:6px}
+  .callout .small{font-size:12px;color:#6b7280}
+
+  /* Executive summary */
+  .metrics-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin:6px 0 10px}
+  .metric-card{background:#fff;border:1px solid var(--border);border-radius:10px;padding:12px}
+  .metric-card .k{font-size:12px;color:#6b7280;margin-bottom:4px}
+  .metric-card .v{font-size:18px;font-weight:700}
+  .tags{display:flex;flex-wrap:wrap;gap:6px}
+  .tags .pill{font-size:11px;padding:2px 8px}
+  .exec-section{margin-top:8px}
+  .exec-numbered{counter-reset:item}
+  .exec-numbered li{counter-increment:item;margin:0 0 12px}
+  .exec-numbered li::marker{content:counters(item,".") ". "}
+  .prior-explainer{font-size:12px;color:#6b7280;margin:6px 0 0}
+
+  /* Presentation mode */
+  body.present .uploader, body.present .status{display:none !important}
+  body.present .brandbar .btnrow .dl-only{display:none}
+  body.present .brandbar .btnrow .present-toggle{border-color:#10b981;background:#10b981;color:#fff}
+
+  @media (max-width: 900px){
+    .two-col{grid-template-columns:1fr}
+    .metrics-grid{grid-template-columns:1fr 1fr}
+  }
+
+  @media print{
+    .uploader, .status{display:none !important}
+    .wrap{padding:0}
+    body{background:#fff}
+    a{color:inherit;text-decoration:none}
+    .card, details.improve-card{page-break-inside:avoid}
+    .brandbar{padding:6px 0}
+  }
+</style>
+</head>
+<body>
+  <!-- Header -->
+  <div class="brandbar">
+    <div class="brandwrap">
+      <div class="brandtitle">TIEVA — Azure Landing Zone Assessment</div>
+      <div class="btnrow">
+        <button id="presentBtn" class="header-btn present-toggle">Presentation mode</button>
+        <button id="wordBtn" class="header-btn dl-only">Download Word</button>
+        <button id="pptBtn" class="header-btn dl-only">Download PowerPoint</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="wrap" id="page">
+    <div>
+      <div class="pagetitle">Understanding your cloud adoption journey</div>
+      <div class="status">Tip: Import your assessment CSV and (optionally) an explanations file. If provided, include “Recommended action”, “Explanation”, and “What needs to happen”.</div>
+    </div>
+
+    <!-- Data quality banner (shown conditionally) -->
+    <div id="qualityBanner" class="callout" style="display:none"></div>
+
+    <!-- Uploader -->
+    <div class="uploader">
+      <div class="picker-row">
+        <!-- Assessment importer -->
+        <div class="filepicker">
+          <input id="fileInput" type="file" accept=".csv,text/csv" />
+          <button id="btnAssess" type="button" class="pickbtn">Import assessment CSV</button>
+          <span class="name" id="fn-assess">(no file selected)</span>
+          <span class="desc">Accepted: .csv (Azure export)</span>
+        </div>
+
+        <!-- Explanations loader -->
+        <div class="filepicker">
+          <input id="mapInput" type="file" accept=".xlsx,.csv" />
+          <button id="btnExpl" type="button" class="pickbtn">Load explanations (xlsx/csv)</button>
+          <span class="name" id="fn-expl">(no file selected)</span>
+          <span class="desc">Headers: “Recommended action”, “Explanation”, “What needs to happen”</span>
+        </div>
+      </div>
+      <div class="hint">Importing a new assessment overwrites the current view. If no explanation is found, the report shows “No Explanation”.</div>
+    </div>
+
+    <div class="two-col">
+      <!-- Overall -->
+      <div class="card">
+        <h2>Your overall results</h2>
+        <div class="kv"><div>Overall rating</div><div id="overallRating"><span class="pill">—</span></div></div>
+        <div class="kv"><div>Your result</div><div id="overallScore" class="mono">—</div></div>
+        <div class="kv"><div>Summary</div><div class="muted">A snapshot of the individual categories you need to improve.</div></div>
+
+        <div class="bar" id="overallBar">
+          <div class="seg red"   id="segRed"   style="left:0;width:33%"></div>
+          <div class="seg amber" id="segAmber" style="left:33%;width:33%"></div>
+          <div class="seg green" id="segGreen" style="left:66%;width:34%"></div>
+          <div class="marker" id="marker" style="left:0%"></div>
+        </div>
+        <div class="legend">
+          <span class="lred">Critical</span>
+          <span class="lamber">Moderate</span>
+          <span class="lgreen">Excellent</span>
+        </div>
+      </div>
+
+      <!-- Categories list -->
+      <div class="card">
+        <h2>Categories that influenced your results</h2>
+        <div class="catlist" id="catList"></div>
+      </div>
+    </div>
+
+    <div class="spacer"></div>
+
+    <!-- Executive summary -->
+    <div class="card" id="execSummary">
+      <h2>Executive summary</h2>
+      <div id="execTop"></div>
+      <div class="prior-explainer" id="priorExplainer"></div>
+      <div id="execRisks" class="exec-section"></div>
+    </div>
+
+    <div class="spacer"></div>
+
+    <!-- Improve: collapsible details per category -->
+    <div class="card">
+      <h2>Improve your results</h2>
+      <div id="improve"></div>
+    </div>
+
+    <div class="spacer"></div>
+
+    <!-- Unanswered -->
+    <div class="card">
+      <h2>Unanswered</h2>
+      <div id="unanswered"></div>
+    </div>
+  </div>
+
+<!-- SheetJS for reading Excel -->
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<!-- Try PptxGenJS (primary CDN) -->
+<script src="https://cdn.jsdelivr.net/npm/pptxgenjs@3.12.0/dist/pptxgen.bundle.js"></script>
+<script>
+/* ========= Utility: ensure PptxGenJS is loaded ========= */
+function loadScript(url){
+  return new Promise((resolve,reject)=>{
+    const s=document.createElement('script');
+    s.src=url; s.async=true; s.onload=()=>resolve(); s.onerror=()=>reject(new Error('Failed to load '+url));
+    document.head.appendChild(s);
+  });
+}
+async function ensurePptx(){
+  if (window.PptxGenJS) return window.PptxGenJS;
+  const cdns = [
+    'https://unpkg.com/pptxgenjs@3.12.0/dist/pptxgen.bundle.js',
+    'https://cdn.jsdelivr.net/npm/pptxgenjs@3.12.0/dist/pptxgen.min.js'
+  ];
+  for (const url of cdns){
+    try { await loadScript(url); if (window.PptxGenJS) return window.PptxGenJS; } catch(e){}
+  }
+  throw new Error('PptxGenJS could not be loaded from CDNs.');
+}
+
+/* ---------- CSV parsing ---------- */
+function parseCSV(text){
+  const rows=[]; let cur=[], val="", i=0, q=false;
+  while(i<text.length){
+    const c=text[i];
+    if(q){
+      if(c==='\"'){ if(text[i+1]==='\"'){ val+='\"'; i+=2; } else { q=false; i++; } }
+      else { val+=c; i++; }
+    } else {
+      if(c==='\"'){ q=true; i++; }
+      else if(c===','){ cur.push(val); val=""; i++; }
+      else if(c==='\n'){ cur.push(val); rows.push(cur); cur=[]; val=""; i++; }
+      else if(c==='\r'){ i++; }
+      else { val+=c; i++; }
+    }
+  }
+  cur.push(val); rows.push(cur);
+  while(rows.length && rows[rows.length-1].every(x=>x==="")) rows.pop();
+  return rows;
+}
+
+/* ---------- Constants & helpers ---------- */
+const CATS = [
+ "About your organization",
+ "Azure Billing and Active Directory",
+ "Identity and access management",
+ "Network topology and connectivity",
+ "Resource organization",
+ "Governance",
+ "Management",
+ "Security",
+ "Platform automation and DevOps",
+];
+
+function tstr(s){ return String(s||"").trim(); }
+function norm(s){
+  return String(s||"")
+    .replace(/[’‘“”]/g,'"')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g," ")
+    .trim()
+    .replace(/\s+/g," ");
+}
+function clsForRating(r){
+  const x=(r||"").toLowerCase();
+  if(x.startsWith("crit")) return "pill critical";
+  if(x.startsWith("mod"))  return "pill moderate";
+  if(x.startsWith("exc"))  return "pill excellent";
+  return "pill";
+}
+function thresholds(max){ const c=Math.round(max/3), m=Math.round(2*max/3); return {crit:c, mod:m, max}; }
+
+/* ---------- Explanation & WHAT maps + fuzzy match ---------- */
+let explanationMap = {};
+let whatMap = {};
+function mergeExplanationMap(newMap){ explanationMap = Object.assign({}, explanationMap, newMap||{}); }
+function mergeWhatMap(newMap){ whatMap = Object.assign({}, whatMap, newMap||{}); }
+
+const STOP = new Set(["the","and","for","to","of","in","on","with","is","a","an","that","your","most","into","ensure","used","use"]);
+function tokens(s){ return norm(s).split(" ").filter(w=>w && !STOP.has(w)); }
+function jaccard(a,b){ const A=new Set(a),B=new Set(b); if(!A.size||!B.size) return 0; let inter=0; A.forEach(x=>{if(B.has(x)) inter++}); return inter/(A.size+B.size-inter); }
+
+function lookupExplanation(actionText){
+  const n=norm(actionText); if(!n) return "No Explanation";
+  if(explanationMap[n]) return explanationMap[n];
+  for(const k of Object.keys(explanationMap)){ if(n.includes(k)||k.includes(n)) return explanationMap[k]; }
+  const tA=tokens(n); let best={score:0,key:null};
+  for(const k of Object.keys(explanationMap)){ const score=jaccard(tA, tokens(k)); if(score>best.score) best={score,key:k}; }
+  return best.key && best.score>=0.55 ? explanationMap[best.key] : "No Explanation";
+}
+function lookupWhat(actionText){
+  const n=norm(actionText); if(!n) return "";
+  if(whatMap[n]) return whatMap[n];
+  for(const k of Object.keys(whatMap)){ if(n.includes(k)||k.includes(n)) return whatMap[k]; }
+  const tA=tokens(n); let best={score:0,key:null};
+  for(const k of Object.keys(whatMap)){ const score=jaccard(tA, tokens(k)); if(score>best.score) best={score,key:k}; }
+  return best.key && best.score>=0.55 ? whatMap[best.key] : "";
+}
+
+/* ---------- Q&A grouping & confidence ---------- */
+function groupQnAByQuestion(qna){
+  const iCat = qna.header.indexOf("Category");
+  const iQ   = qna.header.indexOf("Question");
+  const iSel = qna.header.indexOf("Selected Answer");
+  if (iCat === -1 || iQ === -1 || iSel === -1) return {};
+
+  const looksBlank = v => {
+    const s = tstr(v).toLowerCase().replace(/[^a-z0-9]/g,"");
+       return !s || ["-","--","na","n/a","none","unanswered","notselected","unknown","notsure"].includes(s);
+  };
+
+  const byCat = {};
+  for (const row of qna.data){
+    const cat = tstr(row[iCat]);
+    const q   = tstr(row[iQ]);
+    if (!cat || !q) continue;
+
+    const sel = row[iSel];
+    const answeredNow = !looksBlank(sel);
+    const selectedVal = answeredNow ? tstr(sel) : "";
+
+    byCat[cat] ??= {};
+    const g = byCat[cat][q] ?? { answered:false, selected:"" };
+    if (answeredNow) { g.answered = true; g.selected = selectedVal; }
+    byCat[cat][q] = g;
+  }
+  return byCat;
+}
+function categoryConfidence(catName, qnaGroups){
+  const g = (qnaGroups||{})[catName] || {};
+  const total = Object.keys(g).length;
+  if(!total) return {pct: 100, label:'High'};
+  const answered = Object.values(g).filter(v=>v.answered).length;
+  const pct = Math.round((answered/total)*100);
+  const label = pct>=80?'High':pct>=60?'Medium':'Low';
+  return {pct, label};
+}
+function overallConfidence(qnaGroups){
+  const cats = Object.values(qnaGroups||{});
+  let total=0, answered=0;
+  cats.forEach(g=>{
+    const qs = Object.values(g||{});
+    total += qs.length;
+    answered += qs.filter(v=>v.answered).length;
+  });
+  if(!total) return 100;
+  return Math.round((answered/total)*100);
+}
+
+/* ---------- Top block extraction ---------- */
+function findRowIndex(rows, label){
+  for(let i=0;i<rows.length;i++){
+    const a=(rows[i][0]||"").trim();
+    if(a.startsWith(label)) return i;
+  }
+  return -1;
+}
+function extractTop(rows){
+  const overallIdx = findRowIndex(rows,"Your overall results");
+  const overall = {rating:"", score:0, max:0};
+  if(overallIdx>=0){
+    overall.rating=tstr(rows[overallIdx][1]);
+    const frac=tstr(rows[overallIdx][2]).replace(/'/g,"");
+    const m=frac.match(/(\d+)\s*\/\s*(\d+)/);
+    if(m){ overall.score=+m[1]; overall.max=+m[2]; }
+  }
+  const cats=[];
+  for(const name of CATS){
+    const i=findRowIndex(rows,name);
+    if(i>=0){
+      const rating=tstr(rows[i][1]);
+      const frac=tstr(rows[i][2]).replace(/'/g,"");
+      const m=frac.match(/(\d+)\s*\/\s*(\d+)/);
+      cats.push({category:name, rating, score:m?+m[1]:0, max:m?+m[2]:0});
+    }
+  }
+  return {overall,cats};
+}
+
+/* ---------- Table slicing ---------- */
+function sliceTable(rows, header){
+  const hdr=header.join("|").toLowerCase();
+  let start=-1;
+  for(let i=0;i<rows.length;i++){
+    const line=rows[i].map(x=>String(x||"").trim()).join("|").toLowerCase();
+    if(line===hdr){ start=i; break; }
+  }
+  if(start<0) return {header:[],data:[]};
+  const head=rows[start].map(x=>String(x||"").trim());
+  const data=[];
+  for(let r=start+1;r<rows.length;r++){
+    const row=rows[r];
+    const plain=row.join("").trim();
+    if(plain==="") break;
+    if(String(row[0]||"").trim().startsWith("-----------")) break;
+    data.push(row.map(x=>String(x||"")));
+  }
+  return {header:head,data};
+}
+
+/* ---------- Recommendations grouping ---------- */
+function groupRecsDetailed(recs){
+  const idx = {
+    cat: recs.header.indexOf("Category"),
+    text: recs.header.indexOf("Link-Text"),
+    link: recs.header.indexOf("Link"),
+    ctx:  recs.header.indexOf("Context"),
+    prio: recs.header.indexOf("Priority")
+  };
+  const map={};
+  for(const row of recs.data){
+    const cat=tstr(row[idx.cat]);
+    const theText=tstr(row[idx.text]);
+    if(!cat || !theText) continue;
+    const item={
+      text: theText,
+      link:tstr(row[idx.link]),
+      context:tstr(row[idx.ctx]),
+      priority:tstr(row[idx.prio])
+    };
+    (map[cat] ??= []).push(item);
+  }
+  return map;
+}
+
+/* ---------- PRIORITISATION MODEL (with ALZ umbrella) ---------- */
+const DEP_MAP = [
+  { re:/\blanding\s*zone\b|\balz\b|conceptual architecture|ready\/landing-zone/i, tag:'Foundation orchestration' }, // umbrella
+  { re:/mfa|multifactor|conditional access|entra/i, tag:'Identity baseline' },
+  { re:/lighthouse|aobo|partner|delegate/i,        tag:'Delegated access' },
+  { re:/policy|governance|initiative|blueprint/i,  tag:'Guardrails' },
+  { re:/management group|subscription/i,           tag:'Org structure' },
+  { re:/log analytics|monitor|activity log|diagnostic|logging/i, tag:'Observability' },
+  { re:/defender|sentinel|zero trust/i,            tag:'Security posture' },
+  { re:/virtual wan|hub|expressroute|vpn|connectivity/i, tag:'Network foundation' },
+  { re:/cost|budget/i,                              tag:'Financial governance' },
+  { re:/terraform|bicep|iac|pipeline|devops/i,      tag:'Automation' },
+];
+function matchDependency(title){
+  for(const d of DEP_MAP){ if(d.re.test(title)) return d.tag; }
+  return '';
+}
+function prioFromCSV(p){
+  const x=(p||'').toLowerCase();
+  if(x.startsWith('h')) return 3;
+  if(x.startsWith('m')) return 2;
+  if(x) return 1;
+  return 0;
+}
+function sevFromRating(r){
+  const x=(r||'').toLowerCase();
+  if(x.startsWith('crit')) return 3;
+  if(x.startsWith('mod'))  return 2;
+  if(x.startsWith('exc'))  return 0;
+  return 0;
+}
+/* Score = 4*CSV + 3*Severity + 2*Dependency + Umbrella(+8 if ALZ) + RiskPenalty(-1/-2) */
+function scoreAction(action, catName, catRating, qnaGroups){
+  const title = action.text || '';
+  const csv = prioFromCSV(action.priority);
+  const sev = sevFromRating(catRating);
+  const depTag = matchDependency(title);
+  const dep = depTag ? 1 : 0;
+  const umbrella = /\blanding\s*zone\b|\balz\b|conceptual architecture|ready\/landing-zone/i.test(title) ? 1 : 0;
+  const conf = categoryConfidence(catName, qnaGroups).pct;
+  const riskPenalty = conf < 40 ? -2 : conf < 60 ? -1 : 0;
+  const score = 4*csv + 3*sev + 2*dep + (umbrella ? 8 : 0) + riskPenalty;
+
+  const reasons = [];
+  if(action.priority){ reasons.push(`CSV priority: ${action.priority}`); }
+  reasons.push(`Category: ${catRating||'—'}`);
+  if(depTag) reasons.push(`Dependency: ${depTag}`);
+  if(umbrella) reasons.push('Umbrella: Azure Landing Zone transition (+8)');
+  if(riskPenalty) reasons.push(`Confidence penalty: ${riskPenalty}`);
+
+  return { score, reasons, depTag, umbrella };
+}
+function sortActionsByPriority(actions, catName, catRating, qnaGroups){
+  return actions
+    .map(a => ({ a, s: scoreAction(a, catName, catRating, qnaGroups) }))
+    .sort((x,y)=> y.s.score - x.s.score)
+    .map(x => ({...x.a, __score:x.s.score, __reasons:x.s.reasons, __dep:x.s.depTag, __umbrella:x.s.umbrella}));
+}
+
+/* ---------- Formatting helpers ---------- */
+function formatSteps(txt){
+  if(!txt) return "";
+  const s = String(txt).trim();
+  if(!s) return "";
+  let parts = s.split(/\r?\n+/).map(x=>x.trim()).filter(Boolean);
+  if(parts.length <= 1){
+    parts = s.split(/\s*(?:\d+\)|\d+\.)\s+|;\s+/g).map(x=>x.trim()).filter(Boolean);
+  }
+  if(parts.length <= 1){
+    parts = s.split(/(?<=[.?!])\s+(?=[A-Z(])/).map(x=>x.trim()).filter(Boolean);
+  }
+  if(parts.length <= 1) return s;
+  return `<ul>${parts.map(p=>`<li>${p.replace(/^\d+\)?\.?\s*/,'')}</li>`).join("")}</ul>`;
+}
+function genDoD(actionText){
+  const a = (actionText||'').toLowerCase();
+  let bullets = [];
+  if(a.includes('multifactor') || a.includes('mfa')){
+    bullets = [
+      '≥ 98% user MFA registration completed (excl. break-glass).',
+      'Conditional Access enforces MFA for all users; stronger for admins.',
+      'Break-glass accounts documented, excluded, and tested quarterly.',
+      'Alerts exist for risky sign-ins and disabled MFA scenarios.'
+    ];
+  } else if(a.includes('lighthouse')){
+    bullets = [
+      'Delegated access deployed via Azure Lighthouse at MG/sub scopes.',
+      'Roles are least-privilege; no standing Owner.',
+      'Partner actions visible in central Activity Logs / Sentinel.'
+    ];
+  } else if(a.includes('virtual wan') || a.includes('hub')){
+    bullets = [
+      'Standard topology live (vWAN or hub/spoke) with documented routing.',
+      'Dual connectivity paths tested; failover validated.',
+      'DNS and Firewall baselines implemented and versioned.'
+    ];
+  }
+  if(!bullets.length) return '';
+  return `<div style="margin-top:8px"><strong>Definition of done</strong>${formatSteps(bullets.join('; '))}</div>`;
+}
+
+/* ---------- Renderers (page) ---------- */
+function renderTop(overall){
+  document.getElementById("overallRating").innerHTML =
+    `<span class="${clsForRating(overall.rating)}">${overall.rating||"—"}</span>`;
+  document.getElementById("overallScore").textContent = `${overall.score||0}/${overall.max||0}`;
+  const max = overall.max || 171;
+  const {crit,mod} = thresholds(max);
+  const redW   = Math.max(0, Math.min(crit, max)) / max * 100;
+  const amberW = Math.max(0, Math.min(mod,  max) - Math.min(crit,max)) / max * 100;
+  const greenW = Math.max(0, max - Math.min(mod, max)) / max * 100;
+  document.getElementById("segRed").style.width   = redW.toFixed(2)+"%";
+  document.getElementById("segAmber").style.left  = redW.toFixed(2)+"%";
+  document.getElementById("segAmber").style.width = amberW.toFixed(2)+"%";
+  document.getElementById("segGreen").style.width = greenW.toFixed(2)+"%";
+  const markerPct = max? (overall.score/max*100) : 0;
+  document.getElementById("marker").style.left = Math.max(0, Math.min(100, markerPct)).toFixed(1)+"%";
+}
+
+function renderCatCompact(cats){
+  const el=document.getElementById("catList");
+  el.innerHTML="";
+  cats.forEach(c=>{
+    const max = c.max || 1;
+    const {crit,mod} = thresholds(max);
+
+    const redW   = Math.max(0, Math.min(crit, max)) / max * 100;
+    const amberW = Math.max(0, Math.min(mod,  max) - Math.min(crit,max)) / max * 100;
+    const greenW = Math.max(0, max - Math.min(mod, max)) / max * 100;
+    const markerPct = Math.max(0, Math.min(100, (c.score/max)*100));
+
+    const row = document.createElement("div");
+    row.className="catname";
+    row.innerHTML = `
+      <div class="catname"><a class="catlink" href="#improve-${norm(c.category)}" data-target="improve-${norm(c.category)}">${c.category}</a></div>
+      <div class="microbar">
+        <div class="seg red" style="left:0;width:${redW}%"></div>
+        <div class="seg amber" style="left:${redW}%;width:${amberW}%"></div>
+        <div class="seg green" style="right:0;width:${greenW}%"></div>
+        <div class="marker" style="left:${markerPct}%"></div>
+      </div>
+      <div class="ratingtext">${(c.rating||"").toUpperCase()}</div>
+    `;
+    row.style.display="contents";
+    const name = row.children[0], bar=row.children[1], rating=row.children[2];
+    el.appendChild(name); el.appendChild(bar); el.appendChild(rating);
+  });
+
+  el.addEventListener('click', (e)=>{
+    const a = e.target.closest('.catlink');
+    if(!a) return;
+    e.preventDefault();
+    const id=a.getAttribute('data-target');
+    const card=document.getElementById(id);
+    if(card){
+      if(!card.open) card.open = true;
+      card.scrollIntoView({behavior:"smooth", block:"start"});
+      card.classList.remove('flash'); void card.offsetWidth; card.classList.add('flash');
+      setTimeout(()=>card.classList.remove('flash'), 1300);
+    }
+  }, {once:false});
+}
+
+/* ---- Improve cards with PRIORITY ORDER + Confidence + DoD ---- */
+function renderImproveCards(cats, recMap){
+  const root=document.getElementById("improve"); root.innerHTML="";
+  const qnaGroups = window.__ALZ_DATA__?.qnaGroups || {};
+
+  cats.forEach((c, idx)=>{
+    const max=c.max||1;
+    const {crit,mod} = thresholds(max);
+    const redW   = Math.max(0, Math.min(crit, max)) / max * 100;
+    const amberW = Math.max(0, Math.min(mod,  max) - Math.min(crit,max)) / max * 100;
+    const greenW = Math.max(0, max - Math.min(mod, max)) / max * 100;
+    const markerPct = Math.max(0, Math.min(100, (c.score/max)*100));
+
+    const conf = categoryConfidence(c.category, qnaGroups);
+    const confClass = conf.label==='High'?'pill excellent':conf.label==='Medium'?'pill moderate':'pill critical';
+
+    const actions = sortActionsByPriority((recMap[c.category]||[]).slice(), c.category, c.rating, qnaGroups);
+
+    const det=document.createElement("details");
+    det.className="improve-card";
+    det.id = `improve-${norm(c.category)}`;
+    det.open = idx===0;
+
+    const rows = actions.map(a=>{
+      const link = a.link ? `<a href="${a.link}" target="_blank" rel="noreferrer">${a.text}</a>` : a.text;
+      const pr = (a.priority||"").toLowerCase();
+      const prClass = pr.startsWith("h") ? "high" : pr.startsWith("m") ? "medium" : pr.startsWith("l") ? "low" : "";
+      const prHtml = prClass ? `<span class="prio ${prClass}" style="margin-left:6px">${a.priority}</span>` : "";
+
+      const whatRaw = (typeof lookupWhat === "function" ? lookupWhat(a.text) : "") || a.context || "Implementation details to be confirmed with the customer.";
+      const whyRaw  = (typeof lookupExplanation === "function" ? lookupExplanation(a.text) : "") || a.context || "No Explanation";
+      const what = formatSteps(whatRaw);
+      const why  = formatSteps(whyRaw);
+
+      const reasonLine = a.__reasons && a.__reasons.length ? `<div class="reasonline">Why ranked: ${a.__reasons.join(' · ')}</div>` : "";
+
+      return `
+        <tr>
+          <td>${link}${prHtml}${reasonLine}</td>
+          <td>${what}</td>
+          <td>${why}${genDoD(a.text)}</td>
+        </tr>`;
+    }).join("");
+
+    det.innerHTML = `
+      <summary class="improve-head">
+        <div class="improve-title">${c.category}
+          <span class="${clsForRating(c.rating)}" style="margin-left:8px">${(c.rating||"—").toUpperCase()}</span>
+          <span class="${confClass}" title="Confidence from answered questions" style="margin-left:6px">${conf.label} • ${conf.pct}%</span>
+        </div>
+        <div class="rec-count">${actions.length} recommended actions</div>
+      </summary>
+
+      <div class="improve-body">
+        <div class="breakdown">
+          <div class="label">Results breakdown</div>
+          <div class="bar">
+            <div class="seg red" style="left:0;width:${redW}%"></div>
+            <div class="seg amber" style="left:${redW}%;width:${amberW}%"></div>
+            <div class="seg green" style="right:0;width:${greenW}%"></div>
+            <div class="marker" style="left:${markerPct}%"></div>
+          </div>
+          <div class="result-meta">
+            <div>CRITICAL 0–${crit} · MODERATE ${crit}–${mod} · EXCELLENT ${mod}–${max}</div>
+            <div>Your result: <span class="mono">${c.score}/${c.max}</span></div>
+          </div>
+        </div>
+
+        <table class="rectable" role="table" aria-label="Recommended actions for ${c.category}">
+          <thead>
+            <tr>
+              <th>Recommended action (priority order)</th>
+              <th>What needs to happen</th>
+              <th>Why this matters</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${rows || `<tr><td colspan="3" class="muted">No recommendations found for this category.</td></tr>`}
+          </tbody>
+        </table>
+      </div>
+    `;
+    root.appendChild(det);
+  });
+}
+
+function renderUnansweredFromGroups(groups){
+  const out = {};
+  for (const [cat, qmap] of Object.entries(groups)){
+    for (const [q, info] of Object.entries(qmap)){
+      if (!info.answered){
+        (out[cat] ??= []).push(q);
+      }
+    }
+  }
+  const root=document.getElementById("unanswered"); root.innerHTML="";
+  const cats=Object.keys(out);
+  if(cats.length===0){ root.innerHTML = '<p class="muted">No unanswered questions found.</p>'; return; }
+  cats.forEach(cat=>{
+    const list=out[cat];
+    const details=document.createElement("details");
+    details.innerHTML = `
+      <summary>${cat} <span class="muted" style="margin-left:10px">${list.length} unanswered</span></summary>
+      <div class="panel" style="padding:0 16px 12px"><ul>${list.map(q=>`<li>${q}</li>`).join("")}</ul></div>`;
+    details.style.border="1px solid var(--border)";
+    details.style.borderRadius="10px";
+    details.style.background="#fff";
+    details.style.marginTop="10px";
+    root.appendChild(details);
+  });
+}
+
+/* ------- Executive Summary (ALZ grouping; excludes specific categories) ------- */
+const EXCLUDE_ALZ_CHILD_CATEGORIES = new Set([
+  'Azure Billing and Active Directory',
+  'Network topology and connectivity'
+]);
+
+function buildTopData(cats, recMap, qnaGroups){
+  const byCat = Object.fromEntries((cats||[]).map(c=>[c.category, c.rating]));
+  const all=[];
+  Object.entries(recMap || {}).forEach(([cat, list])=>{
+    const rating = byCat[cat] || '';
+    (list||[]).forEach(a=>{
+      const s = scoreAction(a, cat, rating, qnaGroups);
+      all.push({
+        title: a.text||'',
+        priority: a.priority||'',
+        link: a.link||'',
+        why: lookupExplanation(a.text||'') || a.context || '',
+        what: lookupWhat(a.text||'') || a.context || '',
+        reasons: s.reasons,
+        score: s.score,
+        depTag: s.depTag,
+        umbrella: s.umbrella,
+        cat
+      });
+    });
+  });
+  // dedupe
+  const best = new Map();
+  all.forEach(it=>{
+    const key = norm(it.title);
+    const prev = best.get(key);
+    if(!prev || it.score > prev.score){ best.set(key, it); }
+  });
+  const arr = Array.from(best.values()).sort((a,b)=> b.score - a.score);
+
+  // Hard-pin ALZ umbrella to top
+  const idx = arr.findIndex(it => /\blanding\s*zone\b|\balz\b|conceptual architecture|ready\/landing-zone/i.test(it.title||''));
+  if (idx > 0) { const [x] = arr.splice(idx, 1); arr.unshift(x); }
+
+  return { all: arr, top5: arr.slice(0,5) };
+}
+
+/* NEW: Cleaner CIO-style Top actions renderer
+   - Item #1 is ALZ, shows a small trimmed reason line
+   - Other items show only link + short description (no verbose reasons)
+   - Networking remains separate (not grouped under ALZ) */
+function buildGroupedTopHtml(data){
+  const { all, top5 } = data;
+  const alzIdx = top5.findIndex(x => /\blanding\s*zone\b|\balz\b|conceptual architecture|ready\/landing-zone/i.test(x.title||''));
+
+  // Helper: first sentence from 'why'
+  const firstSentence = s => {
+    const txt = String(s||'').replace(/\s+/g,' ').trim();
+    const m = txt.match(/(.+?[.?!])(\s|$)/);
+    return (m?m[1]:txt) || '—';
+  };
+
+  // Helper: link HTML
+  const linkHtml = x => x.link ? ` <a href="${x.link}" target="_blank" rel="noreferrer">Open</a>` : '';
+
+  // If no ALZ, render a plain concise list
+  if (alzIdx === -1) {
+    return `<ol class="exec-numbered">${top5.map(x=>{
+      const pr = (x.priority||'').toLowerCase().startsWith('h') ? ' <span class="prio high">High</span>' :
+                 (x.priority||'').toLowerCase().startsWith('m') ? ' <span class="prio medium">Medium</span>' :
+                 (x.priority||'') ? ' <span class="prio low">Low</span>' : '';
+      return `<li><strong>${x.title}</strong>${pr}${linkHtml(x)}<div class="muted">${firstSentence(x.why)}</div></li>`;
+    }).join('')}</ol>`;
+  }
+
+  // With ALZ: keep networking separate & exclude Billing/AD + Networking from ALZ children
+  const parent = top5[alzIdx];
+  const childTags = new Set(['Guardrails','Org structure','Security posture','Identity baseline','Automation','Observability','Financial governance']);
+  const candidates = all.filter(it =>
+    it !== parent &&
+    !EXCLUDE_ALZ_CHILD_CATEGORIES.has(it.cat || '') &&
+    childTags.has(it.depTag || '') &&
+    !/\blanding\s*zone\b|\balz\b|conceptual architecture|ready\/landing-zone/i.test(it.title||'')
+  ).slice(0,4);
+  const chosenKeys = new Set(candidates.map(c=>norm(c.title)));
+  const others = top5.filter((_,i)=>i!==alzIdx).filter(it=>!chosenKeys.has(norm(it.title)));
+
+  // Trimmed reasonline ONLY for ALZ: "High priority · Foundation orchestration · Umbrella: ALZ transition (+8)"
+  const prNice = (parent.priority||'').toLowerCase().startsWith('h') ? 'High priority'
+               : (parent.priority||'').toLowerCase().startsWith('m') ? 'Medium priority'
+               : (parent.priority ? 'Low priority' : '');
+  const depNice = parent.depTag ? parent.depTag : '';
+  const umbNice = parent.umbrella ? 'Umbrella: Azure Landing Zone transition (+8)' : '';
+  const reasonBits = [prNice, depNice, umbNice].filter(Boolean);
+  const reasonLine = reasonBits.length ? `<div class="reasonline">Why ranked: ${reasonBits.join(' · ')}</div>` : '';
+
+  const parentPill = (parent.priority||'').toLowerCase().startsWith('h') ? ' <span class="prio high">High</span>'
+                   : (parent.priority||'').toLowerCase().startsWith('m') ? ' <span class="prio medium">Medium</span>'
+                   : (parent.priority ? ' <span class="prio low">Low</span>' : '');
+
+  const childUl = candidates.length
+    ? `<ul style="margin:6px 0 0 18px">${candidates.map(c=>{
+        return `<li><strong>${c.title}</strong>${linkHtml(c)} — <span class="muted">${firstSentence(c.why)}</span></li>`;
+      }).join('')}</ul>`
+    : '';
+
+  const othersLis = others.map(x=>{
+    return `<li><strong>${x.title}</strong>${linkHtml(x)}<div class="muted">${firstSentence(x.why)}</div></li>`;
+  }).join('');
+
+  return `
+    <ol class="exec-numbered">
+      <li>
+        <strong>${parent.title}</strong>${parentPill}${linkHtml(parent)}
+        <div class="muted">${firstSentence(parent.why)}</div>
+        ${reasonLine}
+        ${childUl}
+      </li>
+      ${othersLis}
+    </ol>
+  `;
+}
+
+function countHighPriority(recMap){
+  const set = new Set();
+  Object.values(recMap||{}).forEach(list=>{
+    list.forEach(a=>{
+      const p=(a.priority||'').toLowerCase();
+      if(p.startsWith('h')){
+        set.add(norm(a.text||''));
+      }
+    });
+  });
+  return set.size;
+}
+
+function renderExecSummary(cats, recMap){
+  const data = window.__ALZ_DATA__ || {};
+  const coverage = overallConfidence(data.qnaGroups);
+  const critical = (cats||[]).filter(c=>String(c.rating||'').toLowerCase().startsWith('crit'));
+  const highCount = countHighPriority(recMap);
+  const scoreStr = `${data.top?.overall?.score ?? 0}/${data.top?.overall?.max ?? 0}`;
+  const ratingHtml = `<span class="${clsForRating(data.top?.overall?.rating)}">${data.top?.overall?.rating || '—'}</span>`;
+
+  const metrics = `
+    <div class="metrics-grid">
+      <div class="metric-card">
+        <div class="k">Overall rating & score</div>
+        <div class="v">${ratingHtml} <span class="mono" style="margin-left:6px">${scoreStr}</span></div>
+      </div>
+      <div class="metric-card">
+        <div class="k">Discovery coverage</div>
+        <div class="v">${coverage}%</div>
+        <div class="muted" style="font-size:12px;margin-top:4px">Answered assessment questions</div>
+      </div>
+      <div class="metric-card">
+        <div class="k">High-priority actions</div>
+        <div class="v">${highCount}</div>
+        <div class="muted" style="font-size:12px;margin-top:4px">From imported recommendations</div>
+      </div>
+      <div class="metric-card">
+        <div class="k">Critical categories</div>
+        <div class="v">${critical.length}</div>
+        <div class="muted" style="font-size:12px;margin-top:4px">Needing immediate attention</div>
+      </div>
+    </div>
+  `;
+
+  // Key themes badges
+  const split = {critical:[], moderate:[], excellent:[]};
+  (cats||[]).forEach(c=>{
+    const r=(c.rating||'').toLowerCase();
+    if(r.startsWith('crit')) split.critical.push(c);
+    else if(r.startsWith('mod')) split.moderate.push(c);
+    else if(r.startsWith('exc')) split.excellent.push(c);
+  });
+  const badges = (list, cls) => list.length
+    ? `<div class="tags">${list.map(c=>`<span class="pill ${cls}">${c.category}</span>`).join(' ')}</div>`
+    : `<p class="muted">None.</p>`;
+
+  const themes = `
+    <div class="exec-section">
+      <h3>Key themes</h3>
+      <div><strong>Critical:</strong> ${badges(split.critical,'critical')}</div>
+      <div style="margin-top:6px"><strong>Moderate:</strong> ${badges(split.moderate,'moderate')}</div>
+      <div style="margin-top:6px"><strong>Excellent:</strong> ${badges(split.excellent,'excellent')}</div>
+    </div>
+  `;
+
+  // Grouped Top actions (CIO-style concise format)
+  const topData = buildTopData(cats, recMap, data.qnaGroups);
+  const topHtml = buildGroupedTopHtml(topData);
+
+  document.getElementById('execTop').innerHTML =
+    `${metrics}
+     ${themes}
+     <div class="exec-section"><h3>Top priority actions</h3>${topHtml}</div>`;
+
+  document.getElementById('priorExplainer').textContent =
+    'How we prioritise: CSV priority, category severity, foundational dependencies (e.g., Landing Zone, Identity, Governance, Security, Automation, Observability), and a confidence penalty where discovery coverage is low. Note: we intentionally do not group “Azure Billing and Active Directory” or “Network topology and connectivity” under the ALZ umbrella.';
+}
+
+function renderQualityBanner(top, qnaGroups){
+  const banner = document.getElementById('qualityBanner');
+  const oc = overallConfidence(qnaGroups);
+  const risky = (top.cats||[]).map(c=>({name:c.category, conf: categoryConfidence(c.category, qnaGroups)})).filter(x=>x.conf.pct<60);
+  if(oc<60 || risky.length){
+    banner.style.display = '';
+    const riskyList = risky.slice(0,5).map(x=>`${x.name} (${x.conf.pct}%)`).join(', ');
+    banner.innerHTML = `
+      <div class="t">Data quality warning</div>
+      <div>Only ${oc}% of discovery questions are answered. ${risky.length ? `Low-confidence areas: ${riskyList}.` : ''}</div>
+      <div class="small">Consider a short validation pass before committing to timelines.</div>`;
+  }else{
+    banner.style.display = 'none';
+    banner.innerHTML = '';
+  }
+}
+
+/* ---------- Wiring ---------- */
+let lastAssessmentText = "";
+
+function handleCSV(text){
+  lastAssessmentText = text;
+  const rows=parseCSV(text);
+
+  const top=extractTop(rows);
+
+  const recs=sliceTable(rows, ["Category","Link-Text","Link","Priority","ReportingCategory","ReportingSubcategory","Weight","Context","CompleteY/N","Note"]);
+  const recMap=groupRecsDetailed(recs);
+
+  const qna =sliceTable(rows, ["Category","Question","Answers","Selected Answer","Note"]);
+  const qnaGroups = groupQnAByQuestion(qna);
+
+  window.__ALZ_DATA__ = { top, recMap, qnaGroups };
+
+  renderTop(top.overall);
+  renderCatCompact(top.cats);
+  renderImproveCards(top.cats, recMap);
+  renderUnansweredFromGroups(qnaGroups);
+  renderExecSummary(top.cats, recMap);
+  renderQualityBanner(top, qnaGroups);
+}
+
+/* File inputs */
+const fileInput = document.getElementById('fileInput');
+const mapInput  = document.getElementById('mapInput');
+const fnAssess  = document.getElementById('fn-assess');
+const fnExpl    = document.getElementById('fn-expl');
+
+document.getElementById('btnAssess').addEventListener('click', ()=> fileInput.click());
+document.getElementById('btnExpl').addEventListener('click', ()=> mapInput.click());
+
+fileInput.addEventListener("change", async (e)=>{
+  const f=e.target.files?.[0];
+  fnAssess.textContent = f ? f.name : '(no file selected)';
+  if(!f) return;
+  const txt=await f.text();
+  handleCSV(txt);
+});
+
+/* Explanations loader: reads "Explanation" and optional "What needs to happen" */
+mapInput.addEventListener("change", async (e)=>{
+  const f=e.target.files?.[0];
+  fnExpl.textContent = f ? f.name : '(no file selected)';
+  if(!f) return;
+
+  const normH = s => String(s||"").toLowerCase().trim();
+  const toMap = row => {
+    const keys = Object.keys(row||{});
+    const kAction = keys.find(k => normH(k) === "recommended action");
+    if(!kAction) return null;
+    const action = tstr(row[kAction]); if(!action) return null;
+    const kExpl  = keys.find(k => normH(k) === "explanation");
+    const kWhat  = keys.find(k => normH(k) === "what needs to happen");
+    return { key: norm(action), expl: kExpl ? tstr(row[kExpl]) : "", what: kWhat ? tstr(row[kWhat]) : "" };
+  };
+
+  try{
+    const name = (f.name||"").toLowerCase();
+    if(name.endsWith(".csv")){
+      const text = await f.text();
+      const rows = parseCSV(text);
+      const header = rows[0] || [];
+      const objs = rows.slice(1).map(r=>{ const o={}; header.forEach((h,i)=>o[h]=r[i]); return o; });
+      const eMap={}, wMap={};
+      objs.forEach(r=>{ const m=toMap(r); if(!m) return; if(m.expl) eMap[m.key]=m.expl; if(m.what) wMap[m.key]=m.what; });
+      mergeExplanationMap(eMap);
+      mergeWhatMap(wMap);
+      alert("Explanations loaded.");
+    } else {
+      const data = await f.arrayBuffer();
+      const wb = XLSX.read(data, {type:"array"});
+      const sheet = wb.Sheets[wb.SheetNames[0]];
+      const json = XLSX.utils.sheet_to_json(sheet, {defval:""});
+      const eMap={}, wMap={};
+      json.forEach(r=>{ const m=toMap(r); if(!m) return; if(m.expl) eMap[m.key]=m.expl; if(m.what) wMap[m.key]=m.what; });
+      mergeExplanationMap(eMap);
+      mergeWhatMap(wMap);
+      alert("Explanations loaded.");
+    }
+  }catch(err){
+    alert("Failed to load explanations: " + (err?.message || err));
+  }
+
+  if (lastAssessmentText){ handleCSV(lastAssessmentText); }
+});
+
+/* ---------- Concise export helpers ---------- */
+function _cleanText(s){ return String(s||'').replace(/<[^>]+>/g,' ').replace(/\s+/g,' ').trim(); }
+function _short(s, n=160){ const t=_cleanText(s); return t.length>n ? t.slice(0,n-1)+'…' : t; }
+function _firstLineOrSentence(s){
+  if(!s) return '';
+  const txt=_cleanText(s);
+  let parts = txt.split(/\r?\n+/).map(x=>x.trim()).filter(Boolean);
+  if(!parts.length) parts = txt.split(/;\s+/).map(x=>x.trim()).filter(Boolean);
+  if(parts.length) return parts[0];
+  const m = txt.match(/(.+?[.?!])(\s|$)/);
+  return (m?m[1]:txt);
+}
+function _topActionsGlobal(cats, recMap, qnaGroups){
+  const byCatRating = Object.fromEntries((cats||[]).map(c=>[c.category, c.rating]));
+  const all=[];
+  Object.entries(recMap||{}).forEach(([cat, list])=>{
+    const rating = byCatRating[cat] || '';
+    (list||[]).forEach(a=>{
+      const s = scoreAction(a, cat, rating, qnaGroups);
+      all.push({ ...a, __score:s.score, __cat:cat });
+    });
+  });
+  const best = new Map();
+  all.forEach(x=>{
+    const k = norm(x.text);
+    const prev = best.get(k);
+    if(!prev || x.__score>prev.__score) best.set(k,x);
+  });
+  const arr = Array.from(best.values()).sort((a,b)=>b.__score-a.__score);
+
+  // pin ALZ to top
+  const idx = arr.findIndex(it => /\blanding\s*zone\b|\balz\b|conceptual architecture|ready\/landing-zone/i.test(it.text||''));
+  if (idx > 0) { const [x] = arr.splice(idx, 1); arr.unshift(x); }
+
+  return arr.slice(0,5);
+}
+
+/* -------- Concise Word export -------- */
+function exportToWord(){
+  const data = window.__ALZ_DATA__;
+  if(!data){ alert('Please import an assessment first.'); return; }
+
+  const { top, recMap, qnaGroups } = data;
+  const scoreStr = `${top.overall.score}/${top.overall.max}`;
+  const coverage = overallConfidence(qnaGroups);
+  const critical = (top.cats||[]).filter(c=>String(c.rating||'').toLowerCase().startsWith('crit')).length;
+  const highCount = (function(recMap){
+    const set=new Set(); Object.values(recMap||{}).forEach(list=>list.forEach(a=>{
+      if((a.priority||'').toLowerCase().startsWith('h')) set.add(norm(a.text||''));
+    })); return set.size;
+  })(recMap);
+
+  const css = `
+    body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;color:#111827}
+    h1{font-size:22px;margin:0 0 8px}
+    h2{font-size:16px;margin:18px 0 6px}
+    h3{font-size:14px;margin:14px 0 4px}
+    .muted{color:#6b7280}
+    ul{margin:4px 0 0 18px}
+    li{margin:6px 0}
+    .exec-numbered{counter-reset:item}
+    .exec-numbered li{counter-increment:item;margin:0 0 8px}
+    .exec-numbered li::marker{content:counters(item,".") ". "}
+  `;
+
+  // Build CIO-style list for DOC (reuse the same builder, strip links for Word if needed)
+  const topData = buildTopData(top.cats, recMap, qnaGroups);
+  const groupedHtml = buildGroupedTopHtml(topData);
+
+  // Per-category top 5
+  let catsHtml = '';
+  (top.cats||[]).forEach(c=>{
+    const actions = sortActionsByPriority((recMap[c.category]||[]).slice(), c.category, c.rating, qnaGroups).slice(0,5);
+    if(!actions.length) return;
+    const bullets = actions.map(a=>{
+      const what = _firstLineOrSentence( lookupWhat(a.text) || a.context || '' );
+      const pr   = a.priority ? ` (${a.priority})` : '';
+      return `<li><b>${a.text}</b>${pr} — ${_short(what, 120)}</li>`;
+    }).join('');
+    catsHtml += `
+      <h3 style="margin:18px 0 6px">${c.category} <span style="font-size:12px;color:#6b7280;margin-left:6px">${(c.rating||'').toUpperCase()}</span></h3>
+      <ul style="margin:6px 0 0 20px">${bullets}</ul>`;
+  });
+
+  const html = `<!DOCTYPE html>
+<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word" xmlns="http://www.w3.org/TR/REC-html40">
+<head><meta charset="utf-8"><title>Azure Landing Zone — Summary</title><style>${css}</style></head>
+<body>
+  <h1>Azure Landing Zone — Summary</h1>
+  <h2>Executive summary</h2>
+  ${groupedHtml}
+  <h2>Per-category priority actions</h2>
+  ${catsHtml || '<p class="muted">No category recommendations found.</p>'}
+</body></html>`;
+
+  const blob = new Blob(['\ufeff', html], {type:'application/msword'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a'); a.href = url; a.download = 'TIEVA-ALZ-Concise.doc';
+  document.body.appendChild(a); a.click();
+  setTimeout(()=>{ document.body.removeChild(a); URL.revokeObjectURL(url); }, 0);
+}
+
+/* -------- Concise PowerPoint export (same CIO-style bullets) -------- */
+async function exportToPpt(){
+  try{
+    const PptxLib = await ensurePptx();
+    const PptxCtor = PptxLib?.default || PptxLib;
+    if (typeof PptxCtor !== 'function') throw new Error('PptxGenJS not available');
+
+    const data = window.__ALZ_DATA__;
+    if(!data){ alert('Please import an assessment first.'); return; }
+
+    const { top, recMap, qnaGroups } = data;
+    const pptx = new PptxCtor();
+
+    if (typeof pptx.defineLayout === 'function') {
+      pptx.defineLayout({ name: 'TIEVA_16x9', width: 10, height: 5.625 });
+      pptx.layout = 'TIEVA_16x9';
+    } else {
+      pptx.layout = 'LAYOUT_16x9';
+    }
+
+    const brand = { green:'#2DA58E', white:'#FFFFFF', black:'#000000', text:'#111827' };
+    const pad = 0.5;
+
+    function addHeader(slide, rightText){
+      slide.addShape(pptx.ShapeType.rect, { x:0, y:0, w:10, h:0.5, fill:{color:brand.black} });
+      slide.addText('TIEVA — Azure Landing Zone', { x:pad, y:0.12, w:7.2, h:0.3, color:brand.white, fontSize:14, bold:true });
+      if(rightText) slide.addText(rightText, { x:7.4, y:0.12, w:2.1, h:0.3, color:brand.white, fontSize:12, align:'right' });
+    }
+    function addFooter(slide){
+      slide.addShape(pptx.ShapeType.rect, { x:0, y:7.0, w:10, h:0.08, fill:{color:brand.green} });
+    }
+
+    const scoreStr = `${top.overall.score}/${top.overall.max}`;
+    const today = new Date();
+    const dateStr = today.toLocaleDateString(undefined, { year:'numeric', month:'long' });
+
+    // Cover
+    {
+      const s = pptx.addSlide();
+      addHeader(s, dateStr);
+      s.addText('Azure Landing Zone — Summary', { x:pad, y:0.8, w:9, h:0.6, fontSize:28, bold:true, color:brand.text });
+      s.addText(`Overall: ${top.overall.rating || '—'}  •  ${scoreStr}`, { x:pad, y:1.45, w:9, h:0.3, fontSize:14 });
+      addFooter(s);
+    }
+
+    // Executive summary bullets (same grouping rules)
+    {
+      const s = pptx.addSlide(); addHeader(s, 'Executive summary');
+
+      const topData = buildTopData(top.cats, recMap, qnaGroups);
+      // Render as simple bullets: ALZ first (with "(High)"), others concise
+      const bullets = [];
+      const { top5, all } = topData;
+      const alzIdx = top5.findIndex(x => /\blanding\s*zone\b|\balz\b|conceptual architecture|ready\/landing-zone/i.test(x.title||''));
+      if(alzIdx !== -1){
+        const parent = top5[alzIdx];
+        const pr = (parent.priority||'') ? ` (${parent.priority})` : '';
+        const parentText = `${parent.title}${pr} — ${_short(_firstLineOrSentence(parent.why||parent.what||''), 110)}`;
+        bullets.push({ text: parentText });
+
+        const childTags = new Set(['Guardrails','Org structure','Security posture','Identity baseline','Automation','Observability','Financial governance']);
+        const candidates = all.filter(it =>
+          it !== parent &&
+          !EXCLUDE_ALZ_CHILD_CATEGORIES.has(it.cat || '') &&
+          childTags.has(it.depTag || '') &&
+          !/\blanding\s*zone\b|\balz\b|conceptual architecture|ready\/landing-zone/i.test(it.title||'')
+        ).slice(0,4);
+        const chosenKeys = new Set(candidates.map(c=>norm(c.title)));
+        const others = top5.filter((_,i)=>i!==alzIdx).filter(it=>!chosenKeys.has(norm(it.title)));
+
+        candidates.forEach(c=>{
+          bullets.push({ text: `↳ ${c.title} — ${_short(_firstLineOrSentence(c.why||c.what||''), 95)}` });
+        });
+        others.forEach(o=>{
+          bullets.push({ text: `${o.title} — ${_short(_firstLineOrSentence(o.why||o.what||''), 110)}` });
+        });
+      } else {
+        (top5||[]).forEach(x=>{
+          const pr = x.priority ? ` (${x.priority})` : '';
+          bullets.push({ text: `${x.title}${pr} — ${_short(_firstLineOrSentence(x.why||x.what||''), 110)}` });
+        });
+      }
+
+      s.addText('Top priority actions', { x: pad, y: 0.8, w: 9, h: 0.5, fontSize: 20, bold: true });
+      s.addText(bullets.length? bullets : [{text:'No recommendations found. Import an assessment CSV.'}], { x: pad+0.1, y: 1.35, w: 9, h: 5.5, fontSize: 12, bullet: true });
+      addFooter(s);
+    }
+
+    await pptx.writeFile({ fileName: `TIEVA-ALZ-Concise (${scoreStr}).pptx` });
+  }catch(err){
+    console.error(err);
+    alert('PowerPoint export failed: ' + (err?.message || err));
+  }
+}
+
+/* -------- Button bindings -------- */
+document.getElementById('wordBtn').addEventListener('click', exportToWord);
+document.getElementById('pptBtn').addEventListener('click', exportToPpt);
+
+/* -------- Presentation mode toggle -------- */
+document.getElementById('presentBtn').addEventListener('click', ()=>{
+  const on = document.body.classList.toggle('present');
+  document.getElementById('presentBtn').textContent = on ? 'Exit presentation' : 'Presentation mode';
+});
+
+/* -------- Demo data on load -------- */
+document.addEventListener('DOMContentLoaded', ()=>{
+  const demo = `"Your overall results",Moderate,'74/171'
+"About your organization",Moderate,'3/10'
+"Azure Billing and Active Directory",Moderate,'5/11'
+"Identity and access management",Critical,'10/37'
+"Network topology and connectivity",Moderate,'25/65'
+"Resource organization",Critical,'1/11'
+"Governance",Critical,'2/12'
+"Management",Critical,'1/8'
+"Security",Moderate,'3/8'
+"Platform automation and DevOps",Moderate,'4/9'
+-----------
+Category,Link-Text,Link,Priority,ReportingCategory,ReportingSubcategory,Weight,Context,CompleteY/N,Note
+Governance,Transition existing Azure environments to the Azure landing zone conceptual architecture,https://learn.microsoft.com/azure/cloud-adoption-framework/ready/landing-zone/,High,,,,"Align subscriptions, policies, RBAC, networking and monitoring to ALZ target design.",,
+Azure Billing and Active Directory,Plan for the Cloud Solution Provider service,https://learn.microsoft.com/partner-center/csp-overview,Medium,,,,"Define CSP operating model for billing, lifecycle and support.",,
+Azure Billing and Active Directory,Work with your CSP partner to ensure that Azure Lighthouse is used for administer on behalf of (AOBO) access for most support scenarios,https://learn.microsoft.com/azure/lighthouse/overview,High,,,,"Delegate least-privilege AOBO access via Lighthouse offers.",,
+Azure Billing and Active Directory,Work with your CSP partner to understand how to create support cases and escalation processes,https://learn.microsoft.com/partner-center/report-problems-with-microsoft-azure,Medium,,,,"Document case creation and escalation; test the flow.",,
+Azure Billing and Active Directory,Discuss how to create self-service subscriptions with your CSP partner,https://learn.microsoft.com/azure/cost-management-billing/manage/create-subscription,Medium,,,,"Automate request/approval and enforce budgets, policy and diagnostics on creation.",,
+Identity and access management,Manage emergency access accounts in Microsoft Entra ID,https://learn.microsoft.com/entra/identity/role-based-access-control/security-emergency-access,High,,,,"Create and protect break-glass accounts; monitor usage.",,
+Identity and access management,How it works: Microsoft Entra multifactor authentication,https://learn.microsoft.com/entra/identity/authentication/concept-mfa-howitworks,High,,,,"1) Inventory auth methods; enable Authenticator app/FIDO2; disable legacy SMS if allowed.\n2) Conditional Access: require MFA for all, stronger for admins & risky sign-ins; set sessions.\n3) Registration campaign & helpdesk updates; track coverage/failures.\n4) Monitor sign-ins and risks; step-up for sensitive apps.\n5) Exclude only break-glass; document exceptions.",,
+Management,Microsoft Entra activity logs in Azure Monitor,https://learn.microsoft.com/entra/identity/monitoring-health/howto-integrate-activity-logs-with-azure-monitor,High,,,,"Send sign-in and audit logs to Log Analytics; alerts and retention.",,
+Network topology and connectivity,Virtual WAN network topology,https://learn.microsoft.com/azure/virtual-wan/virtual-wan-about,High,,,,"Adopt vWAN or hub/spoke with routing and security services.",,
+Network topology and connectivity,Connectivity to Azure,https://learn.microsoft.com/azure/expressroute/expressroute-introduction,High,,,,"Provision ER/VPN connectivity with redundancy; validate routing.",,
+Network topology and connectivity,About zone-redundant virtual network gateways in Azure Availability Zones,https://learn.microsoft.com/azure/vpn-gateway/about-zone-redundant-vnet-gateways,Medium,,,,"Use zone-redundant gateways where supported for higher availability.",,
+Network topology and connectivity,Limit cross-tenant private endpoint connections in Azure,https://learn.microsoft.com/azure/private-link/private-endpoint-overview,Medium,,,,"Restrict cross-tenant private endpoints with policy; audit connections.",,
+Resource organization,Management Group and Subscription organization,https://learn.microsoft.com/azure/cloud-adoption-framework/ready/landing-zone/management-group-and-subscription-organization,High,,,,"Create structured MG hierarchy and subscription taxonomy.",,
+Resource organization,Resource Group organization,https://learn.microsoft.com/azure/cloud-adoption-framework/ready/landing-zone/resource-org,Medium,,,,"Standardise RG patterns, naming and tagging.",,
+Governance,Azure governance,https://learn.microsoft.com/azure/governance/,High,,,,"Deploy policy initiatives, RBAC, compliance monitoring and change control.",,
+Management,How to optimize your cloud investment with Cost Management,https://learn.microsoft.com/azure/cost-management-billing/cost-management-billing-overview,High,,,,"Budgets, alerts, tagging and anomaly detection.",,
+Management,Operational compliance considerations,https://learn.microsoft.com/azure/cloud-adoption-framework/govern/compliance/,Medium,,,,"Map framework requirements and enforce controls via Policy/Defender.",,
+Management,Inventory and visibility considerations,https://learn.microsoft.com/azure/governance/resource-graph/overview,Medium,,,,"ARG inventory, change tracking and diagnostic baselines.",,
+Security,Meet your security requirements,https://learn.microsoft.com/azure/cloud-adoption-framework/secure/,High,,,,"Zero Trust controls, Defender for Cloud, and Sentinel.",,
+Platform automation and DevOps,Platform automation and DevOps,https://learn.microsoft.com/azure/cloud-adoption-framework/ready/landing-zone/platform-automation-and-devops,Medium,,,,"IaC, CI/CD, and automation for governance and monitoring.",,
+-----------
+Category,Question,Answers,Selected Answer,Note
+Azure Billing and Active Directory,Select an Azure Billing Arrangement for your organization.,Enterprise Agreement,,
+Azure Billing and Active Directory,Select an Azure Billing Arrangement for your organization.,Microsoft Customer Agreement,,
+Azure Billing and Active Directory,Select an Azure Billing Arrangement for your organization.,Cloud Service Provider,Cloud Service Provider,
+Azure Billing and Active Directory,Select an Azure Billing Arrangement for your organization.,Pay-as-You-Go,,
+Security,"Which controls are in place?","MFA; RBAC; Defender",, ""
+Governance,"Do you use Cost Management?","Yes; No","", ""
+`;
+  handleCSV(demo);
+});
+</script>
+</body>
+</html>
