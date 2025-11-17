@@ -1532,16 +1532,15 @@ if ($ExportXlsx) {
     $pipe = $Data
     if ($Columns) { $pipe = $Data | Select-Object $Columns }
 
-    $common = @{
-      Path               = $XlsxPath
-      WorksheetName      = $WorksheetName
-      TableName          = $TableName
-      TableStyle         = 'Medium2'
-      AutoSize           = $true
-      FreezeTopRow       = $true
-      BoldTopRow         = $true
-      NoNumberConversion = @('VMName','VaultName','PolicyName','ServerOrInstance','DatabaseName','ResourceGroup')
-    }
+  $common = @{
+    Path               = $XlsxPath
+    WorksheetName      = $WorksheetName
+    TableName          = $TableName
+    TableStyle         = 'Medium2'
+    FreezeTopRow       = $true
+    BoldTopRow         = $true
+    NoNumberConversion = @('VMName','VaultName','PolicyName','ServerOrInstance','DatabaseName','ResourceGroup')
+  }
     if ($FirstSheet) { $common.ClearSheet = $true }  # wipe only once
 
     $pipe | Export-Excel @common
@@ -1620,3 +1619,4 @@ if ($ExportXlsx) {
 
   Write-Host "`nExcel export complete → $XlsxPath" -ForegroundColor Green
 }
+
