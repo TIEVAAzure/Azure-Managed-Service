@@ -1,6 +1,7 @@
 <# =======================================================================
    Azure Backup Posture Auditor (RSV + Backup Vaults) — tenant-agnostic
-   - Enumerates ALL subscriptions
+   - Enumerates subscriptions (optionally limited via $TargetSubscriptions
+     and/or name/ID regex filters)
    - Reports vault posture + VM/DB backup coverage
    - Uses RSV **root GET** (2025-08-01) first, then backupResourceConfig / backupconfig
    - Handles Backup Vaults returned without ResourceGroupName
@@ -11,13 +12,20 @@
    - SQL in VM (workload): full/diff/log cadence + optional window (policy),
      last backup status/time, observed RPO from RPs (prefers log)
    - Azure SQL (PaaS): observed RPO from PITR (latest restorable time)
-   - Outputs printed ONCE at the end; CSV export optional
+   - Outputs printed ONCE at the end; XLSX export with multiple sheets
 ======================================================================= #>
 
 $ErrorActionPreference = 'Stop'
 
+# --- Control which subscriptions to include ---
+$TargetSubscriptions = @(
+  'a2274ccd-57b8-4d72-a94a-c38a235cf56e',  # identity-tieva-dev
+  'df82ae5c-8de4-4e5d-a976-a75d56fc3b9c'   # learn-shared-tieva-dev
+  # Add more subscription IDs or names as needed
+)
+
 # ---------------- Settings ----------------
-$ExportCsv   = $false                  # set $true to export CSVs
+$ExportCsv   = $false                  # reserved if you later want CSV
 $OutPath     = "$HOME\Downloads"
 $Diagnostics = $true                   # set $false to silence warnings
 
@@ -40,30 +48,48 @@ $Api = @{
 # ---------------- Module sanity check ----------------
 $required = @('Az.Accounts','Az.Resources','Az.RecoveryServices','Az.DataProtection','Az.Compute','Az.Sql')
 $missing = $required | Where-Object { -not (Get-Module -ListAvailable -Name $_) }
-if ($missing) { Write-Warning "Missing modules: $($missing -join ', '). Install with: Install-Module Az -Scope CurrentUser" }
+if ($missing) {
+  Write-Warning "Missing modules: $($missing -join ', '). Install with: Install-Module Az -Scope CurrentUser"
+}
 
 # ---------------- Helpers ----------------
 function Derive-SecurityLevel {
-  param([string]$EnhancedSecurityState,[bool]$IsMUAEnabled,[string]$SoftDeleteState)
-  if ($EnhancedSecurityState -in @('Enabled','AlwaysON') -or $IsMUAEnabled -or $SoftDeleteState -in @('Enabled','AlwaysON')) { 'Enhanced' } else { 'Standard' }
+  param(
+    [string]$EnhancedSecurityState,
+    [bool]$IsMUAEnabled,
+    [string]$SoftDeleteState
+  )
+  if ($EnhancedSecurityState -in @('Enabled','AlwaysON') -or
+      $IsMUAEnabled -or
+      $SoftDeleteState -in @('Enabled','AlwaysON')) {
+    'Enhanced'
+  } else {
+    'Standard'
+  }
 }
-function To-AlwaysOnBool { param([string]$A,[string]$B) (($A -eq 'AlwaysON') -or ($B -eq 'AlwaysON')) }
+
+function To-AlwaysOnBool {
+  param([string]$A,[string]$B)
+  (($A -eq 'AlwaysON') -or ($B -eq 'AlwaysON'))
+}
 
 # Normalize "On/Off" → "Enabled/Disabled"
-function Normalize-SD { param([string]$Value)
+function Normalize-SD {
+  param([string]$Value)
   if ([string]::IsNullOrWhiteSpace($Value)) { return $null }
   if ($Value -match '^(?i)on$')  { return 'Enabled' }
   if ($Value -match '^(?i)off$') { return 'Disabled' }
   return $Value
 }
 
-function Normalize-Redundancy { param([string]$Value)
+function Normalize-Redundancy {
+  param([string]$Value)
   if (-not $Value) { return $null }
   $map = @{
     'LocallyRedundant'='LRS'; 'GeoRedundant'='GRS'; 'ZoneRedundant'='ZRS'; 'ReadAccessGeoRedundant'='RA-GRS'
     'LRS'='LRS'; 'GRS'='GRS'; 'ZRS'='ZRS'; 'RA-GRS'='RA-GRS'
   }
-  if ($map.ContainsKey($Value)) { return $map[$Value] } else { return $Value }
+  if ($map.ContainsKey($Value)) { $map[$Value] } else { $Value }
 }
 
 # ---------- REST helpers (retry) ----------
@@ -79,10 +105,11 @@ function Invoke-ArmGet {
     elseif ($ProviderTypePath -like 'Microsoft.DataProtection/*') { $ApiVersion = $Api.DP_BackupVault }
   }
   if ([string]::IsNullOrWhiteSpace($ApiVersion)) { $ApiVersion = '2023-02-01' }
+
   $base = "https://management.azure.com"
   $rel  = "/subscriptions/$SubscriptionId/resourceGroups/$ResourceGroup/providers/$ProviderTypePath"
   $uri  = '{0}{1}?api-version={2}' -f $base, $rel, $ApiVersion
-  return Invoke-ArmGetUri -Uri $uri
+  Invoke-ArmGetUri -Uri $uri
 }
 
 function Invoke-ArmGetById {
@@ -93,9 +120,11 @@ function Invoke-ArmGetById {
   )
   $base = "https://management.azure.com"
   $rid = $ResourceId.TrimEnd('/')
-  $suffix = if ($SuffixPath) { if ($SuffixPath.StartsWith('/')) { $SuffixPath } else { "/$SuffixPath" } } else { '' }
+  $suffix = if ($SuffixPath) {
+    if ($SuffixPath.StartsWith('/')) { $SuffixPath } else { "/$SuffixPath" }
+  } else { '' }
   $uri = '{0}{1}{2}?api-version={3}' -f $base, $rid, $suffix, $ApiVersion
-  return Invoke-ArmGetUri -Uri $uri
+  Invoke-ArmGetUri -Uri $uri
 }
 
 function Invoke-ArmGetUri {
@@ -103,22 +132,33 @@ function Invoke-ArmGetUri {
   for ($i=0; $i -lt 4; $i++) {
     try {
       $resp = Invoke-AzRestMethod -Uri $Uri -Method GET -ErrorAction Stop
-      if ($resp.Content) { return ($resp.Content | ConvertFrom-Json) } else { return $null }
+      if ($resp.Content) {
+        return ($resp.Content | ConvertFrom-Json)
+      } else {
+        return $null
+      }
     } catch {
-      $status=$null;$reason=$null; try{$status=$_.Exception.Response.StatusCode.value__; $reason=$_.Exception.Response.ReasonPhrase}catch{}
+      $status=$null;$reason=$null
+      try {
+        $status=$_.Exception.Response.StatusCode.value__
+        $reason=$_.Exception.Response.ReasonPhrase
+      } catch {}
       if ($Diagnostics) { Write-Warning "ARM GET failed ($status $reason): $Uri" }
-      if ($status -in 429,500,502,503,504) { Start-Sleep -Seconds ([math]::Pow(2,$i)); continue }
+      if ($status -in 429,500,502,503,504) {
+        Start-Sleep -Seconds ([math]::Pow(2,$i))
+        continue
+      }
       break
     }
   }
-  return $null
+  $null
 }
 
 function Get-ResourceGroupFromId {
   param([Parameter(Mandatory)][string]$ResourceId)
   if ([string]::IsNullOrWhiteSpace($ResourceId)) { return $null }
   $m = [regex]::Match($ResourceId, '/resourceGroups/([^/]+)/', 'IgnoreCase')
-  if ($m.Success) { return $m.Groups[1].Value } else { return $null }
+  if ($m.Success) { $m.Groups[1].Value } else { $null }
 }
 
 # Pagination for Microsoft.DataProtection/backupInstances via x-ms-continuation
@@ -129,22 +169,35 @@ function Get-AllBackupInstances {
     [Parameter(Mandatory)][string]$VaultName,
     [string]$ApiVersion = $Api.DP_BackupInstances
   )
-  $base = "https://management.azure.com"
+  $base    = "https://management.azure.com"
   $relBase = "/subscriptions/$SubscriptionId/resourceGroups/$ResourceGroupName/providers/Microsoft.DataProtection/backupVaults/$VaultName/backupInstances"
-  $results = @(); $cont = $null
+  $results = @()
+  $cont    = $null
+
   do {
     $qs   = if ($cont) { '{0}&{1}' -f ('api-version=' + $ApiVersion), $cont } else { 'api-version=' + $ApiVersion }
     $uri  = '{0}{1}?{2}' -f $base, $relBase, $qs
     $resp = $null
+
     for ($i=0; $i -lt 4; $i++) {
-      try { $resp = Invoke-AzRestMethod -Uri $uri -Method GET -ErrorAction Stop; break }
-      catch {
-        $status=$null;$reason=$null; try{$status=$_.Exception.Response.StatusCode.value__; $reason=$_.Exception.Response.ReasonPhrase}catch{}
+      try {
+        $resp = Invoke-AzRestMethod -Uri $uri -Method GET -ErrorAction Stop
+        break
+      } catch {
+        $status=$null;$reason=$null
+        try {
+          $status=$_.Exception.Response.StatusCode.value__
+          $reason=$_.Exception.Response.ReasonPhrase
+        } catch {}
         if ($Diagnostics) { Write-Warning "backupInstances GET failed ($status $reason): $uri" }
-        if ($status -in 429,500,502,503,504) { Start-Sleep -Seconds ([math]::Pow(2,$i)); continue }
+        if ($status -in 429,500,502,503,504) {
+          Start-Sleep -Seconds ([math]::Pow(2,$i))
+          continue
+        }
         break
       }
     }
+
     if ($resp -and $resp.Content) {
       $json = $resp.Content | ConvertFrom-Json
       if ($json.value) { $results += $json.value }
@@ -152,9 +205,12 @@ function Get-AllBackupInstances {
       foreach ($hdr in $resp.Headers.GetEnumerator()) {
         if ($hdr.Key -ieq 'x-ms-continuation') { $cont = $hdr.Value; break }
       }
-    } else { $cont = $null }
+    } else {
+      $cont = $null
+    }
   } while ($cont)
-  return $results
+
+  $results
 }
 
 # ---------- Formatting / parsing ----------
@@ -163,8 +219,11 @@ function Parse-Iso8601Duration {
   if ([string]::IsNullOrWhiteSpace($s)) { return $null }
   $m = [regex]::Match($s, '^P(?:(?<d>\d+)D)?(?:T(?:(?<h>\d+)H)?(?:(?<m>\d+)M)?(?:(?<s>\d+)S)?)?$')
   if (-not $m.Success) { return $null }
-  $days=[int]($m.Groups['d'].Value); $hrs=[int]($m.Groups['h'].Value); $mins=[int]($m.Groups['m'].Value); $secs=[int]($m.Groups['s'].Value)
-  return New-TimeSpan -Days $days -Hours $hrs -Minutes $mins -Seconds $secs
+  $days=[int]($m.Groups['d'].Value)
+  $hrs =[int]($m.Groups['h'].Value)
+  $mins=[int]($m.Groups['m'].Value)
+  $secs=[int]($m.Groups['s'].Value)
+  New-TimeSpan -Days $days -Hours $hrs -Minutes $mins -Seconds $secs
 }
 
 # Snap cadence to nice values (avoid 3.76h; allow ±20m tolerance)
@@ -175,6 +234,7 @@ function Format-TimeSpanText {
 
   $toleranceMinutes = 20
   $commonHours = @(1,2,3,4,6,8,12,24)
+
   foreach ($h in $commonHours) {
     if ([math]::Abs($ts.TotalMinutes - ($h*60)) -le $toleranceMinutes) {
       return "Every $h hour(s)"
@@ -186,19 +246,28 @@ function Format-TimeSpanText {
     return "Every $nearestHr hour(s)"
   }
 
-  if ($ts.TotalHours -ge 1) { return "Every $([math]::Round($ts.TotalHours,2)) hour(s)" }
-  elseif ($ts.TotalMinutes -ge 1) { return "Every $([math]::Round($ts.TotalMinutes,0)) minute(s)" }
-  else { return "Every $([math]::Round($ts.TotalSeconds,0)) second(s)" }
+  if ($ts.TotalHours -ge 1) {
+    "Every $([math]::Round($ts.TotalHours,2)) hour(s)"
+  } elseif ($ts.TotalMinutes -ge 1) {
+    "Every $([math]::Round($ts.TotalMinutes,0)) minute(s)"
+  } else {
+    "Every $([math]::Round($ts.TotalSeconds,0)) second(s)"
+  }
 }
 
 function Format-WindowText {
   param($ts)
   if ($null -eq $ts) { return $null }
   if ($ts -isnot [TimeSpan]) { return [string]$ts }
-  if ($ts.TotalDays -ge 1 -and [math]::Abs($ts.TotalDays - [math]::Round($ts.TotalDays)) -lt 1e-9) { return "$([int]$ts.TotalDays) day(s)" }
-  elseif ($ts.TotalHours -ge 1) { return "$([math]::Round($ts.TotalHours,2)) hour(s)" }
-  elseif ($ts.TotalMinutes -ge 1) { return "$([math]::Round($ts.TotalMinutes,0)) minute(s)" }
-  else { return "$([math]::Round($ts.TotalSeconds,0)) second(s)" }
+  if ($ts.TotalDays -ge 1 -and [math]::Abs($ts.TotalDays - [math]::Round($ts.TotalDays)) -lt 1e-9) {
+    "$([int]$ts.TotalDays) day(s)"
+  } elseif ($ts.TotalHours -ge 1) {
+    "$([math]::Round($ts.TotalHours,2)) hour(s)"
+  } elseif ($ts.TotalMinutes -ge 1) {
+    "$([math]::Round($ts.TotalMinutes,0)) minute(s)"
+  } else {
+    "$([math]::Round($ts.TotalSeconds,0)) second(s)"
+  }
 }
 
 # ---------- VM policy schedule (enhanced + classic) ----------
@@ -206,7 +275,12 @@ function Get-PolicyScheduleInfo {
   param($Policy)
 
   if (-not $Policy) {
-    return [pscustomobject]@{ CadenceTS=$null; CadenceText=$null; WindowTS=$null; WindowText=$null }
+    return [pscustomobject]@{
+      CadenceTS   = $null
+      CadenceText = $null
+      WindowTS    = $null
+      WindowText  = $null
+    }
   }
 
   $p = if ($Policy.properties) { $Policy.properties } else { $Policy }
@@ -216,6 +290,7 @@ function Get-PolicyScheduleInfo {
   foreach ($name in 'backupSchedule','BackupSchedule') {
     if ($p.PSObject.Properties.Name -contains $name) { $bs = $p.$name; break }
   }
+
   if ($bs) {
     $cadTs = $null
     foreach ($n in 'repeatingTimeIntervals','RepeatingTimeIntervals') {
@@ -231,13 +306,15 @@ function Get-PolicyScheduleInfo {
     $winTs = $null
     foreach ($n in 'scheduleWindowDuration','ScheduleWindowDuration','duration','Duration') {
       if ($bs.PSObject.Properties.Name -contains $n) {
-        $winTs = Parse-Iso8601Duration $bs.$n; if ($winTs) { break }
+        $winTs = Parse-Iso8601Duration $bs.$n
+        if ($winTs) { break }
       }
     }
     if (-not $winTs) {
       foreach ($n in 'scheduleWindowDurationInHours','ScheduleWindowDurationInHours') {
         if ($bs.PSObject.Properties.Name -contains $n) {
-          $h = [int]$bs.$n; if ($h -gt 0) { $winTs = New-TimeSpan -Hours $h; break }
+          $h = [int]$bs.$n
+          if ($h -gt 0) { $winTs = New-TimeSpan -Hours $h; break }
         }
       }
     }
@@ -255,9 +332,20 @@ function Get-PolicyScheduleInfo {
   foreach ($name in 'SchedulePolicy','schedulePolicy') {
     if ($p.PSObject.Properties.Name -contains $name) { $sp = $p.$name; break }
   }
-  if (-not $sp) { return [pscustomobject]@{ CadenceTS=$null; CadenceText=$null; WindowTS=$null; WindowText=$null } }
+  if (-not $sp) {
+    return [pscustomobject]@{
+      CadenceTS   = $null
+      CadenceText = $null
+      WindowTS    = $null
+      WindowText  = $null
+    }
+  }
 
-  function _pick_iso([string]$s) { if (-not $s) { return $null }; $m=[regex]::Match($s,'(P(?:\d+D)?(?:T(?:\d+H)?(?:\d+M)?(?:\d+S)?)?)$'); if($m.Success){$m.Groups[1].Value}else{$null} }
+  function _pick_iso([string]$s) {
+    if (-not $s) { return $null }
+    $m=[regex]::Match($s,'(P(?:\d+D)?(?:T(?:\d+H)?(?:\d+M)?(?:\d+S)?)?)$')
+    if($m.Success){$m.Groups[1].Value}else{$null}
+  }
 
   $cadTs = $null
   foreach ($propName in 'repeatingTimeIntervals','RepeatingTimeIntervals') {
@@ -272,21 +360,24 @@ function Get-PolicyScheduleInfo {
   if (-not $cadTs) {
     foreach ($propName in 'RepeatingTimeInterval','repeatingTimeInterval','RepetitionInterval','ScheduleInterval') {
       if ($sp.PSObject.Properties.Name -contains $propName) {
-        $cadTs = Parse-Iso8601Duration $sp.$propName; if ($cadTs) { break }
+        $cadTs = Parse-Iso8601Duration $sp.$propName
+        if ($cadTs) { break }
       }
     }
   }
   if (-not $cadTs) {
     foreach ($propName in 'scheduleIntervalInMins','ScheduleIntervalInMins') {
       if ($sp.PSObject.Properties.Name -contains $propName) {
-        $mins = [int]$sp.$propName; if ($mins -gt 0) { $cadTs = New-TimeSpan -Minutes $mins; break }
+        $mins = [int]$sp.$propName
+        if ($mins -gt 0) { $cadTs = New-TimeSpan -Minutes $mins; break }
       }
     }
   }
   if (-not $cadTs) {
     foreach ($propName in 'backupIntervalInHours','BackupIntervalInHours','repetitionInHours','RepeatIntervalInHours') {
       if ($sp.PSObject.Properties.Name -contains $propName) {
-        $hrs = [int]$sp.$propName; if ($hrs -gt 0) { $cadTs = New-TimeSpan -Hours $hrs; break }
+        $hrs = [int]$sp.$propName
+        if ($hrs -gt 0) { $cadTs = New-TimeSpan -Hours $hrs; break }
       }
     }
   }
@@ -297,11 +388,13 @@ function Get-PolicyScheduleInfo {
     $times = $sp.ScheduleRunTimes
     if ($freq -eq 'Daily' -and $times -and $times.Count -gt 0) {
       $ofs = $times | ForEach-Object { ([datetime]$_).TimeOfDay } | Sort-Object
-      if ($ofs.Count -eq 1) { $cadTs = New-TimeSpan -Hours 24 }
-      else {
+      if ($ofs.Count -eq 1) {
+        $cadTs = New-TimeSpan -Hours 24
+      } else {
         $maxGap = [TimeSpan]::Zero
         for ($i=0; $i -lt $ofs.Count-1; $i++) {
-          $gap = $ofs[$i+1] - $ofs[$i]; if ($gap -gt $maxGap) { $maxGap = $gap }
+          $gap = $ofs[$i+1] - $ofs[$i]
+          if ($gap -gt $maxGap) { $maxGap = $gap }
         }
         $wrap = (New-TimeSpan -Days 1) - $ofs[$ofs.Count-1] + $ofs[0]
         if ($wrap -gt $maxGap) { $maxGap = $wrap }
@@ -312,26 +405,38 @@ function Get-PolicyScheduleInfo {
       if ($days -and $days.Count -gt 0) {
         $map = @{ Sunday=0; Monday=1; Tuesday=2; Wednesday=3; Thursday=4; Friday=5; Saturday=6 }
         $idx = $days | ForEach-Object { $map[$_] } | Sort-Object
-        if ($idx.Count -eq 1) { $cadTs = New-TimeSpan -Days 7 }
-        else {
+        if ($idx.Count -eq 1) {
+          $cadTs = New-TimeSpan -Days 7
+        } else {
           $maxGapDays = 0
-          for ($i=0; $i -lt $idx.Count-1; $i++) { $gap = $idx[$i+1] - $idx[$i]; if ($gap -gt $maxGapDays) { $maxGapDays = $gap } }
+          for ($i=0; $i -lt $idx.Count-1; $i++) {
+            $gap = $idx[$i+1] - $idx[$i]
+            if ($gap -gt $maxGapDays) { $maxGapDays = $gap }
+          }
           $wrapDays = 7 - $idx[$idx.Count-1] + $idx[0]
           if ($wrapDays -gt $maxGapDays) { $maxGapDays = $wrapDays }
           $cadTs = New-TimeSpan -Days $maxGapDays
         }
-      } else { $cadTs = New-TimeSpan -Days 7 }
+      } else {
+        $cadTs = New-TimeSpan -Days 7
+      }
     }
   }
 
   # window (classic sometimes surfaces enhanced-like props)
   $winTs = $null
   foreach ($propName in 'scheduleWindowDuration','ScheduleWindowDuration','duration','Duration') {
-    if ($sp.PSObject.Properties.Name -contains $propName) { $winTs = Parse-Iso8601Duration $sp.$propName; if ($winTs) { break } }
+    if ($sp.PSObject.Properties.Name -contains $propName) {
+      $winTs = Parse-Iso8601Duration $sp.$propName
+      if ($winTs) { break }
+    }
   }
   if (-not $winTs) {
     foreach ($propName in 'scheduleWindowDurationInHours','ScheduleWindowDurationInHours') {
-      if ($sp.PSObject.Properties.Name -contains $propName) { $hrs=[int]$sp.$propName; if ($hrs -gt 0) { $winTs = New-TimeSpan -Hours $hrs; break } }
+      if ($sp.PSObject.Properties.Name -contains $propName) {
+        $hrs=[int]$sp.$propName
+        if ($hrs -gt 0) { $winTs = New-TimeSpan -Hours $hrs; break }
+      }
     }
   }
 
@@ -346,23 +451,32 @@ function Get-PolicyScheduleInfo {
 # If policy unknown, estimate VM cadence from last two recovery points
 function Get-RpoFromRecoveryPoints {
   param([Parameter(Mandatory)][string]$ProtectedItemId)
+
   $base = "https://management.azure.com"
   $uri  = "$base$ProtectedItemId/recoveryPoints?api-version=$($Api.RSV_RecoveryPoints)"
   $times = @()
+
   do {
     $j = $null
-    try { $j = Invoke-ArmGetUri -Uri $uri } catch {}
+    try {
+      $j = Invoke-ArmGetUri -Uri $uri
+    } catch {}
+
     if ($j -and $j.value) {
       $times += ($j.value | ForEach-Object {
         try { [datetime]$_.properties.recoveryPointTime } catch { $null }
       } | Where-Object { $_ })
     }
+
     $uri = if ($j -and $j.nextLink) { $j.nextLink } else { $null }
+
     if ($times.Count -ge 2 -and $uri) { $uri = $null } # only need two
   } while ($uri)
+
   if ($times.Count -lt 2) { return $null }
+
   $sorted = $times | Sort-Object
-  return ($sorted[-1] - $sorted[-2])
+  ($sorted[-1] - $sorted[-2])
 }
 
 function Split-VmFromResourceId {
@@ -377,19 +491,19 @@ function Split-VmFromResourceId {
   )
 
   if ($m.Success) {
-    return [pscustomobject]@{
+    [pscustomobject]@{
       ResourceGroup = $m.Groups[1].Value
       VMName        = $m.Groups[2].Value
     }
   } else {
-    return $null
+    $null
   }
 }
-
 
 # ---------- SQL helpers ----------
 function Get-SqlVmPolicyScheduleInfo {
   param($Policy)  # REST or cmdlet object
+
   if (-not $Policy) {
     return [pscustomobject]@{
       FullCadenceTS=$null; FullCadenceText=$null
@@ -398,6 +512,7 @@ function Get-SqlVmPolicyScheduleInfo {
       WindowTS=$null;      WindowText=$null
     }
   }
+
   $p = if ($Policy.properties) { $Policy.properties } else { $Policy }
 
   $full = $p.FullBackupSchedulePolicy ?? $p.fullBackupSchedulePolicy
@@ -416,30 +531,50 @@ function Get-SqlVmPolicyScheduleInfo {
       }
     }
     foreach ($n in 'RepetitionInterval','ScheduleInterval','repeatingTimeInterval','RepeatingTimeInterval') {
-      if ($node.PSObject.Properties.Name -contains $n) { $ts = Parse-Iso8601Duration $node.$n; if ($ts) { return $ts } }
+      if ($node.PSObject.Properties.Name -contains $n) {
+        $ts = Parse-Iso8601Duration $node.$n
+        if ($ts) { return $ts }
+      }
     }
     foreach ($n in 'scheduleIntervalInMins','ScheduleIntervalInMins') {
-      if ($node.PSObject.Properties.Name -contains $n) { $m = [int]$node.$n; if ($m -gt 0) { return (New-TimeSpan -Minutes $m) } }
+      if ($node.PSObject.Properties.Name -contains $n) {
+        $m = [int]$node.$n
+        if ($m -gt 0) { return (New-TimeSpan -Minutes $m) }
+      }
     }
     foreach ($n in 'backupIntervalInHours','BackupIntervalInHours','repetitionInHours','RepeatIntervalInHours') {
-      if ($node.PSObject.Properties.Name -contains $n) { $h = [int]$node.$n; if ($h -gt 0) { return (New-TimeSpan -Hours $h) } }
+      if ($node.PSObject.Properties.Name -contains $n) {
+        $h = [int]$node.$n
+        if ($h -gt 0) { return (New-TimeSpan -Hours $h) }
+      }
     }
-    return $null
+    $null
   }
 
   function _win([object]$node) {
     if (-not $node) { return $null }
     foreach ($n in 'scheduleWindowDuration','ScheduleWindowDuration','duration','Duration') {
-      if ($node.PSObject.Properties.Name -contains $n) { $ts = Parse-Iso8601Duration $node.$n; if ($ts) { return $ts } }
+      if ($node.PSObject.Properties.Name -contains $n) {
+        $ts = Parse-Iso8601Duration $node.$n
+        if ($ts) { return $ts }
+      }
     }
     foreach ($n in 'scheduleWindowDurationInHours','ScheduleWindowDurationInHours') {
-      if ($node.PSObject.Properties.Name -contains $n) { $h = [int]$node.$n; if ($h -gt 0) { return (New-TimeSpan -Hours $h) } }
+      if ($node.PSObject.Properties.Name -contains $n) {
+        $h = [int]$node.$n
+        if ($h -gt 0) { return (New-TimeSpan -Hours $h) }
+      }
     }
-    return $null
+    $null
   }
 
-  $winTs = (_win $full); if (-not $winTs) { $winTs = (_win $diff) }; if (-not $winTs) { $winTs = (_win $log) }
-  $fc = _cad $full; $dc = _cad $diff; $lc = _cad $log
+  $winTs = (_win $full)
+  if (-not $winTs) { $winTs = (_win $diff) }
+  if (-not $winTs) { $winTs = (_win $log) }
+
+  $fc = _cad $full
+  $dc = _cad $diff
+  $lc = _cad $log
 
   [pscustomobject]@{
     FullCadenceTS   = $fc; FullCadenceText   = (Format-TimeSpanText $fc)
@@ -455,10 +590,17 @@ function Get-SqlVmObservedRpo {
     [Parameter(Mandatory)][string]$ProtectedItemId,
     [Parameter(Mandatory)][string]$ApiVersion
   )
+
   $base = "https://management.azure.com"
   $uri  = "$base$ProtectedItemId/recoveryPoints?api-version=$ApiVersion"
   $j = $null
-  try { $j = Invoke-AzRestMethod -Uri $uri -Method GET -ErrorAction Stop } catch { return $null }
+
+  try {
+    $j = Invoke-AzRestMethod -Uri $uri -Method GET -ErrorAction Stop
+  } catch {
+    return $null
+  }
+
   if (-not $j.Content) { return $null }
   $rp = ($j.Content | ConvertFrom-Json)
   if (-not $rp.value) { return $null }
@@ -473,6 +615,7 @@ function Get-SqlVmObservedRpo {
       }
     }
   }
+
   if (-not $all) { return $null }
 
   $pref = @('Log','TransactionLog','Differential','CopyOnly','Full','AppConsistent')
@@ -480,9 +623,11 @@ function Get-SqlVmObservedRpo {
     $hit = $all | Where-Object { $_.Type -eq $kind } | Sort-Object Time -Descending | Select-Object -First 1
     if ($hit) { return [math]::Round(((Get-Date) - $hit.Time).TotalHours,2) }
   }
+
   $latest = $all | Sort-Object Time -Descending | Select-Object -First 1
   if ($latest) { return [math]::Round(((Get-Date) - $latest.Time).TotalHours,2) }
-  return $null
+
+  $null
 }
 
 function Get-AzureSqlPitrObservedRpo {
@@ -491,16 +636,24 @@ function Get-AzureSqlPitrObservedRpo {
     [Parameter(Mandatory)][string]$ServerName,
     [Parameter(Mandatory)][string]$DatabaseName
   )
+
   $rp = $null
   try {
-    $rp = Get-AzSqlDatabaseRestorePoint -ResourceGroupName $ResourceGroupName -ServerName $ServerName -DatabaseName $DatabaseName -ErrorAction Stop |
+    $rp = Get-AzSqlDatabaseRestorePoint `
+            -ResourceGroupName $ResourceGroupName `
+            -ServerName $ServerName `
+            -DatabaseName $DatabaseName `
+            -ErrorAction Stop |
           Where-Object { $_.RestorePointType -eq 'CONTINUOUS' } |
           Sort-Object RestorePointCreationDate -Descending |
           Select-Object -First 1
-  } catch { return $null }
+  } catch {
+    return $null
+  }
 
   if (-not $rp -or -not $rp.RestorePointCreationDate) { return $null }
-  return [math]::Round(((Get-Date) - [datetime]$rp.RestorePointCreationDate).TotalHours,2)
+
+  [math]::Round(((Get-Date) - [datetime]$rp.RestorePointCreationDate).TotalHours,2)
 }
 
 # ---------------- Collections ----------------
@@ -550,7 +703,9 @@ function Get-RsvVmItems {
         "https://management.azure.com$VaultResourceId/backupProtectedItems?api-version=$vApi&`$filter=backupManagementType%20eq%20'AzureIaasVM'",
         "https://management.azure.com$VaultResourceId/backupProtectedItems?api-version=$vApi"
       )) {
-        $rs = @(); $uri = $uri0
+        $rs = @()
+        $uri = $uri0
+
         do {
           $j = Invoke-ArmGetUri -Uri $uri
           if ($j -and $j.value) { $rs += $j.value }
@@ -561,7 +716,9 @@ function Get-RsvVmItems {
         if ($rs.Count -gt 0) {
           $pathCounts.rest += $rs.Count
           foreach ($row in $rs) {
-            $p = $row.properties; if (-not $p) { continue }
+            $p = $row.properties
+            if (-not $p) { continue }
+
             # Keep the protectedItem id for recoveryPoints; adapt shape to cmdlet-like
             $obj = [pscustomobject]@{
               Id         = $row.id
@@ -593,13 +750,19 @@ function Get-RsvVmItems {
   foreach ($it in $all) {
     $p = if ($it.properties) { $it.properties } else { $it.Properties }
     if (-not $p) { continue }
+
     $isVm = ($p.backupManagementType -eq 'AzureIaasVM' -or
              $p.workloadType -in @('AzureVM','VM') -or
              $p.protectedItemType -match 'IaasVMProtectedItem' -or
              $p.protectedItemType -eq 'Microsoft.Compute/virtualMachines' -or
-             $p.virtualMachineId -or $p.SourceResourceId)
+             $p.virtualMachineId -or
+             $p.SourceResourceId)
+
     if (-not $isVm) { continue }
-    if (-not ($it.PSObject.Properties.Name -contains 'Properties')) { $it = [pscustomobject]@{ Properties = $p } }
+
+    if (-not ($it.PSObject.Properties.Name -contains 'Properties')) {
+      $it = [pscustomobject]@{ Properties = $p }
+    }
     $filtered += $it
   }
 
@@ -607,7 +770,8 @@ function Get-RsvVmItems {
     Write-Host ("[Diag] VM discovery paths ⇒ direct={0} containers={1} rest={2}" -f `
       $pathCounts.direct, $pathCounts.containers, $pathCounts.rest) -ForegroundColor DarkCyan
   }
-  return $filtered
+
+  $filtered
 }
 
 # Extract RSV posture with **root-first** strategy
@@ -620,12 +784,26 @@ function Get-RsvPosture {
     [string]$Location
   )
 
-  $redundancy = $null; $csr = $null
-  $cloudState = $null; $hybridState = $null; $retention = $null; $mua = $null; $immutable = $null; $softDelCompat = $null
-  $secureScore=$null; $bcdr=$null; $pna=$null; $peB=$null; $peSR=$null; $crossRegion=$null
+  $redundancy = $null
+  $csr        = $null
+  $cloudState = $null
+  $hybridState= $null
+  $retention  = $null
+  $mua        = $null
+  $immutable  = $null
+  $softDelCompat = $null
+  $secureScore=$null
+  $bcdr       = $null
+  $pna        = $null
+  $peB        = $null
+  $peSR       = $null
+  $crossRegion= $null
 
   $root = $null
-  try { $root = Invoke-ArmGetById -ResourceId $VaultId -ApiVersion $Api.RSV_VaultRoot_New } catch {}
+  try {
+    $root = Invoke-ArmGetById -ResourceId $VaultId -ApiVersion $Api.RSV_VaultRoot_New
+  } catch {}
+
   if ($root -and $root.properties) {
     $p = $root.properties
     $sec = $p.securitySettings
@@ -636,11 +814,18 @@ function Get-RsvPosture {
         if (-not $retention)   { $retention   = $sds.softDeleteRetentionPeriodInDays }
         if (-not $hybridState) { $hybridState = $sds.enhancedSecurityState }
       }
-      if ($sec.multiUserAuthorization) { $mua = ($sec.multiUserAuthorization -match '^(?i)enabled$') }
+      if ($sec.multiUserAuthorization) {
+        $mua = ($sec.multiUserAuthorization -match '^(?i)enabled$')
+      }
     }
+
     $red = $p.redundancySettings
-    if ($red -and $red.standardTierStorageRedundancy) { $redundancy = Normalize-Redundancy $red.standardTierStorageRedundancy }
-    if ($red -and $red.crossRegionRestore) { $crossRegion = $red.crossRegionRestore }
+    if ($red -and $red.standardTierStorageRedundancy) {
+      $redundancy = Normalize-Redundancy $red.standardTierStorageRedundancy
+    }
+    if ($red -and $red.crossRegionRestore) {
+      $crossRegion = $red.crossRegionRestore
+    }
 
     $rs = $p.restoreSettings
     if ($rs -and $rs.crossSubscriptionRestoreSettings -and $rs.crossSubscriptionRestoreSettings.crossSubscriptionRestoreState) {
@@ -652,7 +837,9 @@ function Get-RsvPosture {
     $pna         = $p.publicNetworkAccess
     $peB         = $p.privateEndpointStateForBackup
     $peSR        = $p.privateEndpointStateForSiteRecovery
-    if (-not $redundancy -and $p.storageModelType) { $redundancy = Normalize-Redundancy $p.storageModelType }
+    if (-not $redundancy -and $p.storageModelType) {
+      $redundancy = Normalize-Redundancy $p.storageModelType
+    }
   }
 
   if (-not $cloudState -and -not $hybridState) {
@@ -670,6 +857,7 @@ function Get-RsvPosture {
 
   foreach ($vApi in @($Api.RSV_BackupConfig, $Api.RSV_BackupConfig_Legacy)) {
     if ($cloudState -and $retention -and $redundancy -and $csr) { break }
+
     $br = Invoke-ArmGetById -ResourceId $VaultId -SuffixPath '/backupconfig' -ApiVersion $vApi
     if ($br -and $br.properties) {
       if (-not $cloudState) { $cloudState = Normalize-SD ($br.properties.softDeleteFeatureState ?? $br.properties.softDeleteState) }
@@ -682,7 +870,11 @@ function Get-RsvPosture {
   if (-not $immutable) { $immutable = 'NotApplicable' }
   $softDeleteStateForLevel = if ($cloudState) { $cloudState } else { $softDelCompat }
   $alwaysOn = To-AlwaysOnBool $cloudState $hybridState
-  $enhState = if ($hybridState) { $hybridState } else { if ($mua -eq $true -or $softDeleteStateForLevel -in @('Enabled','AlwaysON')) { 'Enabled' } else { 'Disabled' } }
+  $enhState = if ($hybridState) {
+    $hybridState
+  } else {
+    if ($mua -eq $true -or $softDeleteStateForLevel -in @('Enabled','AlwaysON')) { 'Enabled' } else { 'Disabled' }
+  }
   $secLevel = Derive-SecurityLevel -EnhancedSecurityState $enhState -IsMUAEnabled:([bool]$mua) -SoftDeleteState $softDeleteStateForLevel
 
   [pscustomobject]@{
@@ -710,7 +902,11 @@ function Get-RsvPosture {
 }
 
 # ---------------- Iterate subscriptions ----------------
+$useExplicitTargets = $TargetSubscriptions -and $TargetSubscriptions.Count -gt 0
+
 $subs = Get-AzSubscription | Where-Object {
+  # If explicit targets are defined, only include subs whose Id OR Name is in $TargetSubscriptions
+  (-not $useExplicitTargets -or ($TargetSubscriptions -contains $_.Id -or $TargetSubscriptions -contains $_.Name)) -and
   (-not $SubIncludeNameRegex -or $_.Name -match $SubIncludeNameRegex) -and
   (-not $SubIncludeIdRegex   -or $_.Id   -match $SubIncludeIdRegex)
 } | Sort-Object Name
@@ -722,19 +918,32 @@ foreach ($sub in $subs) {
   foreach ($ns in 'Microsoft.RecoveryServices','Microsoft.DataProtection') {
     try {
       $reg = Get-AzResourceProvider -ProviderNamespace $ns -ErrorAction SilentlyContinue
-      if ($reg.RegistrationState -ne 'Registered') { Register-AzResourceProvider -ProviderNamespace $ns | Out-Null }
+      if ($reg.RegistrationState -ne 'Registered') {
+        Register-AzResourceProvider -ProviderNamespace $ns | Out-Null
+      }
     } catch {}
   }
 
   # =========================
   # Recovery Services Vaults
   # =========================
-  $rsvs = @(); try { $rsvs = Get-AzRecoveryServicesVault -ErrorAction SilentlyContinue } catch {}
+  $rsvs = @()
+  try {
+    $rsvs = Get-AzRecoveryServicesVault -ErrorAction SilentlyContinue
+  } catch {}
+
   foreach ($v in $rsvs) {
-    try { Set-AzRecoveryServicesVaultContext -Vault $v -ErrorAction Stop } catch {}
+    try {
+      Set-AzRecoveryServicesVaultContext -Vault $v -ErrorAction Stop
+    } catch {}
 
     # Posture (root-first)
-    $r = Get-RsvPosture -SubscriptionId $sub.Id -ResourceGroupName $v.ResourceGroupName -VaultName $v.Name -VaultId $v.Id -Location $v.Location
+    $r = Get-RsvPosture -SubscriptionId $sub.Id `
+                        -ResourceGroupName $v.ResourceGroupName `
+                        -VaultName $v.Name `
+                        -VaultId $v.Id `
+                        -Location $v.Location
+
     $rsvReport.Add([pscustomobject]@{
       SubscriptionName        = $sub.Name
       SubscriptionId          = $r.SubscriptionId
@@ -769,7 +978,9 @@ foreach ($sub in $subs) {
     $vmPoliciesByName = @{}
     try {
       $vmPolicies = Get-AzRecoveryServicesBackupProtectionPolicy -WorkloadType AzureVM -ErrorAction SilentlyContinue
-      foreach ($pp in ($vmPolicies | Where-Object { $_ })) { $vmPoliciesByName[$pp.Name] = $pp }
+      foreach ($pp in ($vmPolicies | Where-Object { $_ })) {
+        $vmPoliciesByName[$pp.Name] = $pp
+      }
     } catch {}
 
     foreach ($it in $vmItemsAll) {
@@ -789,6 +1000,7 @@ foreach ($sub in $subs) {
       # Policy lookup (cmdlet cache → REST by policyId)
       $policyName = $it.Properties.PolicyName
       $policyObj  = $null
+
       if ($policyName -and $vmPoliciesByName.ContainsKey($policyName)) {
         $policyObj = $vmPoliciesByName[$policyName]
       } else {
@@ -865,25 +1077,32 @@ foreach ($sub in $subs) {
           $p = $it.Properties ?? $it.properties
 
           # Policy lookup (name → cmdlet; else policyId via REST)
-          $polObj = $null
+          $polObj  = $null
           $polName = $p.PolicyName ?? $p.policyName
+
           if ($polName) {
-            try { $polObj = Get-AzRecoveryServicesBackupProtectionPolicy -WorkloadType MSSQL -Name $polName -ErrorAction SilentlyContinue } catch {}
+            try {
+              $polObj = Get-AzRecoveryServicesBackupProtectionPolicy -WorkloadType MSSQL -Name $polName -ErrorAction SilentlyContinue
+            } catch {}
           }
+
           if (-not $polObj) {
             $polId = $p.PolicyId ?? $p.policyId
             if ($polId) {
               foreach ($vPol in '2023-02-01','2021-12-01') {
                 try {
                   $polObj = Invoke-AzRestMethod -Uri ("https://management.azure.com{0}?api-version={1}" -f $polId,$vPol) -Method GET -ErrorAction Stop
-                  if ($polObj.Content) { $polObj = $polObj.Content | ConvertFrom-Json; break }
+                  if ($polObj.Content) {
+                    $polObj = $polObj.Content | ConvertFrom-Json
+                    break
+                  }
                 } catch {}
               }
             }
           }
 
           # Configured cadence/window (policy) — tenant-agnostic
-          $sched = Get-SqlVmPolicyScheduleInfo -Policy $polObj
+          $sched   = Get-SqlVmPolicyScheduleInfo -Policy $polObj
           $fullCad = $sched.FullCadenceText
           $diffCad = $sched.DiffCadenceText
           $logCad  = $sched.LogCadenceText
@@ -891,7 +1110,9 @@ foreach ($sub in $subs) {
 
           # Observed RPO from workload recovery points (prefer log)
           $obsRpo = $null
-          if ($it.Id) { $obsRpo = Get-SqlVmObservedRpo -ProtectedItemId $it.Id -ApiVersion $Api.RSV_RecoveryPoints }
+          if ($it.Id) {
+            $obsRpo = Get-SqlVmObservedRpo -ProtectedItemId $it.Id -ApiVersion $Api.RSV_RecoveryPoints
+          }
 
           # Last backup time/status if present
           $lastOk = $null
@@ -926,17 +1147,21 @@ foreach ($sub in $subs) {
   # ==============
   # Backup Vaults
   # ==============
-  $bvs = @(); try { $bvs = Get-AzDataProtectionBackupVault -ErrorAction SilentlyContinue } catch {}
+  $bvs = @()
+  try {
+    $bvs = Get-AzDataProtectionBackupVault -ErrorAction SilentlyContinue
+  } catch {}
+
   if (-not $bvs -or $bvs.Count -eq 0) {
     try {
       $bvs = Get-AzResource -ResourceType 'Microsoft.DataProtection/backupVaults' -ErrorAction SilentlyContinue |
         ForEach-Object {
           [pscustomobject]@{
-            Name = $_.Name
+            Name              = $_.Name
             ResourceGroupName = $_.ResourceGroupName
-            Location = $_.Location
-            Id = $_.ResourceId
-            Properties = $_.Properties
+            Location          = $_.Location
+            Id                = $_.ResourceId
+            Properties        = $_.Properties
           }
         }
     } catch {}
@@ -954,7 +1179,10 @@ foreach ($sub in $subs) {
 
     $bvName = $bv.Name
     $restBV = Invoke-ArmGetById -ResourceId $bv.Id -ApiVersion $Api.DP_BackupVault
-    $sec = $null; $stor = $null
+
+    $sec = $null
+    $stor= $null
+
     if ($restBV -and $restBV.properties) {
       $sec  = $restBV.properties.securitySettings
       $stor = $restBV.properties.storageSettings
@@ -968,7 +1196,9 @@ foreach ($sub in $subs) {
     if ($stor) {
       if ($stor -is [System.Collections.IEnumerable] -and -not ($stor -is [string])) {
         $vaultStore = $stor | Where-Object { $_.datastoreType -eq 'VaultStore' -or $_.DataStoreType -eq 'VaultStore' } | Select-Object -First 1
-        if (-not $vaultStore) { $vaultStore = $stor | Select-Object -First 1 }
+        if (-not $vaultStore) {
+          $vaultStore = $stor | Select-Object -First 1
+        }
         if ($vaultStore) {
           if     ($vaultStore.redundancy)         { $redundancy = $vaultStore.redundancy }
           elseif ($vaultStore.type)               { $redundancy = $vaultStore.type }
@@ -983,12 +1213,21 @@ foreach ($sub in $subs) {
     $redundancy = Normalize-Redundancy -Value $redundancy
 
     # securitySettings (nested + legacy shapes)
-    $cloudState  = $null; $hybridState = $null; $retention = $null; $mua = $null; $immutable = $null; $csr = $null
+    $cloudState  = $null
+    $hybridState = $null
+    $retention   = $null
+    $mua         = $null
+    $immutable   = $null
+    $csr         = $null
+
     if ($sec) {
-      if ($sec.softDeleteState)       { $cloudState = $sec.softDeleteState }
-      elseif ($sec.SoftDeleteState)   { $cloudState = $sec.SoftDeleteState }
+      if     ($sec.softDeleteState)     { $cloudState = $sec.softDeleteState }
+      elseif ($sec.SoftDeleteState)     { $cloudState = $sec.SoftDeleteState }
+
       if (-not $cloudState) {
-        $sds = $sec.softDeleteSettings; if (-not $sds) { $sds = $sec.SoftDeleteSettings }
+        $sds = $sec.softDeleteSettings
+        if (-not $sds) { $sds = $sec.SoftDeleteSettings }
+
         if ($sds) {
           $sdState = $sds.state
           if ($sdState) {
@@ -997,36 +1236,51 @@ foreach ($sub in $subs) {
             else { $cloudState = $sdState }
           }
           if (-not $retention) {
-            $r = $sds.retentionDurationInDays; if (-not $r) { $r = $sds.RetentionDurationInDays }
+            $r = $sds.retentionDurationInDays
+            if (-not $r) { $r = $sds.RetentionDurationInDays }
             if ($r) { $retention = [int]$r }
           }
         }
       }
-      if ($sec.immutabilityState)           { $immutable = $sec.immutabilityState }
-      elseif ($sec.ImmutabilityState)       { $immutable = $sec.ImmutabilityState }
+
+      if     ($sec.immutabilityState)     { $immutable = $sec.immutabilityState }
+      elseif ($sec.ImmutabilityState)     { $immutable = $sec.ImmutabilityState }
       else {
-        $ims = $sec.immutabilitySettings; if (-not $ims) { $ims = $sec.ImmutabilitySettings }
+        $ims = $sec.immutabilitySettings
+        if (-not $ims) { $ims = $sec.ImmutabilitySettings }
         if ($ims -and $ims.state) { $immutable = $ims.state }
       }
-      if     ($sec.isMUAEnabled -ne $null)  { $mua = [bool]$sec.isMUAEnabled }
-      elseif ($sec.IsMUAEnabled -ne $null)  { $mua = [bool]$sec.IsMUAEnabled }
+
+      if     ($sec.isMUAEnabled -ne $null) { $mua = [bool]$sec.isMUAEnabled }
+      elseif ($sec.IsMUAEnabled -ne $null) { $mua = [bool]$sec.IsMUAEnabled }
       else {
-        $muaSettings = $sec.multiUserAuthorizationSettings; if (-not $muaSettings) { $muaSettings = $sec.MultiUserAuthorizationSettings }
-        if ($muaSettings -and $muaSettings.state) { $mua = ($muaSettings.state -match '^(?i)enabled|on$') }
+        $muaSettings = $sec.multiUserAuthorizationSettings
+        if (-not $muaSettings) { $muaSettings = $sec.MultiUserAuthorizationSettings }
+        if ($muaSettings -and $muaSettings.state) {
+          $mua = ($muaSettings.state -match '^(?i)enabled|on$')
+        }
       }
-      if     ($sec.enhancedSecurityState)   { $hybridState = $sec.enhancedSecurityState }
-      elseif ($sec.EnhancedSecurityState)   { $hybridState = $sec.EnhancedSecurityState }
+
+      if     ($sec.enhancedSecurityState) { $hybridState = $sec.enhancedSecurityState }
+      elseif ($sec.EnhancedSecurityState) { $hybridState = $sec.EnhancedSecurityState }
+
       if     ($sec.crossSubscriptionRestoreState) { $csr = $sec.crossSubscriptionRestoreState }
       elseif ($sec.CrossSubscriptionRestoreState) { $csr = $sec.CrossSubscriptionRestoreState }
+
       if (-not $csr -and $restBV -and $restBV.properties -and $restBV.properties.featureSettings) {
         $fs = $restBV.properties.featureSettings
-        $csrSet = $fs.crossSubscriptionRestoreSettings; if (-not $csrSet) { $csrSet = $fs.CrossSubscriptionRestoreSettings }
+        $csrSet = $fs.crossSubscriptionRestoreSettings
+        if (-not $csrSet) { $csrSet = $fs.CrossSubscriptionRestoreSettings }
         if ($csrSet -and $csrSet.state) { $csr = $csrSet.state }
       }
     }
 
     $alwaysOn = To-AlwaysOnBool $cloudState $hybridState
-    $enhState = if ($hybridState -in @('Enabled','AlwaysON') -or $mua -eq $true -or $cloudState -in @('Enabled','AlwaysON')) { 'Enabled' } else { 'Disabled' }
+    $enhState = if ($hybridState -in @('Enabled','AlwaysON') -or $mua -eq $true -or $cloudState -in @('Enabled','AlwaysON')) {
+      'Enabled'
+    } else {
+      'Disabled'
+    }
     $secLevel = Derive-SecurityLevel -EnhancedSecurityState $enhState -IsMUAEnabled:([bool]$mua) -SoftDeleteState $cloudState
 
     $bvReport.Add([pscustomobject]@{
@@ -1049,20 +1303,28 @@ foreach ($sub in $subs) {
 
     # Backup Instances (coverage map + protectedIds)
     $instances = @()
-    try { $instances = Get-AzDataProtectionBackupInstance -ResourceGroupName $rgName -VaultName $bvName -ErrorAction SilentlyContinue } catch {}
+    try {
+      $instances = Get-AzDataProtectionBackupInstance -ResourceGroupName $rgName -VaultName $bvName -ErrorAction SilentlyContinue
+    } catch {}
+
     if (-not $instances -or $instances.Count -eq 0) {
       $instances = Get-AllBackupInstances -SubscriptionId $sub.Id -ResourceGroupName $rgName -VaultName $bvName -ApiVersion $Api.DP_BackupInstances
     }
+
     foreach ($bi in $instances) {
       $props = if ($bi.PSObject.Properties.Name -contains 'Properties') { $bi.Properties } else { $bi.properties }
-      $dsi   = if ($props) { if ($props.PSObject.Properties.Name -contains 'DataSourceInfo') { $props.DataSourceInfo } else { $props.dataSourceInfo } }
+      $dsi   = if ($props) {
+        if ($props.PSObject.Properties.Name -contains 'DataSourceInfo') { $props.DataSourceInfo } else { $props.dataSourceInfo }
+      }
+
       if ($dsi) {
         $dsId   = if ($dsi.ResourceId) { $dsi.ResourceId } else { $dsi.resourceId }
         if ($dsId) { $null = $protectedIds.Add($dsId) }
 
         # Optional: add known non-VMs to DB coverage (kept from your original script)
         $dsType = if ($dsi.DataSourceType) { $dsi.DataSourceType } else { $dsi.dataSourceType }
-        $name   = if ($dsi.ResourceName) { $dsi.ResourceName } else { $dsi.resourceName }
+        $name   = if ($dsi.ResourceName)   { $dsi.ResourceName }   else { $dsi.resourceName }
+
         switch -Regex ($dsType) {
           'PostgreSQL' {
             $dbReport.Add([pscustomobject]@{
@@ -1086,15 +1348,24 @@ foreach ($sub in $subs) {
   # ============================
   # VM backup coverage (all VMs)
   # ============================
-  $vms = @(); try { $vms = Get-AzVM -Status -ErrorAction SilentlyContinue } catch {}
+  $vms = @()
+  try {
+    $vms = Get-AzVM -Status -ErrorAction SilentlyContinue
+  } catch {}
+
   foreach ($vm in $vms) {
     $isProtected = $protectedIds.Contains($vm.Id)
     $ps = $vm.PowerState
     if (-not $ps) { $ps = 'Unknown' } else { $ps = ($ps -replace '^VM ','') }
+
     $vmReport.Add([pscustomobject]@{
-      SubscriptionName=$sub.Name; SubscriptionId=$sub.Id
-      VMName=$vm.Name; ResourceGroup=$vm.ResourceGroupName; Location=$vm.Location
-      PowerState=$ps; IsBackedUp=$isProtected
+      SubscriptionName=$sub.Name
+      SubscriptionId=$sub.Id
+      VMName=$vm.Name
+      ResourceGroup=$vm.ResourceGroupName
+      Location=$vm.Location
+      PowerState=$ps
+      IsBackedUp=$isProtected
       Method = if ($isProtected) { 'RSV or BV' } else { 'Not protected' }
     })
   }
@@ -1102,25 +1373,44 @@ foreach ($sub in $subs) {
   # ==================================================
   # Azure SQL DB (PaaS) — observed RPO from PITR
   # ==================================================
-  $sqlServers = @(); try { $sqlServers = Get-AzSqlServer -ErrorAction SilentlyContinue } catch {}
+  $sqlServers = @()
+  try {
+    $sqlServers = Get-AzSqlServer -ErrorAction SilentlyContinue
+  } catch {}
+
   foreach ($srv in $sqlServers) {
-    $dbs = @(); try { $dbs = Get-AzSqlDatabase -ResourceGroupName $srv.ResourceGroupName -ServerName $srv.ServerName -ErrorAction SilentlyContinue } catch {}
+    $dbs = @()
+    try {
+      $dbs = Get-AzSqlDatabase -ResourceGroupName $srv.ResourceGroupName -ServerName $srv.ServerName -ErrorAction SilentlyContinue
+    } catch {}
+
     foreach ($db in $dbs | Where-Object { $_.DatabaseName -ne 'master' }) {
       $obsRpo = Get-AzureSqlPitrObservedRpo -ResourceGroupName $srv.ResourceGroupName -ServerName $srv.ServerName -DatabaseName $db.DatabaseName
       $hasLTR = $false
+
       try {
-        $ltr = Get-AzSqlDatabaseLongTermRetentionPolicy -ResourceGroupName $srv.ResourceGroupName -ServerName $srv.ServerName -DatabaseName $db.DatabaseName -ErrorAction SilentlyContinue
+        $ltr = Get-AzSqlDatabaseLongTermRetentionPolicy `
+                -ResourceGroupName $srv.ResourceGroupName `
+                -ServerName $srv.ServerName `
+                -DatabaseName $db.DatabaseName `
+                -ErrorAction SilentlyContinue
         if ($ltr -and $ltr.MonthlyRetention) { $hasLTR = $true }
       } catch {}
 
-      # Keep your original coverage + add to SQL detail for PaaS
+      # Coverage entry
       $dbReport.Add([pscustomobject]@{
-        SubscriptionName=$sub.Name; SubscriptionId=$sub.Id
-        DbType='Azure SQL (PaaS)'; ServerOrInstance=$srv.ServerName; DatabaseName=$db.DatabaseName
-        IsBackedUp=$true; Method = if ($hasLTR) { 'Native PITR + LTR' } else { 'Native PITR only' }
-        VaultName='-'; Location=$db.Location
+        SubscriptionName=$sub.Name
+        SubscriptionId=$sub.Id
+        DbType='Azure SQL (PaaS)'
+        ServerOrInstance=$srv.ServerName
+        DatabaseName=$db.DatabaseName
+        IsBackedUp=$true
+        Method = if ($hasLTR) { 'Native PITR + LTR' } else { 'Native PITR only' }
+        VaultName='-'
+        Location=$db.Location
       })
 
+      # SQL detail entry
       $sqlDetailReport.Add([pscustomobject]@{
         SubscriptionName      = $sub.Name
         VaultName             = '-'
@@ -1147,8 +1437,11 @@ foreach ($sub in $subs) {
 # ===========================
 function Print-Section($title, $data, $columns, $sortBy) {
   Write-Host "`n=== $title ===" -ForegroundColor Cyan
-  if ($data.Count -gt 0) { $data | Sort-Object $sortBy | Format-Table $columns -AutoSize }
-  else { Write-Host "No $title found." }
+  if ($data.Count -gt 0) {
+    $data | Sort-Object $sortBy | Format-Table $columns -AutoSize
+  } else {
+    Write-Host "No $title found."
+  }
 }
 
 Print-Section "Recovery Services Vaults" $rsvReport @(
@@ -1235,17 +1528,18 @@ if ($ExportXlsx) {
       [Parameter()] [string[]]$Columns = $null,
       [switch]$FirstSheet
     )
+
     $pipe = $Data
     if ($Columns) { $pipe = $Data | Select-Object $Columns }
 
     $common = @{
-      Path          = $XlsxPath
-      WorksheetName = $WorksheetName
-      TableName     = $TableName
-      TableStyle    = 'Medium2'
-      AutoSize      = $true
-      FreezeTopRow  = $true
-      BoldTopRow    = $true
+      Path               = $XlsxPath
+      WorksheetName      = $WorksheetName
+      TableName          = $TableName
+      TableStyle         = 'Medium2'
+      AutoSize           = $true
+      FreezeTopRow       = $true
+      BoldTopRow         = $true
       NoNumberConversion = @('VMName','VaultName','PolicyName','ServerOrInstance','DatabaseName','ResourceGroup')
     }
     if ($FirstSheet) { $common.ClearSheet = $true }  # wipe only once
@@ -1311,16 +1605,17 @@ if ($ExportXlsx) {
   $enhancedVaults = @($rsvReport + $bvReport) | Where-Object { $_.SecurityLevel -eq 'Enhanced' }
 
   $summary = @(
-    [pscustomobject]@{ Metric = 'Vaults (total)';            Value = $vaultsTotal }
-    [pscustomobject]@{ Metric = '  RSVs';                    Value = $rsvReport.Count }
-    [pscustomobject]@{ Metric = '  Backup Vaults';           Value = $bvReport.Count }
-    [pscustomobject]@{ Metric = 'Vaults with Always-On SD';  Value = ($alwaysOnVaults | Measure-Object | Select-Object -ExpandProperty Count) }
-    [pscustomobject]@{ Metric = 'Vaults with Enhanced Sec';  Value = ($enhancedVaults | Measure-Object | Select-Object -ExpandProperty Count) }
-    [pscustomobject]@{ Metric = 'VMs (total)';               Value = $vmTotal }
-    [pscustomobject]@{ Metric = 'VMs protected';             Value = "$vmProtected ($vmPct`%)" }
-    [pscustomobject]@{ Metric = 'Databases/Services (total)';Value = $dbTotal }
-    [pscustomobject]@{ Metric = 'Databases protected';       Value = "$dbProtected ($dbPct`%)" }
+    [pscustomobject]@{ Metric = 'Vaults (total)';             Value = $vaultsTotal }
+    [pscustomobject]@{ Metric = '  RSVs';                     Value = $rsvReport.Count }
+    [pscustomobject]@{ Metric = '  Backup Vaults';            Value = $bvReport.Count }
+    [pscustomobject]@{ Metric = 'Vaults with Always-On SD';   Value = ($alwaysOnVaults | Measure-Object | Select-Object -ExpandProperty Count) }
+    [pscustomobject]@{ Metric = 'Vaults with Enhanced Sec';   Value = ($enhancedVaults | Measure-Object | Select-Object -ExpandProperty Count) }
+    [pscustomobject]@{ Metric = 'VMs (total)';                Value = $vmTotal }
+    [pscustomobject]@{ Metric = 'VMs protected';              Value = "$vmProtected ($vmPct`%)" }
+    [pscustomobject]@{ Metric = 'Databases/Services (total)'; Value = $dbTotal }
+    [pscustomobject]@{ Metric = 'Databases protected';        Value = "$dbProtected ($dbPct`%)" }
   )
+
   Export-Sheet -Data $summary -WorksheetName 'Summary' -TableName 'Summary' -Columns @('Metric','Value')
 
   Write-Host "`nExcel export complete → $XlsxPath" -ForegroundColor Green
