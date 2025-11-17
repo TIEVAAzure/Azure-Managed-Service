@@ -3,52 +3,184 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>TIEVA — Backup Prioritizer (v3.20)</title>
+<title>TIEVA — Backup Posture Explorer (v4.0)</title>
 <style>
-  :root{ --brand-green:#2DA58E; --critical:#ef4444; --moderate:#f59e0b; --excellent:#10b981;
-         --fg:#111827; --muted:#6b7280; --border:#e5e7eb; --canvas: var(--brand-green); --link:#0f5eff; --content-max: 1440px; }
-  *{box-sizing:border-box} html{scroll-behavior:smooth}
-  body{margin:0;background:var(--canvas);color:var(--fg);font:14px/1.45 system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif}
-  a{color:#0f5eff;text-decoration:none} a:hover{text-decoration:underline}
+  :root{
+    --brand-green:#2DA58E; --critical:#ef4444; --moderate:#f59e0b; --excellent:#10b981;
+    --fg:#111827; --muted:#6b7280; --border:#e5e7eb; --canvas: var(--brand-green);
+    --link:#0f5eff; --content-max: 1440px;
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{
+    margin:0;
+    background:var(--canvas);
+    color:var(--fg);
+    font:14px/1.45 system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;
+  }
+  a{color:var(--link);text-decoration:none}
+  a:hover{text-decoration:underline}
   .wrap{max-width:var(--content-max);margin:0 auto;padding:24px}
   .brandbar{background:#000;color:#fff}
-  .brandwrap{max-width:var(--content-max);margin:0 auto;padding:14px 24px;display:flex;align-items:center;justify-content:space-between;gap:12px}
+  .brandwrap{
+    max-width:var(--content-max);
+    margin:0 auto;
+    padding:14px 24px;
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:12px;
+  }
   .brandtitle{font-size:18px;font-weight:600}
   .btnrow{display:flex;gap:8px;flex-wrap:wrap}
-  .header-btn{appearance:none;border:1px solid rgba(255,255,255,.25);background:transparent;color:#fff;border-radius:8px;padding:8px 12px;cursor:pointer}
-  .row{display:flex;gap:20px;flex-wrap:wrap} .col{flex:1 1 360px}
-  .card{background:#fff;border:1px solid var(--border);border-radius:10px;padding:16px;margin:18px 0}
-  h2{margin:0 0 10px;font-size:18px} h3{margin:0 0 10px;font-size:16px}
-  .muted{color:var(--muted)} .pill{display:inline-block;font-size:12px;border-radius:999px;padding:2px 8px;border:1px solid var(--border)}
-  .btn{padding:8px 12px;border:1px solid var(--border);border-radius:8px;background:#f9fafb;cursor:pointer}
-  .btn.primary{background:#0f5eff;color:#fff;border-color:#0f5eff}
-  input[type=file]{border:1px solid var(--border);border-radius:8px;padding:6px 8px}
-  table{border-collapse:collapse;width:100%} thead th{background:#fafafa}
-  th,td{border-bottom:1px solid var(--border);padding:6px 8px;text-align:left;font-size:13px;vertical-align:top}
+  .header-btn{
+    appearance:none;
+    border:1px solid rgba(255,255,255,.25);
+    background:transparent;
+    color:#fff;
+    border-radius:8px;
+    padding:8px 12px;
+    cursor:pointer;
+    font-size:13px;
+  }
+  .row{display:flex;gap:20px;flex-wrap:wrap}
+  .col{flex:1 1 360px}
+  .card{
+    background:#fff;
+    border:1px solid var(--border);
+    border-radius:10px;
+    padding:16px;
+    margin:18px 0;
+  }
+  h2{margin:0 0 10px;font-size:18px}
+  h3{margin:0 0 10px;font-size:16px}
+  h4{margin:0 0 6px;font-size:13px}
+  .muted{color:var(--muted)}
+  .pill{
+    display:inline-block;
+    font-size:12px;
+    border-radius:999px;
+    padding:2px 8px;
+    border:1px solid var(--border);
+    background:#f9fafb;
+  }
+  .btn{
+    padding:8px 12px;
+    border:1px solid var(--border);
+    border-radius:8px;
+    background:#f9fafb;
+    cursor:pointer;
+    font-size:13px;
+  }
+  .btn.primary{
+    background:#0f5eff;
+    color:#fff;
+    border-color:#0f5eff;
+  }
+  input[type=file]{
+    border:1px solid var(--border);
+    border-radius:8px;
+    padding:6px 8px;
+    width:100%;
+  }
+  table{border-collapse:collapse;width:100%}
+  thead th{background:#fafafa}
+  th,td{
+    border-bottom:1px solid var(--border);
+    padding:6px 8px;
+    text-align:left;
+    font-size:13px;
+    vertical-align:top;
+  }
   .scroller{max-height:520px;overflow:auto}
   .tiles{display:flex;gap:12px;flex-wrap:wrap}
-  .tile{flex:1 1 160px;border:1px solid var(--border);border-radius:10px;padding:12px;background:#fff}
-  .tile h4{margin:0 0 6px;font-size:12px;color:#6b7280;text-transform:uppercase;letter-spacing:.3px}
+  .tile{
+    flex:1 1 160px;
+    border:1px solid var(--border);
+    border-radius:10px;
+    padding:12px;
+    background:#fff;
+  }
+  .tile h4{
+    margin:0 0 6px;
+    font-size:12px;
+    color:#6b7280;
+    text-transform:uppercase;
+    letter-spacing:.3px;
+  }
   .tile .big{font-size:22px;font-weight:700}
-  tbody tr[data-filter]{cursor:pointer} tbody tr[data-filter]:hover{background:#f5f7fb}
-  .filterbar{display:flex;gap:8px;align-items:center;margin-bottom:8px;flex-wrap:wrap}
-  .key{font-size:12px;color:#374151;padding:4px 8px;border:1px solid var(--border);border-radius:8px;background:#f9fafb}
-  .tag{display:inline-block;padding:2px 8px;border-radius:999px;font-size:12px;color:#fff}
-  .tag.high{background:var(--critical)} .tag.medium{background:var(--moderate)} .tag.low{background:var(--excellent)} .tag.pillar{background:#334155}
+  tbody tr[data-filter]{cursor:pointer}
+  tbody tr[data-filter]:hover{background:#f5f7fb}
+  .filterbar{
+    display:flex;
+    gap:8px;
+    align-items:center;
+    margin-bottom:8px;
+    flex-wrap:wrap;
+  }
+  .key{
+    font-size:12px;
+    color:#374151;
+    padding:4px 8px;
+    border:1px solid var(--border);
+    border-radius:8px;
+    background:#f9fafb;
+  }
+  .tag{
+    display:inline-block;
+    padding:2px 8px;
+    border-radius:999px;
+    font-size:12px;
+    color:#fff;
+    white-space:nowrap;
+  }
+  .tag.high{background:var(--critical)}
+  .tag.medium{background:var(--moderate)}
+  .tag.low{background:var(--excellent)}
+  .tag.pillar{background:#334155}
   .desc{font-size:13px;color:#111827;line-height:1.5;margin-top:6px}
-  tr.expandable td:first-child::before{content:'▸'; display:inline-block; margin-right:6px}
+  tr.expandable td:first-child::before{
+    content:'▸';
+    display:inline-block;
+    margin-right:6px;
+  }
   tr.expandable.open td:first-child::before{content:'▾'}
   tr.exp-row td{border-top:none}
-  /* #vmCardWidthFix */
   #vmCard { flex: 1 1 360px; }
+  select{
+    padding:6px 8px;
+    border-radius:8px;
+    border:1px solid var(--border);
+    font-size:13px;
+    background:#fff;
+  }
+  .badge-workload{
+    display:inline-block;
+    padding:2px 8px;
+    border-radius:999px;
+    font-size:11px;
+    border:1px solid var(--border);
+    background:#eff6ff;
+    color:#1d4ed8;
+  }
 </style>
+
 <script>
 /* SheetJS loader with multiple CDNs */
 (function () {
-  var tries = ["https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js",
-               "https://unpkg.com/xlsx@0.18.5/dist/xlsx.full.min.js",
-               "https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"];
-  function loadNext(i){ if (window.XLSX || i>=tries.length) return; var s=document.createElement("script"); s.src=tries[i]; s.async=true; s.onload=function(){}; s.onerror=function(){loadNext(i+1)}; document.head.appendChild(s); }
+  var tries = [
+    "https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js",
+    "https://unpkg.com/xlsx@0.18.5/dist/xlsx.full.min.js",
+    "https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"
+  ];
+  function loadNext(i){
+    if (window.XLSX || i>=tries.length) return;
+    var s=document.createElement("script");
+    s.src=tries[i];
+    s.async=true;
+    s.onerror=function(){loadNext(i+1)};
+    document.head.appendChild(s);
+  }
   loadNext(0);
 })();
 </script>
@@ -56,7 +188,7 @@
 <body>
   <div class="brandbar">
     <div class="brandwrap">
-      <div class="brandtitle">TIEVA — Backup Prioritizer (v3.20)</div>
+      <div class="brandtitle">TIEVA — Backup Posture Explorer (v4.0)</div>
       <div class="btnrow">
         <button id="btnExportHTML" class="header-btn">Export HTML</button>
         <button id="btnDownloadDetail" class="header-btn">Download Detail CSV</button>
@@ -65,20 +197,30 @@
   </div>
 
   <div class="wrap">
-    <div class="pagetitle" style="color:#fff;font-weight:700">Well-Architected backup & DR decision view</div>
+    <div class="pagetitle" style="color:#fff;font-weight:700">
+      Well-Architected backup & DR posture overview
+    </div>
     <div class="status" style="color:#fff;opacity:.95">
-      Upload your <strong>Backup_Audit.xlsx</strong> and <strong>Backup_Effort_Mapping_v3.xlsx</strong>. We’ll produce findings, prioritise effort, and show selection-based details.
+      Upload your <strong>Backup_Audit.xlsx</strong> and <strong>Backup_Effort_Mapping_v3.xlsx</strong>.
+      We’ll derive findings across vaults, RSVs and VMs, map them to effort, and show guided remediation.
     </div>
 
+    <!-- Upload / Controls -->
     <div class="card">
       <div class="row">
         <div class="col">
           <h3>1) Backup audit (.xlsx)</h3>
           <input id="auditXlsx" type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" />
+          <div class="muted" style="font-size:12px;margin-top:4px">
+            Expected sheets: <code>BackupVaults</code>, <code>RSV</code>, <code>VM_Coverage</code>, <code>VM_Detail</code> (others are ignored for now).
+          </div>
         </div>
         <div class="col">
           <h3>2) Effort Mapping v3 (.xlsx)</h3>
           <input id="mapXlsx" type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" />
+          <div class="muted" style="font-size:12px;margin-top:4px">
+            Uses sheet <code>Mapping</code> with Finding → EffortKey, BaseHours, PerResourceHours, Owner, Risk, Pillar, guidance.
+          </div>
         </div>
         <div class="col" style="display:flex;align-items:flex-end;gap:8px">
           <div class="btn primary" id="go" role="button" tabindex="0" onclick="handleGenerate()">Generate report</div>
@@ -88,61 +230,106 @@
       </div>
     </div>
 
+    <!-- KPIs -->
     <div id="kpiSec" class="row" style="display:none">
       <div class="col card">
         <h2>At a glance</h2>
         <div class="tiles">
-          <div class="tile"><h4>Total remediation hours</h4><div class="big" id="kpiHours">0</div></div>
-          <div class="tile"><h4>Items</h4><div class="big" id="kpiItems">0</div></div>
-          <div class="tile"><h4>Unique findings</h4><div class="big" id="kpiRecs">0</div></div>
-          <div class="tile"><h4>% Change Windows</h4><div class="big" id="kpiChange">0%</div></div>
-          <div class="tile"><h4>High-Risk share</h4><div class="big" id="kpiHighRisk">0%</div></div>
+          <div class="tile">
+            <h4>Total remediation hours</h4>
+            <div class="big" id="kpiHours">0</div>
+          </div>
+          <div class="tile">
+            <h4>Items</h4>
+            <div class="big" id="kpiItems">0</div>
+          </div>
+          <div class="tile">
+            <h4>Unique findings</h4>
+            <div class="big" id="kpiRecs">0</div>
+          </div>
+          <div class="tile">
+            <h4>% Change Windows</h4>
+            <div class="big" id="kpiChange">0%</div>
+          </div>
+          <div class="tile">
+            <h4>High-Risk share</h4>
+            <div class="big" id="kpiHighRisk">0%</div>
+          </div>
         </div>
       </div>
     </div>
 
+    <!-- Summary -->
     <div id="summarySec" class="row" style="display:none">
       <div class="col card">
         <h2>Summary</h2>
         <div class="row">
-          <div class="col"><h3>Top Effort by Finding</h3><div id="tblRecEffort" class="scroller"></div></div>
-          <div class="col"><h3>By Owner</h3><div id="tblOwner" class="scroller"></div></div>
-          <div class="col"><h3>By Risk</h3><div id="tblRisk" class="scroller"></div></div>
+          <div class="col">
+            <h3>Top Effort by Finding</h3>
+            <div id="tblRecEffort" class="scroller"></div>
+          </div>
+          <div class="col">
+            <h3>By Owner</h3>
+            <div id="tblOwner" class="scroller"></div>
+          </div>
+          <div class="col">
+            <h3>By Risk</h3>
+            <div id="tblRisk" class="scroller"></div>
+          </div>
         </div>
         <div class="row">
-          <div class="col"><h3>By Pillar</h3><div id="tblPillar" class="scroller"></div></div>
-          <div class="col"><h3>By Change Window?</h3><div id="tblChange" class="scroller"></div></div>
-          <div class="col"><h3>By Category</h3><div id="tblCategory" class="scroller"></div></div>
+          <div class="col">
+            <h3>By Pillar</h3>
+            <div id="tblPillar" class="scroller"></div>
+          </div>
+          <div class="col">
+            <h3>By Workload</h3>
+            <div id="tblWorkload" class="scroller"></div>
+          </div>
+          <div class="col">
+            <h3>By Category</h3>
+            <div id="tblCategory" class="scroller"></div>
+          </div>
         </div>
       </div>
     </div>
 
+    <!-- Guidance / Focus -->
     <div id="focusSec" class="row" style="display:none">
       <div class="col card">
-        <h2>Details</h2>
+        <h2>Guidance</h2>
         <div id="focusHeader" class="muted" style="margin-bottom:8px"></div>
         <div class="desc" id="focusWhat"></div>
         <div class="desc" id="focusWhyEnable"></div>
         <div class="desc" id="focusWhyNot"></div>
+        <div class="muted" style="font-size:12px;margin-top:8px">
+          Tip: Click rows in the summary tables to focus on a specific finding, owner, risk or workload.
+        </div>
       </div>
     </div>
 
+    <!-- Item Details -->
     <div id="detailSec" class="row" style="display:none">
       <div class="col card">
         <div class="filterbar">
-          <h2 style="margin:0">Item Details</h2>
-          <span class="key"><strong>Hint:</strong> Click a row to expand and see everything else.</span>
+          <h2 style="margin:0">Finding Instances</h2>
+          <span class="key">
+            <strong>Hint:</strong> Click a row to expand and see all columns from the underlying sheet.
+          </span>
           <span class="pill" id="activeFilter" style="display:none"></span>
         </div>
         <div id="tblDetail" class="scroller"></div>
       </div>
     </div>
 
+    <!-- Workload detail: VMs -->
     <div id="vmSec" class="row" style="display:none">
       <div class="col card" id="vmCard">
         <div class="filterbar">
           <h2 style="margin:0">VM Details</h2>
-          <span class="key"><strong>Hint:</strong> Click a VM to expand for full metadata.</span>
+          <span class="key">
+            <strong>Hint:</strong> Click a VM to expand for full metadata from VM_Detail.
+          </span>
         </div>
         <div id="tblVM" class="scroller"></div>
       </div>
@@ -150,18 +337,52 @@
   </div>
 
 <script>
+/* Helpers */
 const $ = id => document.getElementById(id);
 const fmt = n => isFinite(n) ? Math.round(n*10)/10 : 0;
 const norm = s => String(s||"").trim().replace(/\s+/g," ").replace(/\.*$/," ").toLowerCase();
 function status(t){ $("status").textContent = t||""; }
+function riskClass(v){
+  const s=(v||"").toString().toLowerCase();
+  if(s.startsWith('h')) return 'high';
+  if(s.startsWith('m')) return 'medium';
+  if(s.startsWith('l')) return 'low';
+  return '';
+}
+function yes(v){
+  const s = String(v || "").trim().toLowerCase();
+  if(!s) return false;
+  return /^(enabled|yes|true|on|alwayson)$/i.test(s);
+}
+function groupBy(arr, key){
+  const m={};
+  arr.forEach(x=>{
+    const k=x[key] ?? "";
+    (m[k] ?? (m[k]=[])).push(x);
+  });
+  return m;
+}
+function getCIflex(obj, key){
+  if(!obj) return undefined;
+  const t=String(key||'').toLowerCase().trim();
+  const t2=t.replace(/[^a-z0-9]/g,'');
+  for(const k of Object.keys(obj)){
+    const kn=String(k||'').toLowerCase().trim();
+    if(kn===t) return obj[k];
+    const kn2=kn.replace(/[^a-z0-9]/g,'');
+    if(kn2===t2) return obj[k];
+  }
+  return undefined;
+}
+function escapeHtml(str){
+  return String(str||"")
+    .replace(/&/g,"&amp;")
+    .replace(/</g,"&lt;")
+    .replace(/>/g,"&gt;")
+    .replace(/"/g,"&quot;");
+}
 
-function riskClass(v){ const s=(v||"").toString().toLowerCase(); if(s.startsWith('h')) return 'high'; if(s.startsWith('m')) return 'medium'; if(s.startsWith('l')) return 'low'; return ''; }
-function yes(v){ return /^enabled|^yes|^true|^on/i.test(String(v||"")); }
-function groupBy(arr, key){ const m={}; arr.forEach(x=>{ const k=x[key]??""; (m[k]??=[]).push(x); }); return m; }
-function getCI(obj, key){ const t = String(key).toLowerCase(); for(const k of Object.keys(obj)){ if(String(k).toLowerCase()===t) return obj[k]; } return undefined; }
-function getCIflex(obj, key){ if(!obj) return undefined; const t=String(key||'').toLowerCase().trim(); const t2=t.replace(/[^a-z0-9]/g,''); for(const k of Object.keys(obj)){ const kn=String(k||'').toLowerCase().trim(); if(kn===t) return obj[k]; const kn2=kn.replace(/[^a-z0-9]/g,''); if(kn2===t2) return obj[k]; } return undefined; }
-
-/* Basic table with clickable rows -> filter */
+/* Basic summary tables with clickable rows */
 function renderTable(el, columns, rows, clickKey){
   let html='<table><thead><tr>';
   columns.forEach(c=> html+=`<th>${c.header}</th>`);
@@ -171,7 +392,7 @@ function renderTable(el, columns, rows, clickKey){
     const attr = (clickKey && val!=null) ? ` data-filter="${clickKey}" data-value="${encodeURIComponent(val)}"` : '';
     html+=`<tr${attr}>`;
     columns.forEach(c=>{
-      let cell = c.render ? c.render(r) : (r[c.key]??"");
+      let cell = c.render ? c.render(r) : (r[c.key] ?? "");
       html+=`<td>${cell}</td>`;
     });
     html+='</tr>';
@@ -180,7 +401,7 @@ function renderTable(el, columns, rows, clickKey){
   el.innerHTML = html;
   if(clickKey){
     el.querySelectorAll('tbody tr[data-filter]').forEach(tr=>{
-      tr.addEventListener('click', ()=> {
+      tr.addEventListener('click', ()=>{
         const key = tr.getAttribute('data-filter');
         const val = decodeURIComponent(tr.getAttribute('data-value')||"");
         applyFilter(key, val);
@@ -189,21 +410,22 @@ function renderTable(el, columns, rows, clickKey){
   }
 }
 
-/* Expandable Item Details (hours excluded from columns) */
+/* Expandable Item Details */
 function renderItemDetails(data){
   const cols = [
-    {key:'Category', header:'Category'},
-    {key:'Subscription', header:'Subscription'},
-    {key:'ResourceGroup', header:'Resource Group'},
-    {key:'Location', header:'Location'},
-    {key:'Type', header:'Type'},
-    {key:'Name', header:'Vault/Name'},
-    {key:'Finding', header:'Finding'},
-    {key:'Pillar', header:'Pillar'},
-    {key:'EffortKey', header:'EffortKey'},
-    {key:'Owner', header:'Owner'},
-    {key:'Risk', header:'Risk', render:(r)=>r.Risk},
-    {key:'Change', header:'Change Window?'}
+    {key:'workload', header:'Workload'},
+    {key:'category', header:'Category'},
+    {key:'subscription', header:'Subscription'},
+    {key:'resourceGroup', header:'Resource Group'},
+    {key:'location', header:'Location'},
+    {key:'type', header:'Type'},
+    {key:'name', header:'Name / Context'},
+    {key:'finding', header:'Finding'},
+    {key:'pillar', header:'Pillar'},
+    {key:'effortKey', header:'EffortKey'},
+    {key:'owner', header:'Owner'},
+    {key:'risk', header:'Risk', render:(r)=>r.risk},
+    {key:'change', header:'Change Window?'}
   ];
   let h = '<table><thead><tr>';
   cols.forEach(c=> h += `<th>${c.header}</th>`);
@@ -211,26 +433,39 @@ function renderItemDetails(data){
   data.forEach((r, idx)=>{
     const expId = `exp_${idx}`;
     h += `<tr class="expandable" data-exp="${expId}">`;
-    cols.forEach(c=>{ const cell = c.render ? c.render(r) : (r[c.key] ?? ""); h += `<td>${cell}</td>`; });
+    cols.forEach(c=>{
+      let cell = c.render ? c.render(r) : (r[c.key] ?? "");
+      if(c.key === 'workload' && r.workload){
+        cell = `<span class="badge-workload">${escapeHtml(r.workload)}</span>`;
+      }
+      h += `<td>${cell}</td>`;
+    });
     h += '</tr>';
+
     const visibleKeys = new Set(cols.map(c=>c.key));
     const all = r.__all || {};
-    const excludeKeys = new Set(["RemediationSteps","WhyEnableIt","WhyNotEnableIt","BaseHoursConfigured","PerResourceHours","BaseShareHours","TotalHours","remediation","whyenable","whynot","Remediation","WhyEnable","WhyNot"].map(x=>x.toLowerCase()));
     const extraPairs = [];
     Object.keys(all).forEach(k=>{
       if(visibleKeys.has(k)) return;
       if(/^__/.test(k)) return;
-      if(excludeKeys.has(String(k).toLowerCase())) return;
-      const s = all[k]; if(s==='' || s==null || s==='undefined') return;
+      const s = all[k];
+      if(s==='' || s==null || s==='undefined') return;
       extraPairs.push([k, s]);
     });
-    const grid = extraPairs.length ? ('<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;padding:8px 6px">' +
-      extraPairs.map(([k,v])=>`<div><div class="muted" style="font-size:12px">${k}</div><div style="font-size:13px">${v}</div></div>`).join('') +
-      '</div>') : '<div class="desc" style="padding:8px 6px">No additional fields.</div>';
+    const grid = extraPairs.length ? (
+      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;padding:8px 6px">' +
+      extraPairs.map(([k,v]) => (
+        `<div><div class="muted" style="font-size:12px">${escapeHtml(k)}</div>`+
+        `<div style="font-size:13px">${escapeHtml(v)}</div></div>`
+      )).join('') +
+      '</div>'
+    ) : '<div class="desc" style="padding:8px 6px">No additional fields.</div>';
+
     h += `<tr id="${expId}" class="exp-row" style="display:none"><td colspan="${cols.length}" style="background:#fbfdff">${grid}</td></tr>`;
   });
   h += '</tbody></table>';
   $("tblDetail").innerHTML = h;
+
   document.querySelectorAll('#tblDetail table tbody tr.expandable').forEach(tr=>{
     tr.addEventListener('click', ()=>{
       const exp = document.getElementById(tr.getAttribute('data-exp'));
@@ -242,20 +477,32 @@ function renderItemDetails(data){
   });
 }
 
-/* VM Details (prefers VM_Details; fallback VM_Coverage; include if VM Name present) */
+/* VM Details (from VM_Detail) */
 let VMDETAIL = [];
 function mapVMRow(r){
   const sub = getCIflex(r,"SubscriptionName") || getCIflex(r,"Subscription Name") || getCIflex(r,"Subscription") || "";
-  const rg  = getCIflex(r,"VMResourceGroup") || getCIflex(r,"ResourceGroup") || getCIflex(r,"Resource Group") || getCIflex(r,"ResourceGroupName") || getCIflex(r,"VaultResourceGroup") || "";
+  const rg  = getCIflex(r,"VMResourceGroup") || getCIflex(r,"ResourceGroup") || getCIflex(r,"Resource Group") ||
+              getCIflex(r,"ResourceGroupName") || getCIflex(r,"VaultResourceGroup") || "";
   const loc = getCIflex(r,"Location") || getCIflex(r,"Region") || "";
-  const vmn = getCIflex(r,"VMName") || getCIflex(r,"VM Name") || getCIflex(r,"Name") || getCIflex(r,"VirtualMachine") || getCIflex(r,"Virtual Machine") || "";
-  const pol = getCIflex(r,"PolicyName") || getCIflex(r,"Policy Name") || getCIflex(r,"BackupPolicy") || getCIflex(r,"Backup Policy") || "";
-  const vault = getCIflex(r,"VaultName") || getCIflex(r,"Vault/Name") || getCIflex(r,"BackupVaultName") || getCIflex(r,"RSVName") || "";
-  const last = getCIflex(r,"LastBackupStatus") || getCIflex(r,"Last Backup Status") || getCIflex(r,"LastBackupState") || getCIflex(r,"Last Job Status") || "";
-  const rpo  = getCIflex(r,"ObservedRPOHours") || getCIflex(r,"Observed RPO (h)") || getCIflex(r,"ObservedRpoHours") || getCIflex(r,"RPOHours") || "";
+  const vmn = getCIflex(r,"VMName") || getCIflex(r,"VM Name") || getCIflex(r,"Name") ||
+              getCIflex(r,"VirtualMachine") || getCIflex(r,"Virtual Machine") || "";
+  const pol = getCIflex(r,"PolicyName") || getCIflex(r,"Policy Name") ||
+              getCIflex(r,"BackupPolicy") || getCIflex(r,"Backup Policy") || "";
+  const vault = getCIflex(r,"VaultName") || getCIflex(r,"Vault/Name") ||
+                getCIflex(r,"BackupVaultName") || getCIflex(r,"RSVName") || "";
+  const last = getCIflex(r,"LastBackupStatus") || getCIflex(r,"Last Backup Status") ||
+               getCIflex(r,"LastBackupState") || getCIflex(r,"Last Job Status") || "";
+  const rpo  = getCIflex(r,"ObservedRPOHours") || getCIflex(r,"Observed RPO (h)") ||
+               getCIflex(r,"ObservedRpoHours") || getCIflex(r,"RPOHours") || "";
   return {
-    Subscription: sub, ResourceGroup: rg, Location: loc, VMName: vmn, VaultName: vault,
-    PolicyName: pol, LastBackupStatus: last, ObservedRPOHours: rpo,
+    Subscription: sub,
+    ResourceGroup: rg,
+    Location: loc,
+    VMName: vmn,
+    VaultName: vault,
+    PolicyName: pol,
+    LastBackupStatus: last,
+    ObservedRPOHours: rpo,
     __all: Object.assign({}, r)
   };
 }
@@ -276,8 +523,12 @@ function renderVMDetails(data){
   data.forEach((r, idx)=>{
     const expId = `vmexp_${idx}`;
     h += `<tr class="expandable" data-exp="${expId}">`;
-    cols.forEach(c=>{ const cell = (r[c.key] == null ? "" : r[c.key]); h += `<td>${cell}</td>`; });
+    cols.forEach(c=>{
+      const cell = (r[c.key] == null ? "" : escapeHtml(r[c.key]));
+      h += `<td>${cell}</td>`;
+    });
     h += '</tr>';
+
     const visible = new Set(cols.map(c=>c.key));
     const all = r.__all || {};
     const extra = [];
@@ -288,13 +539,20 @@ function renderVMDetails(data){
       const s = String(v); if(!s) return;
       extra.push([k, s]);
     });
-    const grid = extra.length ? ('<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;padding:8px 6px">' +
-      extra.map(([k,v])=>`<div><div class="muted" style="font-size:12px">${k}</div><div style="font-size:13px">${v}</div></div>`).join('') +
-      '</div>') : '<div class="desc" style="padding:8px 6px">No additional fields.</div>';
+    const grid = extra.length ? (
+      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;padding:8px 6px">' +
+      extra.map(([k,v]) => (
+        `<div><div class="muted" style="font-size:12px">${escapeHtml(k)}</div>`+
+        `<div style="font-size:13px">${escapeHtml(v)}</div></div>`
+      )).join('') +
+      '</div>'
+    ) : '<div class="desc" style="padding:8px 6px">No additional fields.</div>';
+
     h += `<tr id="${expId}" class="exp-row" style="display:none"><td colspan="${cols.length}" style="background:#fbfdff">${grid}</td></tr>`;
   });
   h += '</tbody></table>';
   $("tblVM").innerHTML = h;
+
   document.querySelectorAll('#tblVM table tbody tr.expandable').forEach(tr=>{
     tr.addEventListener('click', ()=>{
       const exp = document.getElementById(tr.getAttribute('data-exp'));
@@ -312,147 +570,246 @@ function parseMapping(wb){
   const sh = wb.Sheets["Mapping"];
   if(!sh) throw new Error('Mapping workbook must have a sheet named "Mapping".');
   const rows = XLSX.utils.sheet_to_json(sh, {defval:""});
-  const map = {}; const toNum = v => { const n = parseFloat(String(v).toString().replace(/,/g,'').trim()); return isFinite(n)?n:0; };
+  const map = {};
+  const toNum = v => {
+    const n = parseFloat(String(v).toString().replace(/,/g,'').trim());
+    return isFinite(n)?n:0;
+  };
   rows.forEach(r=>{
-    const finding = String(getCI(r,"Finding")||"").trim(); if(!finding) return;
+    const finding = String(getCIflex(r,"Finding")||"").trim();
+    if(!finding) return;
     const key = norm(finding);
     map[key] = {
-      effortKey: getCI(r,"EffortKey")||"",
-      example: getCI(r,"ExampleDescription")||"",
-      base: toNum(getCI(r,"BaseHours")),
-      per: toNum(getCI(r,"PerResourceHours")),
-      owner: getCI(r,"Owner")||"",
-      risk:  getCI(r,"DefaultRisk")||"",
-      impact: getCI(r,"BusinessImpact")||"",
-      change: getCI(r,"ChangeWindowRequired")||"",
-      pillar: getCI(r,"Pillar")||"",
-      remediation: getCI(r,"RemediationSteps")||"",
-      whyEnable: getCI(r,"WhyEnableIt")||"",
-      whyNot: getCI(r,"WhyNotEnableIt")||""
+      effortKey: getCIflex(r,"EffortKey")||"",
+      example: getCIflex(r,"ExampleDescription")||"",
+      base: toNum(getCIflex(r,"BaseHours")),
+      per: toNum(getCIflex(r,"PerResourceHours")),
+      owner: getCIflex(r,"Owner")||"",
+      risk:  getCIflex(r,"DefaultRisk")||"",
+      impact: getCIflex(r,"BusinessImpact")||"",
+      change: getCIflex(r,"ChangeWindowRequired")||"",
+      pillar: getCIflex(r,"Pillar")||"",
+      remediation: getCIflex(r,"RemediationSteps")||"",
+      whyEnable: getCIflex(r,"WhyEnableIt")||"",
+      whyNot: getCIflex(r,"WhyNotEnableIt")||""
     };
   });
-  MAPPING = map; return map;
+  MAPPING = map;
+  return map;
 }
 
-/* Audit parsing */
-function parseAudit(wb){
+/* Audit ingestion & posture engine */
+function parseAuditV4(wb){
   VMDETAIL = [];
-  const out=[];
-  const sheetNames = wb.SheetNames||[];
-  const nameAudit = sheetNames.includes("Audit") ? "Audit" : sheetNames[0];
-  const AUD = XLSX.utils.sheet_to_json(wb.Sheets[nameAudit], {defval:""});
-  const VMD = (wb.Sheets['VM_Details']||wb.Sheets['VM_Detail']) ? XLSX.utils.sheet_to_json((wb.Sheets['VM_Details']||wb.Sheets['VM_Detail']), {defval:""}) : [];
-  const VMC = wb.Sheets['VM_Coverage'] ? XLSX.utils.sheet_to_json(wb.Sheets['VM_Coverage'], {defval:""}) : [];
+  const findings = [];
+
+  const getSheetJson = name => wb.Sheets[name]
+    ? XLSX.utils.sheet_to_json(wb.Sheets[name], {defval:""})
+    : [];
+
+  const sBV  = getSheetJson('BackupVaults');
+  const sRSV = getSheetJson('RSV');
+  const sVMC = getSheetJson('VM_Coverage');
+  const sVMD = wb.Sheets['VM_Detail'] || wb.Sheets['VM_Details']
+    ? XLSX.utils.sheet_to_json(wb.Sheets['VM_Detail'] || wb.Sheets['VM_Details'], {defval:""})
+    : [];
+
+  // Merge vault-like rows
+  const vaultRows = [];
+  sBV.forEach(r => vaultRows.push(Object.assign({__source:"BackupVaults"}, r)));
+  sRSV.forEach(r => vaultRows.push(Object.assign({__source:"RSV"}, r)));
 
   function pushFinding(base, finding, extra){
-    out.push({
-      category: base.Category || base.category || base.VaultType || "",
+    findings.push({
+      workload: extra?.workload || 'Vault',
+      category: base.VaultType || base.Category || extra?.category || "",
       subscription: base.SubscriptionName || base.subscription || "",
       subscriptionId: base.SubscriptionId || "",
       resourceGroup: base.ResourceGroup || "",
       location: base.Location || "",
-      vaultType: base.VaultType || "",
-      vaultName: base.VaultName || base.BackupVaultName || base.RSVName || "",
-      type: base.Type || base.Workload || "",
+      type: base.Type || base.Workload || base.VaultType || "",
+      name: base.VaultName || base.BackupVaultName || base.RSVName || base.Name || extra?.name || "",
       finding: finding,
-      context: extra?.context || "",
       impact: extra?.impact || "",
-      // pass-throughs for expansion
-      lastBackupStatus: base.LastBackupStatus || "",
-      observedRPOHours: base.ObservedRPOHours || base.ObservedRpoHours || "",
-      policyName: base.PolicyName || "",
-      expectedPolicy: base.ExpectedPolicy || "",
-      softDeleteRetentionDays: base.SoftDeleteRetentionDays || "",
-      storageRedundancy: base.StorageRedundancy || "",
-      publicNetworkAccess: base.PublicNetworkAccess || "",
-      crossRegionRestoreFlag: base.CrossRegionRestore || "",
-      alwaysOnSoftDeleteFlag: base.AlwaysOnSoftDelete || "",
-      muaEnabledFlag: base.MUAEnabled || base.MuaEnabled || "",
-      crossSubRestoreFlag: base.CrossSubRestore || base.CrossSubscriptionRestore || "",
-      immutableFlag: base.Immutable || ""
+      riskHint: extra?.risk || "",
+      ownerHint: extra?.owner || "",
+      changeHint: extra?.change || "",
+      sourceSheet: base.__source || extra?.source || "",
+      __all: Object.assign({}, base)
     });
   }
 
-  // Example rule set (same as earlier): derive findings from Audit
-  AUD.forEach(r=>{
-    const cat = (r.Category||"").toString();
+  // Vault / RSV rules
+  vaultRows.forEach(r=>{
+    const vaultType = String(r.VaultType || "").toLowerCase();
+    const cat = String(r.Category || r.VaultType || "").toLowerCase();
     const name = r.VaultName || r.BackupVaultName || r.RSVName || "";
-    const sr = String(r.StorageRedundancy||"");
-    if(cat && /backupvault|rsv/i.test(cat)){
-      if(!yes(r.CloudSoftDeleteState)) pushFinding(r, "Enable soft delete", {context:name, impact:"High"});
-      if(!yes(r.AlwaysOnSoftDelete)) pushFinding(r, "Enable always-on soft delete", {context:name, impact:"High"});
-      if(!yes(r.CrossRegionRestore)) pushFinding(r, "Enable cross-region restore", {context:name, impact:"High"});
-      if(String(r.PublicNetworkAccess||"").toLowerCase()==="enabled") pushFinding(r, "Restrict public network access", {context:name, impact:"Medium"});
-      if(!yes(r.MUAEnabled)) pushFinding(r, "Enable multi-user authorisation (MUA)", {context:name, impact:"High"});
-      if(sr && !/grs|gzrs/i.test(sr)) pushFinding(r, "Increase vault storage redundancy (GRS/GZRS)", {context:name, impact:"Medium"});
-      if(String(r.Immutable||"").toLowerCase()==="disabled") pushFinding(r, "Enable immutability", {context:name, impact:"High"});
-      const sdr = Number(r.SoftDeleteRetentionDays||0); if(sdr>0 && sdr<14) pushFinding(r, "Soft delete retention below 14 days", {context:name, impact:"Medium"});
-      if(String(r.CrossSubRestore||"").toLowerCase()==="disabled") pushFinding(r, "Enable cross-subscription restore", {context:name, impact:"Low"});
-      if(sr && sr.toLowerCase()==='lrs') pushFinding(r, "Vault not zone-redundant", {context:name, impact:"Medium"});
-      if(r.LastBackupStatus && String(r.LastBackupStatus).toLowerCase()!=="succeeded") pushFinding(r, "Last backup failed or stale", {context:name, impact:"High"});
-      const rpo = Number(r.ObservedRPOHours||0); if(rpo && rpo>24) pushFinding(r, "Last backup failed or stale", {context:name, impact:"High"});
-      if(r.PolicyName && r.ExpectedPolicy && String(r.PolicyName)!==String(r.ExpectedPolicy)) pushFinding(r, "Backup policy misalignment", {context:name, impact:"Medium"});
+    const sr = String(r.StorageRedundancy || "");
+    const isVault = /backupvault|recoveryservicesvault|rsv/.test(cat) ||
+                    /backupvault|recoveryservicesvault|rsv/.test(vaultType);
+    if(!isVault) return;
+
+    // Soft delete and always-on soft delete
+    const softState = r.CloudSoftDeleteState || r.SoftDeleteState || "";
+    if(!yes(softState) && !yes(r.AlwaysOnSoftDelete)){
+      pushFinding(r, "Enable soft delete", {context:name, impact:"High", workload:"Vault"});
+    }
+    if(!yes(r.AlwaysOnSoftDelete)){
+      pushFinding(r, "Enable always-on soft delete", {context:name, impact:"High", workload:"Vault"});
+    }
+
+    // Cross-region restore (if present)
+    if(typeof r.CrossRegionRestore !== "undefined" && !yes(r.CrossRegionRestore)){
+      pushFinding(r, "Enable cross-region restore", {context:name, impact:"High", workload:"Vault"});
+    }
+
+    // Public network access (if present)
+    if(typeof r.PublicNetworkAccess !== "undefined" &&
+       String(r.PublicNetworkAccess || "").toLowerCase() === "enabled"){
+      pushFinding(r, "Restrict public network access", {context:name, impact:"Medium", workload:"Vault"});
+    }
+
+    // MUA (if present)
+    if(typeof r.MUAEnabled !== "undefined" && !yes(r.MUAEnabled)){
+      pushFinding(r, "Enable multi-user authorisation (MUA)", {context:name, impact:"High", workload:"Vault"});
+    }
+
+    // Redundancy
+    if(sr && !/grs|gzrs/i.test(sr)){
+      pushFinding(r, "Increase vault storage redundancy (GRS/GZRS)", {context:name, impact:"Medium", workload:"Vault"});
+    }
+
+    // Immutability (if present)
+    if(typeof r.Immutable !== "undefined"){
+      const imm = String(r.Immutable || "").toLowerCase();
+      if(imm === "disabled" || imm === "false"){
+        pushFinding(r, "Enable immutability", {context:name, impact:"High", workload:"Vault"});
+      }
+    }
+
+    // Soft delete retention
+    const sdr = Number(r.SoftDeleteRetentionDays || 0);
+    if(sdr > 0 && sdr < 14){
+      pushFinding(r, "Soft delete retention below 14 days", {context:name, impact:"Medium", workload:"Vault"});
+    }
+
+    // Cross-subscription restore (if present)
+    if(typeof r.CrossSubRestore !== "undefined" &&
+       String(r.CrossSubRestore || "").toLowerCase() === "disabled"){
+      pushFinding(r, "Enable cross-subscription restore", {context:name, impact:"Low", workload:"Vault"});
+    }
+
+    // Vault not zone-redundant
+    if(sr && sr.toLowerCase() === "lrs"){
+      pushFinding(r, "Vault not zone-redundant", {context:name, impact:"Medium", workload:"Vault"});
     }
   });
 
-  // VM details: use VM_Details ONLY; include row if VM Name present; no fallback to VM_Coverage
-  if(VMD && VMD.length){
-    VMDETAIL = VMD.filter(r=>{
-      const vmn = getCIflex(r,"VMName") || getCIflex(r,"VM Name") || getCIflex(r,"Name") || getCIflex(r,"VirtualMachine") || getCIflex(r,"Virtual Machine");
+  // VM coverage: unprotected VMs
+  (sVMC || []).forEach(r=>{
+    const backed = String(
+      getCIflex(r,"IsBackedUp") ||
+      getCIflex(r,"Is Backed Up") ||
+      getCIflex(r,"Backed Up") ||
+      getCIflex(r,"BackupEnabled") ||
+      getCIflex(r,"Backup Enabled") ||
+      ""
+    );
+    if(!/^true$|^yes$|^enabled$/i.test(backed)){
+      const vmn = getCIflex(r,"VMName") || getCIflex(r,"VM Name") || getCIflex(r,"Name") || "";
+      if(vmn){
+        const enriched = Object.assign({__source:"VM_Coverage"}, r);
+        pushFinding(enriched, "VM not protected", {
+          context: vmn,
+          impact: "High",
+          workload: "VM",
+          name: vmn
+        });
+      }
+    }
+  });
+
+  // VM details
+  if(sVMD && sVMD.length){
+    VMDETAIL = sVMD.filter(r=>{
+      const vmn = getCIflex(r,"VMName") || getCIflex(r,"VM Name") ||
+                  getCIflex(r,"Name") || getCIflex(r,"VirtualMachine") ||
+                  getCIflex(r,"Virtual Machine");
       return String(vmn||"").trim() !== "";
     }).map(mapVMRow);
   } else {
     VMDETAIL = [];
   }
 
-  // Still flag unprotected VMs from VMC (if present) using lenient headers
-  (VMC||[]).forEach(r=>{
-    const backed = String(getCIflex(r,"IsBackedUp") || getCIflex(r,"Is Backed Up") || getCIflex(r,"Backed Up") || getCIflex(r,"BackupEnabled") || getCIflex(r,"Backup Enabled") || "");
-    if(!/^true$|^yes$|^enabled$/i.test(backed)){
-      const vmn = getCIflex(r,"VMName") || getCIflex(r,"VM Name") || getCIflex(r,"Name") || "";
-      if(vmn) pushFinding(r, "VM not protected", {context: vmn, impact:"High"});
-    }
-  });
-
-  return out;
+  return findings;
 }
 
 /* Effort estimation */
-let DETAIL=[]; let FILTER=null;
+let DETAIL = [];
+let FILTER = null;
+
 function estimate(detailRows, mapping){
   const rows = detailRows.map(ad=>{
     const key = norm(ad.finding);
     const m = mapping[key] || null;
+    const impact = ad.impact || (m ? (m.impact || "") : "");
     return {
-      category: ad.category||"", subscription: ad.subscription||"", subscriptionId: ad.subscriptionId||"",
-      resourceGroup: ad.resourceGroup||"", location: ad.location||"", type: ad.type||"",
-      vaultName: ad.vaultName||"", context: ad.context||"", finding: ad.finding||"",
-      pillar: m ? (m.pillar||"") : "", effortKey: m ? (m.effortKey||"") : "Unmapped - Review",
-      owner: m ? (m.owner||"") : "", risk:  m ? (m.risk||"")  : "", impact: ad.impact || (m ? (m.impact||"") : ""),
-      change:m ? (m.change||"") : "", baseConfigured: m ? Number(m.base||0) : 0, per:  m ? Number(m.per||0)  : 0,
-      remediation: m ? (m.remediation||"") : "", whyEnable: m ? (m.whyEnable||"") : "", whyNot: m ? (m.whyNot||"") : "",
-      example: m ? (m.example||"") : "",
-      lastBackupStatus: ad.lastBackupStatus||"", observedRPOHours: ad.observedRPOHours||"",
-      policyName: ad.policyName||"", expectedPolicy: ad.expectedPolicy||"",
-      softDeleteRetentionDays: ad.softDeleteRetentionDays||"", storageRedundancy: ad.storageRedundancy||"",
-      publicNetworkAccess: ad.publicNetworkAccess||"", crossRegionRestoreFlag: ad.crossRegionRestoreFlag||"",
-      alwaysOnSoftDeleteFlag: ad.alwaysOnSoftDeleteFlag||"", muaEnabledFlag: ad.muaEnabledFlag||"",
-      crossSubRestoreFlag: ad.crossSubRestoreFlag||"", immutableFlag: ad.immutableFlag||"",
-      baseShown: 0, totalHours: 0
+      workload: ad.workload || "",
+      category: ad.category || "",
+      subscription: ad.subscription || "",
+      subscriptionId: ad.subscriptionId || "",
+      resourceGroup: ad.resourceGroup || "",
+      location: ad.location || "",
+      type: ad.type || "",
+      name: ad.name || ad.context || "",
+      finding: ad.finding || "",
+      pillar: m ? (m.pillar || "") : "",
+      effortKey: m ? (m.effortKey || "") : "Unmapped - Review",
+      owner: m ? (m.owner || "") : (ad.ownerHint || ""),
+      risk: m ? (m.risk || "") : (ad.riskHint || ""),
+      impact: impact || "",
+      change: m ? (m.change || "") : (ad.changeHint || ""),
+      baseConfigured: m ? Number(m.base || 0) : 0,
+      per: m ? Number(m.per || 0)  : 0,
+      remediation: m ? (m.remediation || "") : "",
+      whyEnable: m ? (m.whyEnable || "") : "",
+      whyNot: m ? (m.whyNot || "") : "",
+      example: m ? (m.example || "") : "",
+      sourceSheet: ad.sourceSheet || "",
+      __all: Object.assign({}, ad.__all || {}, {
+        Workload: ad.workload || "",
+        SourceSheet: ad.sourceSheet || ""
+      }),
+      baseShown: 0,
+      totalHours: 0
     };
   });
-  const groups = {}; rows.forEach(r=>{ const gk = "FIND:" + norm(r.finding); (groups[gk]??=[]).push(r); });
-  Object.values(groups).forEach(arr=>{
-    const base = Number(arr[0].baseConfigured||0), per  = Number(arr[0].per||0), n = arr.length;
-    const basePer = n>0 ? (base/n) : 0;
-    arr.forEach(r=>{ r.baseShown = basePer; r.totalHours = per + basePer; });
+
+  const groups = {};
+  rows.forEach(r=>{
+    const gk = "FIND:" + norm(r.finding);
+    (groups[gk] ?? (groups[gk]=[])).push(r);
   });
+
+  Object.values(groups).forEach(arr=>{
+    const base = Number(arr[0].baseConfigured || 0);
+    const per  = Number(arr[0].per || 0);
+    const n    = arr.length;
+    const basePer = n>0 ? (base / n) : 0;
+    arr.forEach(r=>{
+      r.baseShown = basePer;
+      r.totalHours = per + basePer;
+    });
+  });
+
   return rows;
 }
 
 /* Filtering + rendering */
 function applyFilter(key, value){
-  FILTER = { key, value,
+  FILTER = {
+    key,
+    value,
     fn: (d)=>{
       switch(key){
         case "effortKey": return (d.effortKey||"")===value;
@@ -460,6 +817,7 @@ function applyFilter(key, value){
         case "risk": return (d.risk||"")===value;
         case "pillar": return (d.pillar||"")===value;
         case "category": return (d.category||"")===value;
+        case "workload": return (d.workload||"")===value;
         case "finding": return norm(d.finding)===norm(value);
         default: return true;
       }
@@ -467,11 +825,19 @@ function applyFilter(key, value){
   };
   $("activeFilter").style.display = "";
   $("activeFilter").textContent = "Filter: " + key + " = " + value;
-  renderAll(); renderFocus();
+  renderAll();
+  renderFocus();
 }
-$("clearFilter").addEventListener("click", ()=>{ FILTER=null; $("activeFilter").style.display="none"; renderAll(); renderFocus(); });
+$("clearFilter").addEventListener("click", ()=>{
+  FILTER=null;
+  $("activeFilter").style.display="none";
+  renderAll();
+  renderFocus();
+});
 
-function badgeRisk(r){ return `<span class="tag ${riskClass(r.risk)}">${r.risk||"(n/a)"}</span>`; }
+function badgeRisk(r){
+  return `<span class="tag ${riskClass(r.risk)}">${r.risk || "(n/a)"}</span>`;
+}
 
 function renderAll(){
   const data = FILTER ? DETAIL.filter(FILTER.fn) : DETAIL.slice();
@@ -486,80 +852,150 @@ function renderAll(){
   $("kpiHighRisk").textContent = (data.length?Math.round((highRisk/data.length)*100):0) + "%";
 
   const byFinding = Object.entries(groupBy(data,"finding")).map(([f,arr])=>({
-    finding:f, pillar:(arr[0]?.pillar)||"", owner:(arr[0]?.owner)||"", risk:(arr[0]?.risk)||"",
-    items:arr.length, hours:fmt(sum(arr,x=>x.totalHours))
-  })).sort((a,b)=>b.hours-a.hours);
-  const byOwner = Object.entries(groupBy(data,"owner")).map(([o,arr])=>({
-    owner:o||"(Unassigned)", items:arr.length, hours:fmt(sum(arr,x=>x.totalHours))
-  })).sort((a,b)=>b.hours-a.hours);
-  const byRisk = Object.entries(groupBy(data,"risk")).map(([r,arr])=>({
-    risk:r||"(n/a)", items:arr.length, hours:fmt(sum(arr,x=>x.totalHours))
-  })).sort((a,b)=>b.hours-a.hours);
-  const byPillar = Object.entries(groupBy(data,"pillar")).map(([p,arr])=>({
-    pillar:p||"(n/a)", items:arr.length, hours:fmt(sum(arr,x=>x.totalHours))
-  })).sort((a,b)=>b.hours-a.hours);
-  const byCat = Object.entries(groupBy(data,"category")).map(([c,arr])=>({
-    category:c||"(n/a)", items:arr.length, hours:fmt(sum(arr,x=>x.totalHours))
+    finding:f,
+    pillar:(arr[0]?.pillar)||"",
+    owner:(arr[0]?.owner)||"",
+    risk:(arr[0]?.risk)||"",
+    items:arr.length,
+    hours:fmt(sum(arr,x=>x.totalHours))
   })).sort((a,b)=>b.hours-a.hours);
 
-  renderTable($("tblRecEffort"),
-    [{key:"finding",header:"Finding"},
-     {key:"pillar",header:"Pillar"},
-     {key:"owner",header:"Owner"},
-     {key:"risk",header:"Risk", render: r=>badgeRisk(r)},
-     {key:"items",header:"# Items"},
-     {key:"hours",header:"Hours"}],
-    byFinding, "finding");
-  renderTable($("tblOwner"),
-    [{key:"owner",header:"Owner"},{key:"items",header:"# Items"},{key:"hours",header:"Hours"}],
-    byOwner, "owner");
-  renderTable($("tblRisk"),
-    [{key:"risk",header:"Risk", render: r=>badgeRisk(r)},{key:"items",header:"# Items"},{key:"hours",header:"Hours"}],
-    byRisk, "risk");
-  renderTable($("tblPillar"),
-    [{key:"pillar",header:"Pillar"},{key:"items",header:"# Items"},{key:"hours",header:"Hours"}],
-    byPillar, "pillar");
-  renderTable($("tblChange"),
-    [{key:"change",header:"Change Window?"},{key:"items",header:"# Items"},{key:"hours",header:"Hours"}],
-    Object.entries(groupBy(data,"change")).map(([c,arr])=>({change:c||"(n/a)",items:arr.length,hours:fmt(sum(arr,x=>x.totalHours))})).sort((a,b)=>b.hours-a.hours),
-    "change");
-  renderTable($("tblCategory"),
-    [{key:"category",header:"Category"},{key:"items",header:"# Items"},{key:"hours",header:"Hours"}],
-    byCat, "category");
+  const byOwner = Object.entries(groupBy(data,"owner")).map(([o,arr])=>({
+    owner:o || "(Unassigned)",
+    items:arr.length,
+    hours:fmt(sum(arr,x=>x.totalHours))
+  })).sort((a,b)=>b.hours-a.hours);
+
+  const byRisk = Object.entries(groupBy(data,"risk")).map(([r,arr])=>({
+    risk:r || "(n/a)",
+    items:arr.length,
+    hours:fmt(sum(arr,x=>x.totalHours))
+  })).sort((a,b)=>b.hours-a.hours);
+
+  const byPillar = Object.entries(groupBy(data,"pillar")).map(([p,arr])=>({
+    pillar:p || "(n/a)",
+    items:arr.length,
+    hours:fmt(sum(arr,x=>x.totalHours))
+  })).sort((a,b)=>b.hours-a.hours);
+
+  const byCat = Object.entries(groupBy(data,"category")).map(([c,arr])=>({
+    category:c || "(n/a)",
+    items:arr.length,
+    hours:fmt(sum(arr,x=>x.totalHours))
+  })).sort((a,b)=>b.hours-a.hours);
+
+  const byWorkload = Object.entries(groupBy(data,"workload")).map(([w,arr])=>({
+    workload:w || "(n/a)",
+    items:arr.length,
+    hours:fmt(sum(arr,x=>x.totalHours))
+  })).sort((a,b)=>b.hours-a.hours);
+
+  renderTable($("tblRecEffort"), [
+    {key:"finding",header:"Finding"},
+    {key:"pillar",header:"Pillar"},
+    {key:"owner",header:"Owner"},
+    {key:"risk",header:"Risk",render:r=>badgeRisk(r)},
+    {key:"items",header:"# Items"},
+    {key:"hours",header:"Hours"}
+  ], byFinding, "finding");
+
+  renderTable($("tblOwner"), [
+    {key:"owner",header:"Owner"},
+    {key:"items",header:"# Items"},
+    {key:"hours",header:"Hours"}
+  ], byOwner, "owner");
+
+  renderTable($("tblRisk"), [
+    {key:"risk",header:"Risk",render:r=>badgeRisk(r)},
+    {key:"items",header:"# Items"},
+    {key:"hours",header:"Hours"}
+  ], byRisk, "risk");
+
+  renderTable($("tblPillar"), [
+    {key:"pillar",header:"Pillar"},
+    {key:"items",header:"# Items"},
+    {key:"hours",header:"Hours"}
+  ], byPillar, "pillar");
+
+  renderTable($("tblWorkload"), [
+    {key:"workload",header:"Workload"},
+    {key:"items",header:"# Items"},
+    {key:"hours",header:"Hours"}
+  ], byWorkload, "workload");
+
+  renderTable($("tblCategory"), [
+    {key:"category",header:"Category"},
+    {key:"items",header:"# Items"},
+    {key:"hours",header:"Hours"}
+  ], byCat, "category");
 
   const prev = data.slice(0,5000).map(d=>({
-    Category:d.category, Subscription:d.subscription, ResourceGroup:d.resourceGroup, Location:d.location,
-    Type:d.type, Name:d.vaultName||d.context, Finding:d.finding, Pillar:d.pillar,
-    EffortKey:d.effortKey, Owner:d.owner, Risk:`<span class="tag ${riskClass(d.risk)}">${d.risk||"(n/a)"}</span>`,
-    Change:d.change,
-    __all: Object.assign({}, d.__all || {}, d)
+    workload:d.workload,
+    category:d.category,
+    subscription:d.subscription,
+    resourceGroup:d.resourceGroup,
+    location:d.location,
+    type:d.type,
+    name:d.name,
+    finding:d.finding,
+    pillar:d.pillar,
+    effortKey:d.effortKey,
+    owner:d.owner,
+    risk:`<span class="tag ${riskClass(d.risk)}">${d.risk||"(n/a)"}</span>`,
+    change:d.change,
+    __all:Object.assign({}, d.__all || {}, d)
   }));
   renderItemDetails(prev);
 
   const show = data.length>0 ? '' : 'none';
-  ["kpiSec","summarySec","focusSec","detailSec"].forEach(id=>{ $(id).style.display=show; });
+  ["kpiSec","summarySec","focusSec","detailSec"].forEach(id=>{
+    $(id).style.display = show;
+  });
+
   const vmShow = VMDETAIL.length>0 ? '' : 'none';
-  const vmCard = $("vmCard"); const vmSec = $("vmSec"); if(vmCard) vmCard.style.display = vmShow; if(vmSec) vmSec.style.display = vmShow;
-  if(VMDETAIL.length>0) renderVMDetails(VMDETAIL); else status('No VM_Details rows found (showing none).');
+  const vmCard = $("vmCard");
+  const vmSec = $("vmSec");
+  if(vmCard) vmCard.style.display = vmShow;
+  if(vmSec) vmSec.style.display = vmShow;
+  if(VMDETAIL.length>0) renderVMDetails(VMDETAIL);
+
   renderFocus();
 }
 
 function renderFocus(){
   const data = FILTER ? DETAIL.filter(FILTER.fn) : [];
-  if(!FILTER || !data.length){ $("focusSec").style.display = "none"; return; }
+  if(!FILTER || !data.length){
+    $("focusSec").style.display = "none";
+    return;
+  }
   $("focusSec").style.display = "";
   $("focusHeader").textContent = `You selected ${FILTER.key} = "${FILTER.value}".`;
+
   let selectedFinding = null;
-  if(FILTER.key === "finding"){ selectedFinding = FILTER.value; }
-  else { const uniq = Array.from(new Set(data.map(d=>d.finding))).filter(Boolean); if(uniq.length === 1) selectedFinding = uniq[0]; }
-  if(!selectedFinding){ $("focusWhat").innerHTML = "<em>Select a specific finding to view remediation guidance.</em>"; $("focusWhyEnable").innerHTML = ""; $("focusWhyNot").innerHTML = ""; return; }
+  if(FILTER.key === "finding"){
+    selectedFinding = FILTER.value;
+  } else {
+    const uniq = Array.from(new Set(data.map(d=>d.finding))).filter(Boolean);
+    if(uniq.length === 1) selectedFinding = uniq[0];
+  }
+
+  if(!selectedFinding){
+    $("focusWhat").innerHTML = "<strong>What to do:</strong> <em>Select a specific finding in the summary above to view remediation guidance.</em>";
+    $("focusWhyEnable").innerHTML = "";
+    $("focusWhyNot").innerHTML = "";
+    return;
+  }
+
   const m = MAPPING[norm(selectedFinding)] || {};
-  $("focusWhat").innerHTML = `<strong>What to do:</strong> ${m.remediation ? m.remediation : "—"}`;
-  $("focusWhyEnable").innerHTML = `<strong>Why enable it:</strong> ${m.whyEnable ? m.whyEnable : "—"}`;
-  $("focusWhyNot").innerHTML = `<strong>Why not enable it:</strong> ${m.whyNot ? m.whyNot : "—"}`;
+  $("focusWhat").innerHTML =
+    `<strong>What to do:</strong> ${m.remediation ? escapeHtml(m.remediation) : "—"}`;
+  $("focusWhyEnable").innerHTML =
+    `<strong>Why enable it:</strong> ${m.whyEnable ? escapeHtml(m.whyEnable) : "—"}`;
+  $("focusWhyNot").innerHTML =
+    `<strong>Why not enable it:</strong> ${m.whyNot ? escapeHtml(m.whyNot) : "—"}`;
 }
 
-/* === Revert-style Generate wiring with XLSX wait === */
+/* Wait for XLSX */
 async function waitForXLSX(ms=200, maxMs=6000){
   const start = Date.now();
   while(typeof XLSX === 'undefined' && (Date.now()-start)<maxMs){
@@ -567,53 +1003,104 @@ async function waitForXLSX(ms=200, maxMs=6000){
   }
   return typeof XLSX !== 'undefined';
 }
+
+/* Generate handler */
 window.handleGenerate = async function(){
   try{
     status('');
     const auditEl = $("auditXlsx"), mapEl = $("mapXlsx");
     if(!auditEl || !mapEl){ status('UI not ready'); return; }
-    const auditFile = auditEl.files[0]; const mapFile = mapEl.files[0];
+    const auditFile = auditEl.files[0];
+    const mapFile   = mapEl.files[0];
     if(!auditFile){ status('Choose the Backup audit workbook.'); return; }
     if(!mapFile){ status('Choose the Effort Mapping workbook.'); return; }
+
     const ready = await waitForXLSX();
     if(!ready){ status('XLSX library failed to load.'); return; }
-    const btn = $("go"); if(btn){ btn.textContent="Generating…"; btn.style.opacity=".7"; btn.style.pointerEvents="none"; }
 
-    const [auditBuf, mapBuf] = await Promise.all([auditFile.arrayBuffer(), mapFile.arrayBuffer()]);
+    const btn = $("go");
+    if(btn){
+      btn.textContent="Generating…";
+      btn.style.opacity=".7";
+      btn.style.pointerEvents="none";
+    }
+
+    const [auditBuf, mapBuf] = await Promise.all([
+      auditFile.arrayBuffer(),
+      mapFile.arrayBuffer()
+    ]);
     const auditWb = XLSX.read(auditBuf, {type:'array'});
     const mapWb   = XLSX.read(mapBuf, {type:'array'});
 
     parseMapping(mapWb);
-    const findings = parseAudit(auditWb);
-    DETAIL = estimate(findings, MAPPING);
+    const rawFindings = parseAuditV4(auditWb);
+    DETAIL = estimate(rawFindings, MAPPING);
     FILTER = null;
     $("activeFilter").style.display="none";
     renderAll();
     status('Report generated.');
   }catch(err){
     console.error(err);
-    status('Error: ' + (err?.message||err));
+    status('Error: ' + (err?.message || err));
   } finally {
-    const btn = $("go"); if(btn){ btn.textContent="Generate report"; btn.style.opacity=""; btn.style.pointerEvents=""; }
+    const btn = $("go");
+    if(btn){
+      btn.textContent="Generate report";
+      btn.style.opacity="";
+      btn.style.pointerEvents="";
+    }
   }
 };
 
+/* DOM ready wiring */
 document.addEventListener('DOMContentLoaded', ()=>{
   const go = $("go");
   if(go){
     go.addEventListener('click', window.handleGenerate);
-    go.addEventListener('keydown', (e)=>{ if(e.key==='Enter'||e.key===' '){ e.preventDefault(); window.handleGenerate(); }});
+    go.addEventListener('keydown', (e)=>{
+      if(e.key==='Enter'||e.key===' '){
+        e.preventDefault();
+        window.handleGenerate();
+      }
+    });
   }
-  $("clearFilter").addEventListener("click", ()=>{ FILTER=null; $("activeFilter").style.display="none"; renderAll(); renderFocus(); });
+  $("clearFilter").addEventListener("click", ()=>{
+    FILTER=null;
+    $("activeFilter").style.display="none";
+    renderAll();
+    renderFocus();
+  });
 
   $("btnDownloadDetail").addEventListener('click', ()=>{
     const data = FILTER ? DETAIL.filter(FILTER.fn) : DETAIL;
-    if(!data.length){ alert('Generate report first.'); return; }
+    if(!data.length){
+      alert('Generate report first.');
+      return;
+    }
     const rows = data.map(d=>({
-      Category:d.category, Subscription:d.subscription, ResourceGroup:d.resourceGroup, Location:d.location, Type:d.type,
-      Name:d.vaultName||d.context, Finding:d.finding, Pillar:d.pillar, EffortKey:d.effortKey, Owner:d.owner,
-      Risk:d.risk, Impact:d.impact, ChangeWindow:d.change, BaseHoursConfigured:d.baseConfigured, BaseHoursPerItemShare:d.baseShown,
-      PerResourceHours:d.per, TotalHours:d.totalHours, RemediationSteps:MAPPING[norm(d.finding)]?.remediation||"", WhyEnableIt:MAPPING[norm(d.finding)]?.whyEnable||"", WhyNotEnableIt:MAPPING[norm(d.finding)]?.whyNot||""
+      Workload:d.workload,
+      Category:d.category,
+      Subscription:d.subscription,
+      SubscriptionId:d.subscriptionId,
+      ResourceGroup:d.resourceGroup,
+      Location:d.location,
+      Type:d.type,
+      Name:d.name,
+      SourceSheet:d.sourceSheet,
+      Finding:d.finding,
+      Pillar:d.pillar,
+      EffortKey:d.effortKey,
+      Owner:d.owner,
+      Risk:d.risk,
+      Impact:d.impact,
+      ChangeWindow:d.change,
+      BaseHoursConfigured:d.baseConfigured,
+      BaseHoursPerItemShare:d.baseShown,
+      PerResourceHours:d.per,
+      TotalHours:d.totalHours,
+      RemediationSteps:MAPPING[norm(d.finding)]?.remediation||"",
+      WhyEnableIt:MAPPING[norm(d.finding)]?.whyEnable||"",
+      WhyNotEnableIt:MAPPING[norm(d.finding)]?.whyNot||""
     }));
     const headers = Object.keys(rows[0]||{});
     let csv = headers.join(",")+"\n";
@@ -626,7 +1113,10 @@ document.addEventListener('DOMContentLoaded', ()=>{
     });
     const blob = new Blob([csv], {type:'text/csv'});
     const url = URL.createObjectURL(blob);
-    const a=document.createElement('a'); a.href=url; a.download='backup_prioritizer_detail.csv'; a.click();
+    const a=document.createElement('a');
+    a.href=url;
+    a.download='backup_posture_explorer_detail.csv';
+    a.click();
     setTimeout(()=>URL.revokeObjectURL(url),1000);
   });
 
@@ -634,7 +1124,10 @@ document.addEventListener('DOMContentLoaded', ()=>{
     const html = '<!doctype html>'+document.documentElement.outerHTML;
     const blob = new Blob([html], {type:'text/html'});
     const url = URL.createObjectURL(blob);
-    const a=document.createElement('a'); a.href=url; a.download='TIEVA — Backup Prioritizer (v3.20).html'; a.click();
+    const a=document.createElement('a');
+    a.href=url;
+    a.download='TIEVA — Backup Posture Explorer (v4).html';
+    a.click();
     setTimeout(()=>URL.revokeObjectURL(url),1000);
   });
 });
