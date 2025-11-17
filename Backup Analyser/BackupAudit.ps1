@@ -12,7 +12,10 @@
    - SQL in VM (workload): full/diff/log cadence + optional window (policy),
      last backup status/time, observed RPO from RPs (prefers log)
    - Azure SQL (PaaS): observed RPO from PITR (latest restorable time)
-   - Outputs printed ONCE at the end; XLSX export with multiple sheets
+   - Produces:
+       * Console tables
+       * XLSX with multiple sheets (RSV, BackupVaults, VM/DB coverage,
+         VM & SQL detail, Findings, Subscription_Summary, Summary)
 ======================================================================= #>
 
 $ErrorActionPreference = 'Stop'
@@ -32,6 +35,12 @@ $Diagnostics = $true                   # set $false to silence warnings
 # Optional subscription include filters (regex). Leave blank to include all.
 $SubIncludeNameRegex = ''              # e.g. 'Prod|Contoso'
 $SubIncludeIdRegex   = ''              # e.g. '^[0-9a-f-]{36}$'
+
+# RPO thresholds (hours)
+$VmRpoWarningHours    = 26
+$VmRpoCriticalHours   = 50
+$SqlRpoWarningHours   = 26
+$SqlRpoCriticalHours  = 50
 
 # Centralized API versions
 $Api = @{
@@ -665,6 +674,9 @@ $vmDetailReport  = [System.Collections.Generic.List[object]]::new()
 $sqlDetailReport = [System.Collections.Generic.List[object]]::new()
 $protectedIds    = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
 
+# New: posture / gap findings
+$findings        = [System.Collections.Generic.List[object]]::new()
+
 # === RSV VM discovery (cmdlets + REST fallback) ===
 function Get-RsvVmItems {
   param(
@@ -968,6 +980,32 @@ foreach ($sub in $subs) {
       Immutable               = $r.Immutable
     })
 
+    # Findings for vault config
+    if (-not $r.AlwaysOnSoftDelete) {
+      $findings.Add([pscustomobject]@{
+        SubscriptionName = $sub.Name
+        SubscriptionId   = $sub.Id
+        Severity         = 'High'
+        Category         = 'Vault Configuration'
+        ResourceType     = 'Microsoft.RecoveryServices/vaults'
+        ResourceName     = $r.VaultName
+        ResourceGroup    = $r.ResourceGroup
+        Detail           = "Always-On soft delete is not enabled on Recovery Services vault."
+      })
+    }
+    if ($r.SecurityLevel -ne 'Enhanced') {
+      $findings.Add([pscustomobject]@{
+        SubscriptionName = $sub.Name
+        SubscriptionId   = $sub.Id
+        Severity         = 'Medium'
+        Category         = 'Vault Configuration'
+        ResourceType     = 'Microsoft.RecoveryServices/vaults'
+        ResourceName     = $r.VaultName
+        ResourceGroup    = $r.ResourceGroup
+        Detail           = "Vault security level is not Enhanced."
+      })
+    }
+
     # ---- Backed-up VM items (robust discovery) ----
     $vmItemsAll = Get-RsvVmItems -VaultResourceId $v.Id -VerboseDiag:$Diagnostics
     if ($Diagnostics) {
@@ -1048,6 +1086,28 @@ foreach ($sub in $subs) {
       $protState = $it.Properties.ProtectionState
       if (-not $protState) { $protState = $it.Properties.protectionState }
 
+      # Findings for VM RPO (if we can see it)
+      if ($observedRpoHrs -ne $null) {
+        $severity = $null
+        if ($observedRpoHrs -ge $VmRpoCriticalHours) {
+          $severity = 'High'
+        } elseif ($observedRpoHrs -ge $VmRpoWarningHours) {
+          $severity = 'Medium'
+        }
+        if ($severity) {
+          $findings.Add([pscustomobject]@{
+            SubscriptionName = $sub.Name
+            SubscriptionId   = $sub.Id
+            Severity         = $severity
+            Category         = 'RPO'
+            ResourceType     = 'Microsoft.Compute/virtualMachines'
+            ResourceName     = $vmName
+            ResourceGroup    = $vmRG
+            Detail           = "Observed VM RPO is ${observedRpoHrs}h, above the $severity threshold."
+          })
+        }
+      }
+
       $vmDetailReport.Add([pscustomobject]@{
         SubscriptionName       = $sub.Name
         SubscriptionId         = $sub.Id
@@ -1112,6 +1172,28 @@ foreach ($sub in $subs) {
           $obsRpo = $null
           if ($it.Id) {
             $obsRpo = Get-SqlVmObservedRpo -ProtectedItemId $it.Id -ApiVersion $Api.RSV_RecoveryPoints
+          }
+
+          # Findings for SQL in VM RPO
+          if ($obsRpo -ne $null) {
+            $severity = $null
+            if ($obsRpo -ge $SqlRpoCriticalHours) {
+              $severity = 'High'
+            } elseif ($obsRpo -ge $SqlRpoWarningHours) {
+              $severity = 'Medium'
+            }
+            if ($severity) {
+              $findings.Add([pscustomobject]@{
+                SubscriptionName = $sub.Name
+                SubscriptionId   = $sub.Id
+                Severity         = $severity
+                Category         = 'RPO'
+                ResourceType     = 'MSSQL in VM'
+                ResourceName     = $p.FriendlyName
+                ResourceGroup    = $v.ResourceGroupName
+                Detail           = "Observed SQL-in-VM RPO is ${obsRpo}h, above the $severity threshold."
+              })
+            }
           }
 
           # Last backup time/status if present
@@ -1301,6 +1383,32 @@ foreach ($sub in $subs) {
       Immutable               = $immutable
     })
 
+    # Findings for Backup Vault config
+    if (-not $alwaysOn) {
+      $findings.Add([pscustomobject]@{
+        SubscriptionName = $sub.Name
+        SubscriptionId   = $sub.Id
+        Severity         = 'High'
+        Category         = 'Vault Configuration'
+        ResourceType     = 'Microsoft.DataProtection/backupVaults'
+        ResourceName     = $bvName
+        ResourceGroup    = $rgName
+        Detail           = "Always-On soft delete is not effectively enabled on Backup Vault."
+      })
+    }
+    if ($secLevel -ne 'Enhanced') {
+      $findings.Add([pscustomobject]@{
+        SubscriptionName = $sub.Name
+        SubscriptionId   = $sub.Id
+        Severity         = 'Medium'
+        Category         = 'Vault Configuration'
+        ResourceType     = 'Microsoft.DataProtection/backupVaults'
+        ResourceName     = $bvName
+        ResourceGroup    = $rgName
+        Detail           = "Backup Vault security level is not Enhanced."
+      })
+    }
+
     # Backup Instances (coverage map + protectedIds)
     $instances = @()
     try {
@@ -1321,7 +1429,7 @@ foreach ($sub in $subs) {
         $dsId   = if ($dsi.ResourceId) { $dsi.ResourceId } else { $dsi.resourceId }
         if ($dsId) { $null = $protectedIds.Add($dsId) }
 
-        # Optional: add known non-VMs to DB coverage (kept from your original script)
+        # Optional: add known non-VMs to DB coverage
         $dsType = if ($dsi.DataSourceType) { $dsi.DataSourceType } else { $dsi.dataSourceType }
         $name   = if ($dsi.ResourceName)   { $dsi.ResourceName }   else { $dsi.resourceName }
 
@@ -1368,6 +1476,20 @@ foreach ($sub in $subs) {
       IsBackedUp=$isProtected
       Method = if ($isProtected) { 'RSV or BV' } else { 'Not protected' }
     })
+
+    # Finding: unprotected, non-Unknown powerstate VM
+    if (-not $isProtected -and $ps -ne 'Unknown') {
+      $findings.Add([pscustomobject]@{
+        SubscriptionName = $sub.Name
+        SubscriptionId   = $sub.Id
+        Severity         = 'High'
+        Category         = 'VM Coverage'
+        ResourceType     = 'Microsoft.Compute/virtualMachines'
+        ResourceName     = $vm.Name
+        ResourceGroup    = $vm.ResourceGroupName
+        Detail           = "VM is not protected by any backup vault."
+      })
+    }
   }
 
   # ==================================================
@@ -1428,6 +1550,28 @@ foreach ($sub in $subs) {
         RpoSource             = if ($obsRpo -ne $null) { 'PITR (platform)' } else { $null }
         ProtectionState       = 'PlatformManaged'
       })
+
+      # Findings for Azure SQL RPO
+      if ($obsRpo -ne $null) {
+        $severity = $null
+        if ($obsRpo -ge $SqlRpoCriticalHours) {
+          $severity = 'High'
+        } elseif ($obsRpo -ge $SqlRpoWarningHours) {
+          $severity = 'Medium'
+        }
+        if ($severity) {
+          $findings.Add([pscustomobject]@{
+            SubscriptionName = $sub.Name
+            SubscriptionId   = $sub.Id
+            Severity         = $severity
+            Category         = 'RPO'
+            ResourceType     = 'Azure SQL (PaaS)'
+            ResourceName     = $db.DatabaseName
+            ResourceGroup    = $srv.ResourceGroupName
+            Detail           = "Observed Azure SQL RPO is ${obsRpo}h, above the $severity threshold."
+          })
+        }
+      }
     }
   }
 }
@@ -1519,7 +1663,7 @@ if ($ExportXlsx) {
   }
   Import-Module ImportExcel -ErrorAction Stop
 
-  # Helper for consistent export
+  # Helper for consistent export (no AutoSize for CloudShell)
   function Export-Sheet {
     param(
       [Parameter(Mandatory)] [object]$Data,
@@ -1532,15 +1676,15 @@ if ($ExportXlsx) {
     $pipe = $Data
     if ($Columns) { $pipe = $Data | Select-Object $Columns }
 
-  $common = @{
-    Path               = $XlsxPath
-    WorksheetName      = $WorksheetName
-    TableName          = $TableName
-    TableStyle         = 'Medium2'
-    FreezeTopRow       = $true
-    BoldTopRow         = $true
-    NoNumberConversion = @('VMName','VaultName','PolicyName','ServerOrInstance','DatabaseName','ResourceGroup')
-  }
+    $common = @{
+      Path               = $XlsxPath
+      WorksheetName      = $WorksheetName
+      TableName          = $TableName
+      TableStyle         = 'Medium2'
+      FreezeTopRow       = $true
+      BoldTopRow         = $true
+      NoNumberConversion = @('VMName','VaultName','PolicyName','ServerOrInstance','DatabaseName','ResourceGroup')
+    }
     if ($FirstSheet) { $common.ClearSheet = $true }  # wipe only once
 
     $pipe | Export-Excel @common
@@ -1588,11 +1732,71 @@ if ($ExportXlsx) {
   )
   Export-Sheet -Data $sqlDetailReport -WorksheetName 'SQL_Detail' -TableName 'SQL_Detail' -Columns $sqlDetCols
 
-  # 6) DB Coverage (optional non-VM workloads you collected)
+  # 6) DB Coverage
   $dbCovCols = @('SubscriptionName','SubscriptionId','DbType','ServerOrInstance','DatabaseName','IsBackedUp','Method','VaultName','Location')
   Export-Sheet -Data $dbReport -WorksheetName 'DB_Coverage' -TableName 'DB_Coverage' -Columns $dbCovCols
 
-  # 7) Summary sheet
+  # 7) Findings (gaps / risks)
+  if ($findings.Count -gt 0) {
+    $findingCols = @('SubscriptionName','SubscriptionId','Severity','Category','ResourceType','ResourceName','ResourceGroup','Detail')
+    Export-Sheet -Data $findings -WorksheetName 'Findings' -TableName 'Findings' -Columns $findingCols
+  }
+
+  # 8) Subscription summary / protection score
+  $subscriptionSummary = @()
+
+  $subsById = @($vmReport + $dbReport + $rsvReport + $bvReport) |
+    Where-Object { $_ -and $_.SubscriptionId } |
+    Select-Object -ExpandProperty SubscriptionId -Unique
+
+  foreach ($sid in $subsById) {
+    $name = (
+      @($vmReport + $dbReport + $rsvReport + $bvReport) |
+        Where-Object { $_.SubscriptionId -eq $sid } |
+        Select-Object -First 1
+    ).SubscriptionName
+
+    $vmsSub    = $vmReport  | Where-Object SubscriptionId -eq $sid
+    $dbsSub    = $dbReport  | Where-Object SubscriptionId -eq $sid
+    $findSub   = $findings  | Where-Object SubscriptionId -eq $sid
+    $vaultsSub = @($rsvReport + $bvReport) | Where-Object SubscriptionId -eq $sid
+
+    $vmTotal   = $vmsSub.Count
+    $vmProt    = ($vmsSub | Where-Object IsBackedUp).Count
+    $vmPct     = if ($vmTotal) { [math]::Round(100*$vmProt/$vmTotal,1) } else { 0 }
+
+    $dbTotal   = $dbsSub.Count
+    $dbProt    = ($dbsSub | Where-Object IsBackedUp).Count
+    $dbPct     = if ($dbTotal) { [math]::Round(100*$dbProt/$dbTotal,1) } else { 0 }
+
+    $highFind  = ($findSub | Where-Object Severity -eq 'High').Count
+    $medFind   = ($findSub | Where-Object Severity -eq 'Medium').Count
+
+    # Simple score: average of VM% & DB% minus penalty for findings
+    $baseScore = [math]::Round(($vmPct + $dbPct)/2,1)
+    $score     = [math]::Max(0, $baseScore - (5 * $highFind) - (2 * $medFind))
+
+    $subscriptionSummary += [pscustomobject]@{
+      SubscriptionName = $name
+      SubscriptionId   = $sid
+      VMTotal          = $vmTotal
+      VMProtected      = $vmProt
+      VMProtectedPct   = $vmPct
+      DbTotal          = $dbTotal
+      DbProtected      = $dbProt
+      DbProtectedPct   = $dbPct
+      VaultCount       = $vaultsSub.Count
+      HighFindings     = $highFind
+      MediumFindings   = $medFind
+      ProtectionScore  = $score
+    }
+  }
+
+  if ($subscriptionSummary.Count -gt 0) {
+    Export-Sheet -Data $subscriptionSummary -WorksheetName 'Subscription_Summary' -TableName 'Subscription_Summary'
+  }
+
+  # 9) Summary sheet
   $vaultsTotal = $rsvReport.Count + $bvReport.Count
   $vmTotal     = $vmReport.Count
   $vmProtected = ($vmReport | Where-Object { $_.IsBackedUp }).Count
@@ -1619,4 +1823,3 @@ if ($ExportXlsx) {
 
   Write-Host "`nExcel export complete → $XlsxPath" -ForegroundColor Green
 }
-
