@@ -22,9 +22,35 @@ $ErrorActionPreference = 'Stop'
 
 # --- Control which subscriptions to include ---
 $TargetSubscriptions = @(
-  'a2274ccd-57b8-4d72-a94a-c38a235cf56e',  # identity-tieva-dev
-  'df82ae5c-8de4-4e5d-a976-a75d56fc3b9c'   # learn-shared-tieva-dev
-  # Add more subscription IDs or names as needed
+  '5961d092-dde6-40e2-90e5-2b6dab00b739',
+'03127f90-4f1f-4f83-b9a7-a23b39ecc91e',
+'fcaca3a0-0f22-4db3-9f41-248ba1e9be20',
+'c9400257-0d1b-4a59-b227-36b3aea73b0a',
+'961271eb-fe4d-455e-9f53-5b0a5a931bcb',
+'00f0e475-b85a-4f4e-a4df-84a44d547d95',
+'6ee22078-9979-48d2-996d-2c14734618dc',
+'5eac3012-879c-4bd6-81a7-e5cc0a531901',
+'1e08993c-9844-43ed-bdbc-ef2587524458',
+'68d0c954-0825-43ce-ac75-a906c966bd25',
+'0bfd305f-a119-4e90-b50d-1f9e89d0218e',
+'03c21c87-03df-4269-8afd-02ca992ac41a',
+'355305cb-774b-46a0-8f0b-71a9e5142b54',
+'38d0c9ac-0831-4f1c-894d-39366b733986',
+'f1aaf818-695c-4ef4-b33d-36c4ad28e9cd',
+'f2270be2-080c-49f0-8185-c3b4abb8c363',
+'5427645e-29fb-4ef3-9c2a-4f2f16a7f857',
+'e23df4c5-d3ac-4e8c-85bd-9eb34302b840',
+'05a2b24b-81bb-4e91-adac-d8e1953e73d9',
+'439d7cb9-6337-4538-9fd5-3f02004aeea0',
+'b4aace36-0bab-405a-87a1-9618cee47152',
+'5f938282-6c79-4d89-8ed5-6c8a50fc5a99',
+'c817d346-4bcc-4d26-8adf-85923187d757',
+'2a9d8c25-c84c-4de3-82fe-aa7cc2746559',
+'a5925d87-1398-410e-b127-c34d02f4672c',
+'354118f8-195a-4a00-b8c8-915b82bf58c5',
+'d93d85d7-6a3c-4b03-a510-7d5e3d1d621c',
+'0cb811e8-b6c5-441c-92d9-be021a8fd5b4',
+'17553ace-0f3b-47f6-96c9-9b9e2812b1fb'
 )
 
 # ---------------- Settings ----------------
@@ -55,7 +81,15 @@ $Api = @{
 }
 
 # ---------------- Module sanity check ----------------
-$required = @('Az.Accounts','Az.Resources','Az.RecoveryServices','Az.DataProtection','Az.Compute','Az.Sql')
+$required = @(
+  'Az.Accounts',
+  'Az.Resources',
+  'Az.RecoveryServices',
+  'Az.DataProtection',
+  'Az.Compute',
+  'Az.Sql',
+  'Az.PostgreSql'     # new: for PostgreSQL flexible server discovery
+)
 $missing = $required | Where-Object { -not (Get-Module -ListAvailable -Name $_) }
 if ($missing) {
   Write-Warning "Missing modules: $($missing -join ', '). Install with: Install-Module Az -Scope CurrentUser"
@@ -927,7 +961,7 @@ foreach ($sub in $subs) {
   Set-AzContext -SubscriptionId $sub.Id | Out-Null
 
   # Ensure providers registered (idempotent)
-  foreach ($ns in 'Microsoft.RecoveryServices','Microsoft.DataProtection') {
+  foreach ($ns in 'Microsoft.RecoveryServices','Microsoft.DataProtection','Microsoft.DBforPostgreSQL') {
     try {
       $reg = Get-AzResourceProvider -ProviderNamespace $ns -ErrorAction SilentlyContinue
       if ($reg.RegistrationState -ne 'Registered') {
@@ -1168,32 +1202,47 @@ foreach ($sub in $subs) {
           $logCad  = $sched.LogCadenceText
           $winTxt  = $sched.WindowText
 
+          # Combined policy pattern for quick reading
+          $pattern = @()
+          if ($fullCad) { $pattern += "Full: $fullCad" }
+          if ($diffCad) { $pattern += "Diff: $diffCad" }
+          if ($logCad)  { $pattern += "Log: $logCad" }
+          $patternText = if ($pattern) { $pattern -join '; ' } else { $null }
+
           # Observed RPO from workload recovery points (prefer log)
           $obsRpo = $null
           if ($it.Id) {
             $obsRpo = Get-SqlVmObservedRpo -ProtectedItemId $it.Id -ApiVersion $Api.RSV_RecoveryPoints
           }
 
+          # RPO status classification
+          $rpoStatus = if ($obsRpo -eq $null) {
+            'Unknown'
+          } elseif ($obsRpo -ge $SqlRpoCriticalHours) {
+            'Critical'
+          } elseif ($obsRpo -ge $SqlRpoWarningHours) {
+            'Warning'
+          } else {
+            'OK'
+          }
+
           # Findings for SQL in VM RPO
-          if ($obsRpo -ne $null) {
-            $severity = $null
-            if ($obsRpo -ge $SqlRpoCriticalHours) {
-              $severity = 'High'
-            } elseif ($obsRpo -ge $SqlRpoWarningHours) {
-              $severity = 'Medium'
-            }
-            if ($severity) {
-              $findings.Add([pscustomobject]@{
-                SubscriptionName = $sub.Name
-                SubscriptionId   = $sub.Id
-                Severity         = $severity
-                Category         = 'RPO'
-                ResourceType     = 'MSSQL in VM'
-                ResourceName     = $p.FriendlyName
-                ResourceGroup    = $v.ResourceGroupName
-                Detail           = "Observed SQL-in-VM RPO is ${obsRpo}h, above the $severity threshold."
-              })
-            }
+          $severity = $null
+          switch ($rpoStatus) {
+            'Critical' { $severity = 'High' }
+            'Warning'  { $severity = 'Medium' }
+          }
+          if ($severity) {
+            $findings.Add([pscustomobject]@{
+              SubscriptionName = $sub.Name
+              SubscriptionId   = $sub.Id
+              Severity         = $severity
+              Category         = 'RPO'
+              ResourceType     = 'MSSQL in VM'
+              ResourceName     = $p.FriendlyName
+              ResourceGroup    = $v.ResourceGroupName
+              Detail           = "Observed SQL-in-VM RPO is ${obsRpo}h, above the $severity threshold."
+            })
           }
 
           # Last backup time/status if present
@@ -1211,6 +1260,7 @@ foreach ($sub in $subs) {
             ServerOrInstance      = $p.ContainerName
             DatabaseName          = $p.FriendlyName
             PolicyName            = $polName
+            PolicyPattern         = $patternText
             ConfiguredCadenceFull = $fullCad
             ConfiguredCadenceDiff = $diffCad
             ConfiguredCadenceLog  = $logCad
@@ -1219,6 +1269,7 @@ foreach ($sub in $subs) {
             LastBackupStatus      = $lastStatus
             ObservedRPOHours      = $obsRpo
             RpoSource             = if ($logCad -or $diffCad -or $fullCad) { 'Policy' } else { if ($obsRpo -ne $null) { 'RecoveryPoints' } else { $null } }
+            RpoStatus             = $rpoStatus
             ProtectionState       = $p.ProtectionState ?? $p.protectionState
           })
         }
@@ -1436,16 +1487,30 @@ foreach ($sub in $subs) {
         switch -Regex ($dsType) {
           'PostgreSQL' {
             $dbReport.Add([pscustomobject]@{
-              SubscriptionName=$sub.Name; SubscriptionId=$sub.Id
-              DbType='PostgreSQL Flexible Server'; ServerOrInstance=$name; DatabaseName='* (server-level)'
-              IsBackedUp=$true; Method='Backup Vault'; VaultName=$bvName; Location=$bv.Location
+              SubscriptionName = $sub.Name
+              SubscriptionId   = $sub.Id
+              DbType           = 'PostgreSQL Flexible Server'
+              ServerOrInstance = $name
+              DatabaseName     = '* (server-level)'
+              IsBackedUp       = $true
+              MeetsStandard    = $true
+              Method           = 'Backup Vault'
+              VaultName        = $bvName
+              Location         = $bv.Location
             })
           }
           'AzureFileShare' {
             $dbReport.Add([pscustomobject]@{
-              SubscriptionName=$sub.Name; SubscriptionId=$sub.Id
-              DbType='Azure Files'; ServerOrInstance=$name; DatabaseName='Share'
-              IsBackedUp=$true; Method='Backup Vault'; VaultName=$bvName; Location=$bv.Location
+              SubscriptionName = $sub.Name
+              SubscriptionId   = $sub.Id
+              DbType           = 'Azure Files'
+              ServerOrInstance = $name
+              DatabaseName     = 'Share'
+              IsBackedUp       = $true
+              MeetsStandard    = $true
+              Method           = 'Backup Vault'
+              VaultName        = $bvName
+              Location         = $bv.Location
             })
           }
         }
@@ -1519,17 +1584,29 @@ foreach ($sub in $subs) {
         if ($ltr -and $ltr.MonthlyRetention) { $hasLTR = $true }
       } catch {}
 
-      # Coverage entry
+      # RPO status classification for PaaS
+      $rpoStatus = if ($obsRpo -eq $null) {
+        'Unknown'
+      } elseif ($obsRpo -ge $SqlRpoCriticalHours) {
+        'Critical'
+      } elseif ($obsRpo -ge $SqlRpoWarningHours) {
+        'Warning'
+      } else {
+        'OK'
+      }
+
+      # Coverage entry (Azure SQL PaaS is always at least PITR-backed)
       $dbReport.Add([pscustomobject]@{
-        SubscriptionName=$sub.Name
-        SubscriptionId=$sub.Id
-        DbType='Azure SQL (PaaS)'
-        ServerOrInstance=$srv.ServerName
-        DatabaseName=$db.DatabaseName
-        IsBackedUp=$true
-        Method = if ($hasLTR) { 'Native PITR + LTR' } else { 'Native PITR only' }
-        VaultName='-'
-        Location=$db.Location
+        SubscriptionName = $sub.Name
+        SubscriptionId   = $sub.Id
+        DbType           = 'Azure SQL (PaaS)'
+        ServerOrInstance = $srv.ServerName
+        DatabaseName     = $db.DatabaseName
+        IsBackedUp       = $true
+        MeetsStandard    = $hasLTR
+        Method           = if ($hasLTR) { 'Native PITR + LTR' } else { 'Native PITR only' }
+        VaultName        = '-'
+        Location         = $db.Location
       })
 
       # SQL detail entry
@@ -1540,6 +1617,7 @@ foreach ($sub in $subs) {
         ServerOrInstance      = $srv.ServerName
         DatabaseName          = $db.DatabaseName
         PolicyName            = if ($hasLTR) { 'Native PITR + LTR' } else { 'Native PITR only' }
+        PolicyPattern         = $null
         ConfiguredCadenceFull = $null
         ConfiguredCadenceDiff = $null
         ConfiguredCadenceLog  = $null
@@ -1548,30 +1626,71 @@ foreach ($sub in $subs) {
         LastBackupStatus      = $null
         ObservedRPOHours      = $obsRpo
         RpoSource             = if ($obsRpo -ne $null) { 'PITR (platform)' } else { $null }
+        RpoStatus             = $rpoStatus
         ProtectionState       = 'PlatformManaged'
       })
 
       # Findings for Azure SQL RPO
-      if ($obsRpo -ne $null) {
-        $severity = $null
-        if ($obsRpo -ge $SqlRpoCriticalHours) {
-          $severity = 'High'
-        } elseif ($obsRpo -ge $SqlRpoWarningHours) {
-          $severity = 'Medium'
-        }
-        if ($severity) {
-          $findings.Add([pscustomobject]@{
-            SubscriptionName = $sub.Name
-            SubscriptionId   = $sub.Id
-            Severity         = $severity
-            Category         = 'RPO'
-            ResourceType     = 'Azure SQL (PaaS)'
-            ResourceName     = $db.DatabaseName
-            ResourceGroup    = $srv.ResourceGroupName
-            Detail           = "Observed Azure SQL RPO is ${obsRpo}h, above the $severity threshold."
-          })
-        }
+      $severity = $null
+      switch ($rpoStatus) {
+        'Critical' { $severity = 'High' }
+        'Warning'  { $severity = 'Medium' }
       }
+      if ($severity) {
+        $findings.Add([pscustomobject]@{
+          SubscriptionName = $sub.Name
+          SubscriptionId   = $sub.Id
+          Severity         = $severity
+          Category         = 'RPO'
+          ResourceType     = 'Azure SQL (PaaS)'
+          ResourceName     = $db.DatabaseName
+          ResourceGroup    = $srv.ResourceGroupName
+          Detail           = "Observed Azure SQL RPO is ${obsRpo}h, above the $severity threshold."
+        })
+      }
+    }
+  }
+
+  # ==================================================
+  # PostgreSQL Flexible Server coverage (backed vs not)
+  # ==================================================
+  $pgServers = @()
+  try {
+    $pgServers = Get-AzPostgreSqlFlexibleServer -ErrorAction SilentlyContinue
+  } catch {}
+
+  foreach ($pg in $pgServers) {
+    $exists = $dbReport | Where-Object {
+      $_.SubscriptionId   -eq $sub.Id -and
+      $_.DbType           -eq 'PostgreSQL Flexible Server' -and
+      $_.ServerOrInstance -eq $pg.Name
+    }
+
+    if (-not $exists) {
+      # Not protected by any backup instance
+      $dbReport.Add([pscustomobject]@{
+        SubscriptionName = $sub.Name
+        SubscriptionId   = $sub.Id
+        DbType           = 'PostgreSQL Flexible Server'
+        ServerOrInstance = $pg.Name
+        DatabaseName     = '* (server-level)'
+        IsBackedUp       = $false
+        MeetsStandard    = $false
+        Method           = 'Not protected'
+        VaultName        = '-'
+        Location         = $pg.Location
+      })
+
+      $findings.Add([pscustomobject]@{
+        SubscriptionName = $sub.Name
+        SubscriptionId   = $sub.Id
+        Severity         = 'High'
+        Category         = 'DB Coverage'
+        ResourceType     = 'PostgreSQL Flexible Server'
+        ResourceName     = $pg.Name
+        ResourceGroup    = $pg.ResourceGroupName
+        Detail           = "PostgreSQL flexible server has no backup instance."
+      })
     }
   }
 }
@@ -1613,9 +1732,9 @@ Print-Section "Backed-up VMs — Cadence & RPO" $vmDetailReport @(
 ) @('SubscriptionName','VaultName','VMResourceGroup','VMName')
 
 Print-Section "SQL — Cadence & RPO" $sqlDetailReport @(
-  'SubscriptionName','VaultName','Workload','ServerOrInstance','DatabaseName','PolicyName',
+  'SubscriptionName','VaultName','Workload','ServerOrInstance','DatabaseName','PolicyName','PolicyPattern',
   'ConfiguredCadenceFull','ConfiguredCadenceDiff','ConfiguredCadenceLog','ConfiguredWindow',
-  'LastBackupTime','LastBackupStatus','ObservedRPOHours','RpoSource','ProtectionState'
+  'LastBackupTime','LastBackupStatus','ObservedRPOHours','RpoSource','RpoStatus','ProtectionState'
 ) @('SubscriptionName','VaultName','Workload','ServerOrInstance','DatabaseName')
 
 # ======== QUICK SUMMARY ========
@@ -1726,14 +1845,17 @@ if ($ExportXlsx) {
 
   # 5) SQL (RSV workload + PaaS) Details
   $sqlDetCols = @(
-    'SubscriptionName','VaultName','Workload','ServerOrInstance','DatabaseName','PolicyName',
+    'SubscriptionName','VaultName','Workload','ServerOrInstance','DatabaseName','PolicyName','PolicyPattern',
     'ConfiguredCadenceFull','ConfiguredCadenceDiff','ConfiguredCadenceLog','ConfiguredWindow',
-    'LastBackupTime','LastBackupStatus','ObservedRPOHours','RpoSource','ProtectionState'
+    'LastBackupTime','LastBackupStatus','ObservedRPOHours','RpoSource','RpoStatus','ProtectionState'
   )
   Export-Sheet -Data $sqlDetailReport -WorksheetName 'SQL_Detail' -TableName 'SQL_Detail' -Columns $sqlDetCols
 
   # 6) DB Coverage
-  $dbCovCols = @('SubscriptionName','SubscriptionId','DbType','ServerOrInstance','DatabaseName','IsBackedUp','Method','VaultName','Location')
+  $dbCovCols = @(
+    'SubscriptionName','SubscriptionId','DbType','ServerOrInstance','DatabaseName',
+    'IsBackedUp','MeetsStandard','Method','VaultName','Location'
+  )
   Export-Sheet -Data $dbReport -WorksheetName 'DB_Coverage' -TableName 'DB_Coverage' -Columns $dbCovCols
 
   # 7) Findings (gaps / risks)
