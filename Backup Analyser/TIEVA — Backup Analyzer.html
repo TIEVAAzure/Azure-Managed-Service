@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>TIEVA — Backup Posture Explorer (v4.0)</title>
+<title>TIEVA — Backup Posture Explorer (v4.3)</title>
 <style>
   :root{
     --brand-green:#2DA58E; --critical:#ef4444; --moderate:#f59e0b; --excellent:#10b981;
@@ -147,13 +147,7 @@
   tr.expandable.open td:first-child::before{content:'▾'}
   tr.exp-row td{border-top:none}
   #vmCard { flex: 1 1 360px; }
-  select{
-    padding:6px 8px;
-    border-radius:8px;
-    border:1px solid var(--border);
-    font-size:13px;
-    background:#fff;
-  }
+  #dbCard { flex: 1 1 360px; }
   .badge-workload{
     display:inline-block;
     padding:2px 8px;
@@ -188,7 +182,7 @@
 <body>
   <div class="brandbar">
     <div class="brandwrap">
-      <div class="brandtitle">TIEVA — Backup Posture Explorer (v4.0)</div>
+      <div class="brandtitle">TIEVA — Backup Posture Explorer (v4.3)</div>
       <div class="btnrow">
         <button id="btnExportHTML" class="header-btn">Export HTML</button>
         <button id="btnDownloadDetail" class="header-btn">Download Detail CSV</button>
@@ -202,7 +196,7 @@
     </div>
     <div class="status" style="color:#fff;opacity:.95">
       Upload your <strong>Backup_Audit.xlsx</strong> and <strong>Backup_Effort_Mapping_v3.xlsx</strong>.
-      We’ll derive findings across vaults, RSVs and VMs, map them to effort, and show guided remediation.
+      We’ll derive findings across vaults, RSVs, VMs and databases, map them to effort, and show guided remediation.
     </div>
 
     <!-- Upload / Controls -->
@@ -212,7 +206,8 @@
           <h3>1) Backup audit (.xlsx)</h3>
           <input id="auditXlsx" type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" />
           <div class="muted" style="font-size:12px;margin-top:4px">
-            Expected sheets: <code>BackupVaults</code>, <code>RSV</code>, <code>VM_Coverage</code>, <code>VM_Detail</code> (others are ignored for now).
+            Expected sheets (if present): <code>BackupVaults</code>, <code>RSV</code>, <code>VM_Coverage</code>, <code>VM_Detail</code>,
+            <code>DB_Coverage</code>, <code>SQL_Detail</code>. Others are ignored.
           </div>
         </div>
         <div class="col">
@@ -223,7 +218,7 @@
           </div>
         </div>
         <div class="col" style="display:flex;align-items:flex-end;gap:8px">
-          <div class="btn primary" id="go" role="button" tabindex="0" onclick="handleGenerate()">Generate report</div>
+          <div class="btn primary" id="go" role="button" tabindex="0">Generate report</div>
           <div class="btn" id="clearFilter">Clear filter</div>
           <span id="status" class="muted" style="align-self:center"></span>
         </div>
@@ -328,10 +323,23 @@
         <div class="filterbar">
           <h2 style="margin:0">VM Details</h2>
           <span class="key">
-            <strong>Hint:</strong> Click a VM to expand for full metadata from VM_Detail.
+            <strong>Hint:</strong> Click a VM to expand for full metadata from VM_Detail.</strong>
           </span>
         </div>
         <div id="tblVM" class="scroller"></div>
+      </div>
+    </div>
+
+    <!-- Workload detail: Databases -->
+    <div id="dbSec" class="row" style="display:none">
+      <div class="col card" id="dbCard">
+        <div class="filterbar">
+          <h2 style="margin:0">Database Details</h2>
+          <span class="key">
+            <strong>Hint:</strong> Click a database to expand for full metadata from SQL_Detail.</strong>
+          </span>
+        </div>
+        <div id="tblDB" class="scroller"></div>
       </div>
     </div>
   </div>
@@ -353,6 +361,14 @@ function yes(v){
   const s = String(v || "").trim().toLowerCase();
   if(!s) return false;
   return /^(enabled|yes|true|on|alwayson)$/i.test(s);
+}
+function truthyBool(v){
+  if(v === true || v === false) return v;
+  const s = String(v || "").trim().toLowerCase();
+  if(!s) return false;
+  if(/^(true|yes|enabled|y|1)$/i.test(s)) return true;
+  if(/^(false|no|disabled|n|0)$/i.test(s)) return false;
+  return false;
 }
 function groupBy(arr, key){
   const m={};
@@ -477,8 +493,11 @@ function renderItemDetails(data){
   });
 }
 
-/* VM Details (from VM_Detail) */
+/* Workload details */
 let VMDETAIL = [];
+let DBDETAIL = [];
+
+/* VM Details (from VM_Detail) */
 function mapVMRow(r){
   const sub = getCIflex(r,"SubscriptionName") || getCIflex(r,"Subscription Name") || getCIflex(r,"Subscription") || "";
   const rg  = getCIflex(r,"VMResourceGroup") || getCIflex(r,"ResourceGroup") || getCIflex(r,"Resource Group") ||
@@ -564,6 +583,110 @@ function renderVMDetails(data){
   });
 }
 
+/* DB Details (from SQL_Detail) */
+function mapDBRow(r){
+  const sub   = getCIflex(r,"SubscriptionName") || "";
+  const vault = getCIflex(r,"VaultName") || "";
+  const wl    = getCIflex(r,"Workload") || "Database";
+  const inst  = getCIflex(r,"ServerOrInstance") || "";
+  const dbn   = getCIflex(r,"DatabaseName") || "";
+  const pol   = getCIflex(r,"PolicyName") || "";
+  const cadF  = getCIflex(r,"ConfiguredCadenceFull") || "";
+  const cadD  = getCIflex(r,"ConfiguredCadenceDiff") || "";
+  const cadL  = getCIflex(r,"ConfiguredCadenceLog") || "";
+  const win   = getCIflex(r,"ConfiguredWindow") || "";
+  const lbt   = getCIflex(r,"LastBackupTime") || "";
+  const lbs   = getCIflex(r,"LastBackupStatus") || "";
+  const rpo   = getCIflex(r,"ObservedRPOHours") || "";
+  const rsrc  = getCIflex(r,"RpoSource") || "";
+  const rstat = getCIflex(r,"RpoStatus") || "";
+  const pstat = getCIflex(r,"ProtectionState") || "";
+  return {
+    Subscription: sub,
+    VaultName: vault,
+    Workload: wl,
+    ServerOrInstance: inst,
+    DatabaseName: dbn,
+    PolicyName: pol,
+    ConfiguredCadenceFull: cadF,
+    ConfiguredCadenceDiff: cadD,
+    ConfiguredCadenceLog: cadL,
+    ConfiguredWindow: win,
+    LastBackupTime: lbt,
+    LastBackupStatus: lbs,
+    ObservedRPOHours: rpo,
+    RpoSource: rsrc,
+    RpoStatus: rstat,
+    ProtectionState: pstat,
+    __all: Object.assign({}, r)
+  };
+}
+function renderDBDetails(data){
+  const cols = [
+    {key:'Subscription', header:'Subscription'},
+    {key:'Workload', header:'Workload'},
+    {key:'ServerOrInstance', header:'Server / Instance'},
+    {key:'DatabaseName', header:'Database'},
+    {key:'VaultName', header:'Vault / Platform'},
+    {key:'PolicyName', header:'Policy'},
+    {key:'ConfiguredCadenceFull', header:'Cadence (Full)'},
+    {key:'ConfiguredCadenceDiff', header:'Cadence (Diff)'},
+    {key:'ConfiguredCadenceLog', header:'Cadence (Log)'},
+    {key:'LastBackupStatus', header:'Last Backup Status'},
+    {key:'ObservedRPOHours', header:'Observed RPO (h)'},
+    {key:'RpoStatus', header:'RPO Status'},
+    {key:'ProtectionState', header:'Protection State'}
+  ];
+  let h = '<table><thead><tr>';
+  cols.forEach(c=> h += `<th>${c.header}</th>`);
+  h += '</tr></thead><tbody>';
+  data.forEach((r, idx)=>{
+    const expId = `dbexp_${idx}`;
+    h += `<tr class="expandable" data-exp="${expId}">`;
+    cols.forEach(c=>{
+      let cell = (r[c.key] == null ? "" : escapeHtml(r[c.key]));
+      if(c.key === 'Workload' && r.Workload){
+        cell = `<span class="badge-workload">${escapeHtml(r.Workload)}</span>`;
+      }
+      h += `<td>${cell}</td>`;
+    });
+    h += '</tr>';
+
+    const visible = new Set(cols.map(c=>c.key));
+    const all = r.__all || {};
+    const extra = [];
+    Object.keys(all).forEach(k=>{
+      if(visible.has(k)) return;
+      if(/^__/.test(k)) return;
+      const v = all[k]; if(v==null) return;
+      const s = String(v); if(!s) return;
+      extra.push([k, s]);
+    });
+    const grid = extra.length ? (
+      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;padding:8px 6px">' +
+      extra.map(([k,v]) => (
+        `<div><div class="muted" style="font-size:12px">${escapeHtml(k)}</div>`+
+        `<div style="font-size:13px">${escapeHtml(v)}</div></div>`
+      )).join('') +
+      '</div>'
+    ) : '<div class="desc" style="padding:8px 6px">No additional fields.</div>';
+
+    h += `<tr id="${expId}" class="exp-row" style="display:none"><td colspan="${cols.length}" style="background:#fbfdff">${grid}</td></tr>`;
+  });
+  h += '</tbody></table>';
+  $("tblDB").innerHTML = h;
+
+  document.querySelectorAll('#tblDB table tbody tr.expandable').forEach(tr=>{
+    tr.addEventListener('click', ()=>{
+      const exp = document.getElementById(tr.getAttribute('data-exp'));
+      if(!exp) return;
+      const open = exp.style.display !== 'none';
+      exp.style.display = open ? 'none' : '';
+      tr.classList.toggle('open', !open);
+    });
+  });
+}
+
 /* Mapping workbook */
 let MAPPING = {};
 function parseMapping(wb){
@@ -601,18 +724,21 @@ function parseMapping(wb){
 /* Audit ingestion & posture engine */
 function parseAuditV4(wb){
   VMDETAIL = [];
+  DBDETAIL = [];
   const findings = [];
 
   const getSheetJson = name => wb.Sheets[name]
     ? XLSX.utils.sheet_to_json(wb.Sheets[name], {defval:""})
     : [];
 
-  const sBV  = getSheetJson('BackupVaults');
-  const sRSV = getSheetJson('RSV');
-  const sVMC = getSheetJson('VM_Coverage');
-  const sVMD = wb.Sheets['VM_Detail'] || wb.Sheets['VM_Details']
+  const sBV   = getSheetJson('BackupVaults');
+  const sRSV  = getSheetJson('RSV');
+  const sVMC  = getSheetJson('VM_Coverage');
+  const sVMD  = (wb.Sheets['VM_Detail'] || wb.Sheets['VM_Details'])
     ? XLSX.utils.sheet_to_json(wb.Sheets['VM_Detail'] || wb.Sheets['VM_Details'], {defval:""})
     : [];
+  const sDBC  = getSheetJson('DB_Coverage');
+  const sSQL  = getSheetJson('SQL_Detail');
 
   // Merge vault-like rows
   const vaultRows = [];
@@ -639,7 +765,7 @@ function parseAuditV4(wb){
     });
   }
 
-  // Vault / RSV rules
+  // Vault / RSV rules (unchanged from your original logic, just typed to real columns)
   vaultRows.forEach(r=>{
     const vaultType = String(r.VaultType || "").toLowerCase();
     const cat = String(r.Category || r.VaultType || "").toLowerCase();
@@ -647,9 +773,9 @@ function parseAuditV4(wb){
     const sr = String(r.StorageRedundancy || "");
     const isVault = /backupvault|recoveryservicesvault|rsv/.test(cat) ||
                     /backupvault|recoveryservicesvault|rsv/.test(vaultType);
+
     if(!isVault) return;
 
-    // Soft delete and always-on soft delete
     const softState = r.CloudSoftDeleteState || r.SoftDeleteState || "";
     if(!yes(softState) && !yes(r.AlwaysOnSoftDelete)){
       pushFinding(r, "Enable soft delete", {context:name, impact:"High", workload:"Vault"});
@@ -658,28 +784,23 @@ function parseAuditV4(wb){
       pushFinding(r, "Enable always-on soft delete", {context:name, impact:"High", workload:"Vault"});
     }
 
-    // Cross-region restore (if present)
     if(typeof r.CrossRegionRestore !== "undefined" && !yes(r.CrossRegionRestore)){
       pushFinding(r, "Enable cross-region restore", {context:name, impact:"High", workload:"Vault"});
     }
 
-    // Public network access (if present)
     if(typeof r.PublicNetworkAccess !== "undefined" &&
        String(r.PublicNetworkAccess || "").toLowerCase() === "enabled"){
       pushFinding(r, "Restrict public network access", {context:name, impact:"Medium", workload:"Vault"});
     }
 
-    // MUA (if present)
     if(typeof r.MUAEnabled !== "undefined" && !yes(r.MUAEnabled)){
       pushFinding(r, "Enable multi-user authorisation (MUA)", {context:name, impact:"High", workload:"Vault"});
     }
 
-    // Redundancy
     if(sr && !/grs|gzrs/i.test(sr)){
       pushFinding(r, "Increase vault storage redundancy (GRS/GZRS)", {context:name, impact:"Medium", workload:"Vault"});
     }
 
-    // Immutability (if present)
     if(typeof r.Immutable !== "undefined"){
       const imm = String(r.Immutable || "").toLowerCase();
       if(imm === "disabled" || imm === "false"){
@@ -687,19 +808,16 @@ function parseAuditV4(wb){
       }
     }
 
-    // Soft delete retention
     const sdr = Number(r.SoftDeleteRetentionDays || 0);
     if(sdr > 0 && sdr < 14){
       pushFinding(r, "Soft delete retention below 14 days", {context:name, impact:"Medium", workload:"Vault"});
     }
 
-    // Cross-subscription restore (if present)
     if(typeof r.CrossSubRestore !== "undefined" &&
        String(r.CrossSubRestore || "").toLowerCase() === "disabled"){
       pushFinding(r, "Enable cross-subscription restore", {context:name, impact:"Low", workload:"Vault"});
     }
 
-    // Vault not zone-redundant
     if(sr && sr.toLowerCase() === "lrs"){
       pushFinding(r, "Vault not zone-redundant", {context:name, impact:"Medium", workload:"Vault"});
     }
@@ -707,15 +825,14 @@ function parseAuditV4(wb){
 
   // VM coverage: unprotected VMs
   (sVMC || []).forEach(r=>{
-    const backed = String(
-      getCIflex(r,"IsBackedUp") ||
-      getCIflex(r,"Is Backed Up") ||
-      getCIflex(r,"Backed Up") ||
-      getCIflex(r,"BackupEnabled") ||
-      getCIflex(r,"Backup Enabled") ||
-      ""
-    );
-    if(!/^true$|^yes$|^enabled$/i.test(backed)){
+    const backedVal = getCIflex(r,"IsBackedUp") ||
+                      getCIflex(r,"Is Backed Up") ||
+                      getCIflex(r,"Backed Up") ||
+                      getCIflex(r,"BackupEnabled") ||
+                      getCIflex(r,"Backup Enabled") ||
+                      "";
+    const backed = truthyBool(backedVal);
+    if(!backed){
       const vmn = getCIflex(r,"VMName") || getCIflex(r,"VM Name") || getCIflex(r,"Name") || "";
       if(vmn){
         const enriched = Object.assign({__source:"VM_Coverage"}, r);
@@ -723,9 +840,42 @@ function parseAuditV4(wb){
           context: vmn,
           impact: "High",
           workload: "VM",
-          name: vmn
+          name: vmn,
+          category: "Virtual Machine"
         });
       }
+    }
+  });
+
+  // DB coverage: your A/B logic
+  (sDBC || []).forEach(r=>{
+    const dbn  = getCIflex(r,"DatabaseName") || "";
+    const dbt  = getCIflex(r,"DbType") || "Database";
+    const backedVal   = getCIflex(r,"IsBackedUp");
+    const standardVal = getCIflex(r,"MeetsStandard");
+    const backed = truthyBool(backedVal);
+    const meets  = truthyBool(standardVal);
+    const base = Object.assign({__source:"DB_Coverage"}, r);
+
+    if(dbn && !backed){
+      // A. Not backed up at all
+      pushFinding(base, "Database not protected", {
+        context: dbn,
+        impact: "High",
+        workload: dbt || "Database",
+        category: dbt || "Database",
+        name: dbn
+      });
+    }
+    if(dbn && backed && !meets){
+      // B. Backed up but below standard (e.g. Azure SQL PITR-only, no LTR)
+      pushFinding(base, "Database backup below standard", {
+        context: dbn,
+        impact: "Medium",
+        workload: dbt || "Database",
+        category: dbt || "Database",
+        name: dbn
+      });
     }
   });
 
@@ -739,6 +889,16 @@ function parseAuditV4(wb){
     }).map(mapVMRow);
   } else {
     VMDETAIL = [];
+  }
+
+  // DB details from SQL_Detail
+  if(sSQL && sSQL.length){
+    DBDETAIL = sSQL.filter(r=>{
+      const dbn = getCIflex(r,"DatabaseName");
+      return String(dbn||"").trim() !== "";
+    }).map(mapDBRow);
+  } else {
+    DBDETAIL = [];
   }
 
   return findings;
@@ -953,11 +1113,14 @@ function renderAll(){
   });
 
   const vmShow = VMDETAIL.length>0 ? '' : 'none';
-  const vmCard = $("vmCard");
-  const vmSec = $("vmSec");
-  if(vmCard) vmCard.style.display = vmShow;
-  if(vmSec) vmSec.style.display = vmShow;
+  if($("vmCard")) $("vmCard").style.display = vmShow;
+  if($("vmSec"))  $("vmSec").style.display  = vmShow;
   if(VMDETAIL.length>0) renderVMDetails(VMDETAIL);
+
+  const dbShow = DBDETAIL.length>0 ? '' : 'none';
+  if($("dbCard")) $("dbCard").style.display = dbShow;
+  if($("dbSec"))  $("dbSec").style.display  = dbShow;
+  if(DBDETAIL.length>0) renderDBDetails(DBDETAIL);
 
   renderFocus();
 }
@@ -1038,7 +1201,8 @@ window.handleGenerate = async function(){
     FILTER = null;
     $("activeFilter").style.display="none";
     renderAll();
-    status('Report generated.');
+
+    status(`Report generated – ${DETAIL.length} findings.`);
   }catch(err){
     console.error(err);
     status('Error: ' + (err?.message || err));
@@ -1071,54 +1235,96 @@ document.addEventListener('DOMContentLoaded', ()=>{
     renderFocus();
   });
 
-  $("btnDownloadDetail").addEventListener('click', ()=>{
-    const data = FILTER ? DETAIL.filter(FILTER.fn) : DETAIL;
-    if(!data.length){
-      alert('Generate report first.');
-      return;
-    }
-    const rows = data.map(d=>({
-      Workload:d.workload,
-      Category:d.category,
-      Subscription:d.subscription,
-      SubscriptionId:d.subscriptionId,
-      ResourceGroup:d.resourceGroup,
-      Location:d.location,
-      Type:d.type,
-      Name:d.name,
-      SourceSheet:d.sourceSheet,
-      Finding:d.finding,
-      Pillar:d.pillar,
-      EffortKey:d.effortKey,
-      Owner:d.owner,
-      Risk:d.risk,
-      Impact:d.impact,
-      ChangeWindow:d.change,
-      BaseHoursConfigured:d.baseConfigured,
-      BaseHoursPerItemShare:d.baseShown,
-      PerResourceHours:d.per,
-      TotalHours:d.totalHours,
-      RemediationSteps:MAPPING[norm(d.finding)]?.remediation||"",
-      WhyEnableIt:MAPPING[norm(d.finding)]?.whyEnable||"",
-      WhyNotEnableIt:MAPPING[norm(d.finding)]?.whyNot||""
-    }));
-    const headers = Object.keys(rows[0]||{});
-    let csv = headers.join(",")+"\n";
-    rows.forEach(r=>{
-      const vals = headers.map(h=>{
-        const v = r[h]==null ? "" : String(r[h]).replace(/\n/g,' ');
-        return /[",\n]/.test(v) ? '"' + v.replace(/"/g,'""') + '"' : v;
-      });
-      csv += vals.join(",")+"\n";
-    });
-    const blob = new Blob([csv], {type:'text/csv'});
-    const url = URL.createObjectURL(blob);
-    const a=document.createElement('a');
-    a.href=url;
-    a.download='backup_posture_explorer_detail.csv';
-    a.click();
-    setTimeout(()=>URL.revokeObjectURL(url),1000);
+$("btnDownloadDetail").addEventListener('click', () => {
+  const data = FILTER ? DETAIL.filter(FILTER.fn) : DETAIL;
+  if (!data.length) {
+    alert('Generate report first.');
+    return;
+  }
+
+  const today = new Date().toISOString().slice(0, 10);
+
+  // Prevent Excel formula injection & remove leading "- "
+  function cleanCell(v) {
+    if (!v) return "";
+    let s = String(v).trim();
+
+    // Remove Excel formula triggers
+    s = s.replace(/^[=+\-@]+/, "");
+
+    // Remove leading dash+space (common in WhyEnableIt sentences)
+    s = s.replace(/^-\s*/, "");
+
+    return s;
+  }
+
+  const rows = data.map(d => {
+    const m = MAPPING[norm(d.finding)] || {};
+
+    return {
+      "Date Identified": today,
+      "Ticket Number": "",
+      "Issue Description": cleanCell(d.finding),
+      "Impact": cleanCell(d.impact || m.impact),
+      "Affected Resource(s)": cleanCell(
+        [d.subscription, d.resourceGroup, d.name].filter(Boolean).join(" / ")
+      ),
+      "Azure Service / Category": cleanCell(d.category || d.workload || d.type),
+      "Root Cause": cleanCell(d.finding),
+      "Recommendation": cleanCell(d.finding),
+      "Justification / Benefit": cleanCell(m.whyEnable),
+      "Priority": cleanCell(d.risk || m.risk),
+      "Status": "Open",
+      "Owner / Engineer": "",
+      "Target Resolution Date": "",
+      "Date Resolved": "",
+      "Customer Feedback / Notes": "",
+      "Follow-up Actions": "",
+      "Validation Date": "",
+      "Comments": ""
+    };
   });
+
+  const headers = [
+    "Date Identified",
+    "Ticket Number",
+    "Issue Description",
+    "Impact",
+    "Affected Resource(s)",
+    "Azure Service / Category",
+    "Root Cause",
+    "Recommendation",
+    "Justification / Benefit",
+    "Priority",
+    "Status",
+    "Owner / Engineer",
+    "Target Resolution Date",
+    "Date Resolved",
+    "Customer Feedback / Notes",
+    "Follow-up Actions",
+    "Validation Date",
+    "Comments"
+  ];
+
+  let csv = headers.join(",") + "\n";
+  rows.forEach(r => {
+    const vals = headers.map(h => {
+      const v = cleanCell(r[h] || "");
+      return /[",\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v;
+    });
+    csv += vals.join(",") + "\n";
+  });
+
+  const blob = new Blob([csv], { type: "text/csv" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = "backup_posture_explorer_issues.csv";
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+});
+
+
 
   $("btnExportHTML").addEventListener('click', ()=>{
     const html = '<!doctype html>'+document.documentElement.outerHTML;
@@ -1126,7 +1332,7 @@ document.addEventListener('DOMContentLoaded', ()=>{
     const url = URL.createObjectURL(blob);
     const a=document.createElement('a');
     a.href=url;
-    a.download='TIEVA — Backup Posture Explorer (v4).html';
+    a.download='TIEVA — Backup Posture Explorer (v4.3).html';
     a.click();
     setTimeout(()=>URL.revokeObjectURL(url),1000);
   });
