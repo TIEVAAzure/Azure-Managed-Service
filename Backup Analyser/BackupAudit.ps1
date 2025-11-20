@@ -1572,16 +1572,33 @@ foreach ($sub in $subs) {
     } catch {}
 
     foreach ($db in $dbs | Where-Object { $_.DatabaseName -ne 'master' }) {
-      $obsRpo = Get-AzureSqlPitrObservedRpo -ResourceGroupName $srv.ResourceGroupName -ServerName $srv.ServerName -DatabaseName $db.DatabaseName
-      $hasLTR = $false
+            # We TRY to detect real LTR by looking for any non-zero retention
+      $obsRpo = Get-AzureSqlPitrObservedRpo `
+                  -ResourceGroupName $srv.ResourceGroupName `
+                  -ServerName        $srv.ServerName `
+                  -DatabaseName      $db.DatabaseName
 
+      $hasLTR = $false
       try {
         $ltr = Get-AzSqlDatabaseLongTermRetentionPolicy `
-                -ResourceGroupName $srv.ResourceGroupName `
-                -ServerName $srv.ServerName `
-                -DatabaseName $db.DatabaseName `
-                -ErrorAction SilentlyContinue
-        if ($ltr -and $ltr.MonthlyRetention) { $hasLTR = $true }
+                 -ResourceGroupName $srv.ResourceGroupName `
+                 -ServerName        $srv.ServerName `
+                 -DatabaseName      $db.DatabaseName `
+                 -ErrorAction       SilentlyContinue
+
+        if ($ltr) {
+          $retStrings = @(
+            $ltr.WeeklyRetention,
+            $ltr.MonthlyRetention,
+            $ltr.YearlyRetention
+          ) | Where-Object {
+            $_ -and $_ -notin @('P0D','P0Y','PT0S')
+          }
+
+          if ($retStrings.Count -gt 0) {
+            $hasLTR = $true
+          }
+        }
       } catch {}
 
       # RPO status classification for PaaS
