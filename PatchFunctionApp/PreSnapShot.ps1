@@ -1,11 +1,30 @@
-param($eventGridEvent, $TriggerMetadata)
+param(
+    [Parameter(Mandatory = $false)]
+    [object]$WebhookData
+)
 
 Import-Module Az.Accounts
 Import-Module Az.Compute
 Import-Module Az.Resources
 
-Write-Host "PreSnapshot VERSION 2025-08-29-2204 (idempotent)"
+Write-Host "PreSnapshot VERSION 2025-08-29-2204 (idempotent, Automation Runbook)"
 
+# ---- Map Automation Webhook payload -> $eventGridEvent / $TriggerMetadata ----
+if (-not $WebhookData) {
+    throw "No WebhookData received. This runbook is intended to be triggered via an Automation Webhook."
+}
+
+# In Automation, $WebhookData usually has RequestBody as a JSON string
+if ($WebhookData.PSObject.Properties.Name -contains 'RequestBody') {
+    $eventGridEvent = $WebhookData.RequestBody | ConvertFrom-Json
+    $TriggerMetadata = $WebhookData
+} else {
+    # Fallback: assume whole object is already the event
+    $eventGridEvent = $WebhookData
+    $TriggerMetadata = $WebhookData
+}
+
+# ---------- Azure auth (Managed Identity for Automation Account) ----------
 Connect-AzAccount -Identity | Out-Null
 
 # ---------- Read Maintenance Configuration and tags ----------
@@ -209,6 +228,3 @@ foreach ($vm in $targets) {
 }
 
 Write-Host ("Snapshot summary: created={0}, skipped(dupe)={1}, failed={2}, targets={3}, group='{4}', schedule='{5}'." -f $globalCreated, $globalSkipped, $globalFailed, $targets.Count, $groupVal, $scheduleVal)
-
-# Optional hard-fail if nothing created nor skipped:
-# if ($globalCreated -eq 0 -and $globalSkipped -eq 0) { throw "No snapshots were created or recognized as duplicates. Failed=$globalFailed." }
