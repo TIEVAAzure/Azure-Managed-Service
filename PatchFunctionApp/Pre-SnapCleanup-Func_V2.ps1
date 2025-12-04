@@ -48,7 +48,7 @@ if (-not $TargetSubscriptions -or $TargetSubscriptions.Count -eq 0) {
 }
 
 # Your GitHub ZIP with both functions (PreSnapshot + CleanupSnapshots)
-$ZIP_URL = "https://github.com/TIEVAAzure/Azure-Managed-Service/raw/refs/heads/main/PatchFunctionApp/Pre-SnapCleanup-Func_v2.1.zip"
+$ZIP_URL = "https://github.com/TIEVAAzure/Azure-Managed-Service/raw/refs/heads/main/PatchFunctionApp/Pre-SnapCleanup-Func_v2.2.zip"
 
 # Local filename in Cloud Shell HOME directory (NO uploads needed)
 $LOCAL_ZIP_NAME = "Pre-SnapCleanup-Func_fixed.zip"
@@ -211,3 +211,4 @@ Write-Host "Next steps (in portal):"
 Write-Host " - Go to the Function App → Functions blade; you should see 'PreSnapshot' and 'CleanupSnapshots'."
 Write-Host " - Wire your Maintenance Configuration Pre-Maintenance Event to the 'PreSnapshot' function."
 Write-Host " - 'CleanupSnapshots' will run on its timer as defined in the function code."
+
