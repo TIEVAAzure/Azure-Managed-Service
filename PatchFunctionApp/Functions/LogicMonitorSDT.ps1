@@ -42,7 +42,8 @@ function Invoke-LMRequest {
     if ($Method -in @('POST','PUT','PATCH') -and $null -ne $Body) {
         if ($Body -is [string]) {
             $bodyJson = $Body
-        } else {
+        }
+        else {
             $bodyJson = $Body | ConvertTo-Json -Depth 10 -Compress
         }
         $dataToSign = $bodyJson
@@ -76,7 +77,8 @@ function Invoke-LMRequest {
     try {
         if ($Method -in @('GET','DELETE')) {
             return Invoke-RestMethod -Method $Method -Uri $uri -Headers $headers -ErrorAction Stop
-        } else {
+        }
+        else {
             return Invoke-RestMethod -Method $Method -Uri $uri -Headers $headers -Body $bodyJson -ErrorAction Stop
         }
     }
@@ -90,7 +92,7 @@ function Invoke-LMRequest {
 # Read env vars
 # ==========================
 $lmAuth      = $env:lm_auth         # Expected format: "<accessId>:<accessKey>"
-$lmCompany   = $env:lm_company      # e.g. "tieva"
+$lmCompany   = $env:lm_company      # e.g. "tievasandbox"
 $lmDomain    = $env:lm_domain_name  # e.g. "logicmonitor.com" or "logicmonitor.eu"
 $tenantId    = $env:LM_tenant_id    # For logging only (multi-tenant context)
 $durationStr = $env:LM_sdt_minutes  # OPTIONAL, default if blank
@@ -254,22 +256,21 @@ $failedCount     = 0
 
 foreach ($vm in $vms) {
 
-        Write-Host "----"
+    $vmName = $vm.Name
+
+    Write-Host "----"
     Write-Host ("Processing VM '{0}' for DeviceSDT..." -f $vmName)
 
-    # ==========================
     # 1) Find LM devices for this VM
-    #    - system.azure.resourcename == vmName
-    #    - OR system.displayname == vmName
-    # ==========================
-
     $allDevices = @()
 
-    # ---- 1a) By system.azure.resourcename via systemProperties filter ----
-    $azureProps  = @{ "system.azure.resourcename" = $vmName } | ConvertTo-Json -Compress
-    filterAzure = 'systemProperties:"{0}"' -f $azureProps
-    $encodedAzure    = [System.Net.WebUtility]::UrlEncode($filterAzure)
-    $queryAzure      = ("?filter={0}&size=50" -f $encodedAzure)
+    # ---- 1a) Cloud-discovered device: match system.azure.resourcename via basic systemProperties filter ----
+    # filter=systemProperties.name:"system.azure.resourcename",systemProperties.value:"<vmName>"
+    $filterAzureRaw = 'systemProperties.name:"system.azure.resourcename",systemProperties.value:"{0}"' -f $vmName
+    Write-Host ("Azure device filter (raw): {0}" -f $filterAzureRaw)
+
+    $encodedAzure = [System.Net.WebUtility]::UrlEncode($filterAzureRaw)
+    $queryAzure   = ("?filter={0}&size=50&v=3" -f $encodedAzure)
 
     try {
         $azureSearch = Invoke-LMRequest `
@@ -293,11 +294,12 @@ foreach ($vm in $vms) {
         Write-Warning ("Failed LM search (system.azure.resourcename) for VM '{0}': {1}" -f $vmName, $_.Exception.Message)
     }
 
-    # ---- 1b) By system.displayname via systemProperties filter ----
-    $displayProps  = @{ "system.displayname" = $vmName } | ConvertTo-Json -Compress
-    $filterDisplay = 'systemProperties:"{0}"' -f $displayProps
+    # ---- 1b) Collector-discovered device: fallback by displayName ----
+    $filterDisplay   = 'displayName:"{0}"' -f $vmName
+    Write-Host ("DisplayName device filter (raw): {0}" -f $filterDisplay)
+
     $encodedDisplay  = [System.Net.WebUtility]::UrlEncode($filterDisplay)
-    $queryDisplay    = ("?filter={0}&size=50" -f $encodedDisplay)
+    $queryDisplay    = ("?filter={0}&size=50&v=3" -f $encodedDisplay)
 
     try {
         $displaySearch = Invoke-LMRequest `
@@ -311,19 +313,19 @@ foreach ($vm in $vms) {
 
         if ($displaySearch -and $displaySearch.items) {
             $allDevices += $displaySearch.items
-            Write-Host ("Found {0} devices via system.displayname for VM '{1}'." -f $displaySearch.items.Count, $vmName)
+            Write-Host ("Found {0} devices via displayName for VM '{1}'." -f $displaySearch.items.Count, $vmName)
         }
         else {
-            Write-Host ("No devices found via system.displayname for VM '{0}'." -f $vmName)
+            Write-Host ("No devices found via displayName for VM '{0}'." -f $vmName)
         }
     }
     catch {
-        Write-Warning ("Failed LM search (system.displayname) for VM '{0}': {1}" -f $vmName, $_.Exception.Message)
+        Write-Warning ("Failed LM search (displayName) for VM '{0}': {1}" -f $vmName, $_.Exception.Message)
     }
 
     # ---- 1c) De-duplicate by device id ----
     if (-not $allDevices -or $allDevices.Count -eq 0) {
-        Write-Warning ("No LogicMonitor devices found for VM '{0}' via system.azure.resourcename or system.displayname. Skipping SDT for this VM." -f $vmName)
+        Write-Warning ("No LogicMonitor devices found for VM '{0}' via system.azure.resourcename or displayName. Skipping SDT for this VM." -f $vmName)
         $skippedNoDevice++
         continue
     }
