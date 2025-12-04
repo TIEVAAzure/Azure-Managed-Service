@@ -1,8 +1,17 @@
+az logout
+az login --scope "https://appservice.azure.com/.default"
+
 # ================================
 # CONFIG – EDIT THESE VALUES
 # ================================
 # Subscription where the Function App + RG + Storage live
 $DEPLOY_SUB_ID = "27459e10-b37a-4b3b-9fa8-12f226dacd30"
+
+# Resource details
+$RG_NAME      = "rg-presnapshot-func2"
+$LOCATION     = "uksouth"
+$FUNC_NAME    = "fa-presnapcleanup-flex-uks-001-tieva"   # must be globally unique
+$STORAGE_NAME = "stpresnapchsuks001tieva"               # 3–24 chars, lowercase, unique in Azure
 
 # ================================
 # LogicMonitor settings from environment variables
@@ -27,7 +36,7 @@ if (-not $LM_SDT_MINUTES -or $LM_SDT_MINUTES.Trim() -eq "") {
 # (can include the deploy sub + any others, e.g. Lighthouse customer subs)
 $TargetSubscriptions = @(
     "3175995f-faf4-467e-8c38-ea866d1c9cdd",
-    "4b944335-f142-4bb7-8bd6-8e868318c4019",
+    "4b944335-f142-4bb7-8bd6-8e868318c401",
     "a2274ccd-57b8-4d72-a94a-c38a235cf56e",
     "df82ae5c-8de4-4e5d-a976-a75d56fc3b9c",
     "27459e10-b37a-4b3b-9fa8-12f226dacd30"
@@ -37,12 +46,6 @@ $TargetSubscriptions = @(
 if (-not $TargetSubscriptions -or $TargetSubscriptions.Count -eq 0) {
     $TargetSubscriptions = @($DEPLOY_SUB_ID)
 }
-
-# Resource details
-$RG_NAME      = "rg-presnapshot-func"
-$LOCATION     = "uksouth"
-$FUNC_NAME    = "fa-presnapcleanup-flex-uks-001"   # must be globally unique
-$STORAGE_NAME = "stpresnapchsuks001"               # 3–24 chars, lowercase, unique in Azure
 
 # Your GitHub ZIP with both functions (PreSnapshot + CleanupSnapshots)
 $ZIP_URL = "https://github.com/TIEVAAzure/Azure-Managed-Service/raw/refs/heads/main/PatchFunctionApp/Pre-SnapCleanup-Func_v2.1.zip"
@@ -208,4 +211,3 @@ Write-Host "Next steps (in portal):"
 Write-Host " - Go to the Function App → Functions blade; you should see 'PreSnapshot' and 'CleanupSnapshots'."
 Write-Host " - Wire your Maintenance Configuration Pre-Maintenance Event to the 'PreSnapshot' function."
 Write-Host " - 'CleanupSnapshots' will run on its timer as defined in the function code."
-
