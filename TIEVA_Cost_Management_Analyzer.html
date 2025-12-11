@@ -1,0 +1,638 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>TIEVA — Cost Management Analyzer v1.0</title>
+<style>
+  :root{
+    --tieva-teal:#4DB8AC; 
+    --tieva-navy:#1B365D;
+    --critical:#ef4444; 
+    --warning:#f59e0b; 
+    --success:#10b981;
+    --fg:#111827; 
+    --muted:#6b7280; 
+    --border:#e5e7eb; 
+    --canvas: var(--tieva-teal);
+    --link:#0f5eff; 
+    --content-max: 1440px;
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{
+    margin:0;
+    background:var(--canvas);
+    color:var(--fg);
+    font:14px/1.45 system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;
+  }
+  a{color:var(--link);text-decoration:none}
+  a:hover{text-decoration:underline}
+  .wrap{max-width:var(--content-max);margin:0 auto;padding:24px}
+  .brandbar{background:var(--tieva-navy);color:#fff;box-shadow:0 2px 8px rgba(0,0,0,0.1)}
+  .brandwrap{
+    max-width:var(--content-max);
+    margin:0 auto;
+    padding:16px 24px;
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:12px;
+  }
+  .brandtitle{font-size:20px;font-weight:700;letter-spacing:-0.02em}
+  .brandsubtitle{font-size:12px;opacity:0.85;margin-top:2px}
+  .btnrow{display:flex;gap:8px;flex-wrap:wrap}
+  .header-btn{
+    appearance:none;
+    border:1px solid rgba(255,255,255,.35);
+    background:rgba(255,255,255,.1);
+    color:#fff;
+    border-radius:6px;
+    padding:8px 14px;
+    cursor:pointer;
+    font-size:13px;
+    font-weight:500;
+    transition:all 0.2s;
+  }
+  .header-btn:hover{
+    background:rgba(255,255,255,.2);
+    border-color:rgba(255,255,255,.5);
+  }
+  .row{display:flex;gap:20px;flex-wrap:wrap}
+  .col{flex:1 1 360px}
+  .card{
+    background:#fff;
+    border:1px solid var(--border);
+    border-radius:12px;
+    padding:20px;
+    margin:18px 0;
+    box-shadow:0 1px 3px rgba(0,0,0,0.05);
+  }
+  h2{margin:0 0 14px;font-size:18px;color:var(--tieva-navy)}
+  h3{margin:0 0 12px;font-size:16px;color:var(--tieva-navy)}
+  h4{margin:0 0 8px;font-size:13px;font-weight:600;color:var(--fg)}
+  .muted{color:var(--muted);font-size:13px}
+  .pagetitle{font-size:28px;font-weight:700;margin-bottom:8px;color:#fff}
+  .status{font-size:14px;margin-bottom:20px;color:#fff;opacity:0.9}
+  
+  .pill{
+    display:inline-block;
+    font-size:11px;
+    font-weight:600;
+    border-radius:999px;
+    padding:3px 10px;
+    margin:2px;
+  }
+  .pill-high{background:#fee;color:#dc2626}
+  .pill-medium{background:#fef3cd;color:#d97706}
+  .pill-low{background:#d1fae5;color:#059669}
+  .pill-excellent{background:#d1fae5;color:#059669}
+  .pill-good{background:#dbeafe;color:#1d4ed8}
+  .pill-needs-attention{background:#fef3cd;color:#d97706}
+  .pill-critical{background:#fee;color:#dc2626}
+  
+  .statcard{
+    border:1px solid var(--border);
+    border-radius:10px;
+    padding:16px;
+    background:#fff;
+  }
+  .statcard h4{margin:0 0 6px;font-size:13px;color:var(--muted);font-weight:500}
+  .statcard .value{font-size:32px;font-weight:700;color:var(--tieva-navy);line-height:1}
+  .statcard .sublabel{font-size:12px;color:var(--muted);margin-top:4px}
+  
+  input[type="file"]{
+    width:100%;
+    padding:10px;
+    border:2px dashed var(--border);
+    border-radius:8px;
+    cursor:pointer;
+    background:#f9fafb;
+  }
+  input[type="file"]:hover{
+    border-color:var(--tieva-teal);
+    background:#f0fdf4;
+  }
+  
+  table{
+    width:100%;
+    border-collapse:collapse;
+    font-size:13px;
+    margin-top:12px;
+  }
+  thead{
+    background:var(--tieva-teal);
+    color:#fff;
+  }
+  th{
+    text-align:left;
+    padding:10px 12px;
+    font-weight:600;
+    font-size:12px;
+    text-transform:uppercase;
+    letter-spacing:0.03em;
+  }
+  td{
+    padding:10px 12px;
+    border-bottom:1px solid var(--border);
+  }
+  tbody tr:hover{
+    background:#f9fafb;
+  }
+  tbody tr[data-filter]{
+    cursor:pointer;
+  }
+  tbody tr[data-filter]:hover{
+    background:#f0fdf4;
+  }
+  
+  .filter-badge{
+    display:inline-block;
+    background:var(--tieva-navy);
+    color:#fff;
+    padding:6px 12px;
+    border-radius:6px;
+    font-size:12px;
+    margin:4px 4px 4px 0;
+    cursor:pointer;
+  }
+  .filter-badge:hover{
+    background:#2a4a7c;
+  }
+  .filter-badge::after{
+    content:' ✕';
+    opacity:0.7;
+    margin-left:6px;
+  }
+  
+  .hidden{display:none!important}
+  
+  #filterBar{
+    background:#fff;
+    border:1px solid var(--border);
+    border-radius:8px;
+    padding:12px;
+    margin:12px 0;
+    min-height:20px;
+  }
+  
+  .progress-bar{
+    background:#e5e7eb;
+    border-radius:999px;
+    height:8px;
+    overflow:hidden;
+    margin-top:6px;
+  }
+  .progress-fill{
+    background:var(--tieva-teal);
+    height:100%;
+    border-radius:999px;
+    transition:width 0.3s;
+  }
+  .progress-fill.warning{background:var(--warning)}
+  .progress-fill.critical{background:var(--critical)}
+</style>
+
+<script>
+/* SheetJS loader with multiple CDNs */
+(function () {
+  var tries = [
+    "https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js",
+    "https://unpkg.com/xlsx@0.18.5/dist/xlsx.full.min.js",
+    "https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"
+  ];
+  function loadNext(i){
+    if (window.XLSX || i>=tries.length) return;
+    var s=document.createElement("script");
+    s.src=tries[i];
+    s.async=true;
+    s.onerror=function(){loadNext(i+1)};
+    document.head.appendChild(s);
+  }
+  loadNext(0);
+})();
+</script>
+</head>
+<body>
+  <div class="brandbar">
+    <div class="brandwrap">
+      <div>
+        <div class="brandtitle">TIEVA — Cost Management Analyzer</div>
+        <div class="brandsubtitle">Azure Spend & Budget Posture Explorer v1.0</div>
+      </div>
+      <div class="btnrow">
+        <button id="btnExportHTML" class="header-btn">Export HTML</button>
+        <button id="btnDownloadCSV" class="header-btn">Download Findings CSV</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="wrap">
+    <div class="pagetitle">
+      Cost Management Posture Overview
+    </div>
+    <div class="status">
+      Upload your <strong>Cost_Management_Audit.xlsx</strong> to analyze budget configurations, alert settings, 
+      cost allocation tags, and identify gaps across your Azure subscriptions.
+    </div>
+
+    <!-- Upload / Controls -->
+    <div class="card">
+      <h3>Upload Cost Management Audit</h3>
+      <input id="auditXlsx" type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" />
+      <div class="muted" style="margin-top:8px">
+        Expected sheets: <code>Summary</code>, <code>Subscription_Summary</code>, <code>Budgets</code>, 
+        <code>Action_Groups</code>, <code>Tagging_Coverage</code>, <code>Findings</code>
+      </div>
+    </div>
+
+    <!-- Filter Bar -->
+    <div id="filterBar" class="hidden"></div>
+
+    <!-- Executive Summary -->
+    <div id="summarySection" class="hidden">
+      <div class="card">
+        <h2>Executive Summary</h2>
+        <div class="row">
+          <div class="statcard">
+            <h4>Subscriptions Audited</h4>
+            <div class="value" id="statTotalSubs">0</div>
+          </div>
+          <div class="statcard">
+            <h4>Budgets Configured</h4>
+            <div class="value" id="statBudgetsSubs">0</div>
+            <div class="sublabel" id="statBudgetsSubtext">of subscriptions</div>
+          </div>
+          <div class="statcard">
+            <h4>Total Budgets</h4>
+            <div class="value" id="statTotalBudgets">0</div>
+          </div>
+          <div class="statcard">
+            <h4>Critical Findings</h4>
+            <div class="value" id="statFindings">0</div>
+            <div class="sublabel" id="statFindingsBreakdown">High/Medium/Low</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Subscription Coverage -->
+      <div class="card">
+        <h2>Subscription Budget Coverage</h2>
+        <div id="subTable"></div>
+      </div>
+
+      <!-- Budget Status -->
+      <div class="card" id="budgetCard">
+        <h2>Budget Status & Spend Tracking</h2>
+        <div id="budgetTable"></div>
+      </div>
+
+      <!-- Alert Configuration -->
+      <div class="card" id="alertCard">
+        <h2>Alert & Integration Status</h2>
+        <div id="alertTable"></div>
+      </div>
+
+      <!-- Tagging Coverage -->
+      <div class="card" id="tagCard">
+        <h2>Cost Allocation Tagging</h2>
+        <div id="tagTable"></div>
+      </div>
+
+      <!-- Findings -->
+      <div class="card" id="findingsCard">
+        <h2>Findings & Recommendations</h2>
+        <div id="findingsTable"></div>
+      </div>
+    </div>
+  </div>
+
+<script>
+let DATA = {
+  summary: null,
+  subscriptions: [],
+  budgets: [],
+  actionGroups: [],
+  tags: [],
+  findings: []
+};
+
+let FILTER = { active: false, key: null, value: null };
+
+function $(id) { return document.getElementById(id); }
+
+function escapeHtml(str) {
+  return String(str || "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+function readSheet(wb, name) {
+  if (!wb.SheetNames.includes(name)) return [];
+  const sheet = wb.Sheets[name];
+  return XLSX.utils.sheet_to_json(sheet);
+}
+
+function applyFilter(key, value) {
+  FILTER = { active: true, key: key, value: value };
+  renderReport();
+  
+  const filterBar = $('filterBar');
+  filterBar.classList.remove('hidden');
+  filterBar.innerHTML = `
+    <span class="filter-badge" onclick="clearFilter()">
+      ${escapeHtml(key)}: ${escapeHtml(value)}
+    </span>
+  `;
+}
+
+function clearFilter() {
+  FILTER = { active: false, key: null, value: null };
+  renderReport();
+  $('filterBar').classList.add('hidden');
+}
+
+function filterData(data) {
+  if (!FILTER.active) return data;
+  return data.filter(item => {
+    const val = item[FILTER.key];
+    return val && String(val).toLowerCase() === String(FILTER.value).toLowerCase();
+  });
+}
+
+function renderTable(el, columns, rows, clickKey) {
+  let html = '<table><thead><tr>';
+  columns.forEach(c => html += `<th>${c.header}</th>`);
+  html += '</tr></thead><tbody>';
+  
+  rows.forEach(r => {
+    const val = clickKey ? r[clickKey] : null;
+    const attr = (clickKey && val != null) ? ` data-filter="${clickKey}" data-value="${escapeHtml(val)}"` : '';
+    html += `<tr${attr}>`;
+    columns.forEach(c => {
+      let cell = c.render ? c.render(r) : escapeHtml(r[c.key] || "");
+      html += `<td>${cell}</td>`;
+    });
+    html += '</tr>';
+  });
+  
+  html += '</tbody></table>';
+  el.innerHTML = html;
+  
+  if (clickKey) {
+    el.querySelectorAll('tbody tr[data-filter]').forEach(tr => {
+      tr.addEventListener('click', () => {
+        const key = tr.getAttribute('data-filter');
+        const val = tr.getAttribute('data-value');
+        applyFilter(key, val);
+      });
+    });
+  }
+}
+
+function renderSeverityPill(severity) {
+  const s = String(severity || '').toLowerCase();
+  if (s === 'high') return '<span class="pill pill-high">HIGH</span>';
+  if (s === 'medium') return '<span class="pill pill-medium">MEDIUM</span>';
+  if (s === 'low') return '<span class="pill pill-low">LOW</span>';
+  return `<span class="pill">${escapeHtml(severity)}</span>`;
+}
+
+function renderStatusPill(status) {
+  const s = String(status || '').toLowerCase();
+  if (s.includes('under')) return '<span class="pill pill-excellent">Under Budget</span>';
+  if (s.includes('over')) return '<span class="pill pill-critical">Over Budget</span>';
+  if (s.includes('on track')) return '<span class="pill pill-good">On Track</span>';
+  return `<span class="pill">${escapeHtml(status)}</span>`;
+}
+
+function renderYesNo(val) {
+  const v = String(val || '').toLowerCase();
+  if (v === 'yes' || v === 'true') return '<span class="pill pill-excellent">Yes</span>';
+  if (v === 'no' || v === 'false') return '<span class="pill pill-critical">No</span>';
+  return escapeHtml(val);
+}
+
+function renderProgressBar(percent, label) {
+  const p = Math.min(100, Math.max(0, percent || 0));
+  const colorClass = p < 50 ? 'critical' : p < 80 ? 'warning' : '';
+  return `
+    <div style="min-width:120px">
+      <div style="font-size:12px;margin-bottom:4px">${escapeHtml(label || '')} <strong>${p}%</strong></div>
+      <div class="progress-bar">
+        <div class="progress-fill ${colorClass}" style="width:${p}%"></div>
+      </div>
+    </div>
+  `;
+}
+
+function renderReport() {
+  const subs = filterData(DATA.subscriptions);
+  const budgets = filterData(DATA.budgets);
+  const actionGroups = filterData(DATA.actionGroups);
+  const tags = filterData(DATA.tags);
+  const findings = filterData(DATA.findings);
+  
+  // Update stats
+  $('statTotalSubs').textContent = subs.length;
+  const subsWithBudgets = subs.filter(s => s.BudgetConfigured === 'Yes').length;
+  $('statBudgetsSubs').textContent = subsWithBudgets;
+  $('statBudgetsSubtext').textContent = `${subsWithBudgets} of ${subs.length} subscriptions`;
+  
+  $('statTotalBudgets').textContent = budgets.length;
+  
+  const highFindings = findings.filter(f => f.Severity === 'High').length;
+  const medFindings = findings.filter(f => f.Severity === 'Medium').length;
+  const lowFindings = findings.filter(f => f.Severity === 'Low').length;
+  $('statFindings').textContent = highFindings;
+  $('statFindingsBreakdown').textContent = `${highFindings} High / ${medFindings} Med / ${lowFindings} Low`;
+  
+  // Subscription table
+  renderTable($('subTable'), [
+    { key: 'SubscriptionName', header: 'Subscription' },
+    { key: 'BudgetCount', header: 'Budgets' },
+    { key: 'BudgetConfigured', header: 'Configured', render: r => renderYesNo(r.BudgetConfigured) },
+    { key: 'ActionGroupCount', header: 'Action Groups' },
+    { key: 'ITSMIntegrated', header: 'ITSM', render: r => renderYesNo(r.ITSMIntegrated) },
+    { key: 'TagCoverage', header: 'Tag Coverage', render: r => renderProgressBar(r.TagCoverage, '') },
+    { key: 'FindingsCount', header: 'Findings', render: r => {
+      const count = r.FindingsCount || 0;
+      return count > 0 ? `<span class="pill pill-warning">${count}</span>` : '0';
+    }}
+  ], subs, 'SubscriptionName');
+  
+  // Budget table
+  if (budgets.length > 0) {
+    $('budgetCard').classList.remove('hidden');
+    renderTable($('budgetTable'), [
+      { key: 'SubscriptionName', header: 'Subscription' },
+      { key: 'BudgetName', header: 'Budget Name' },
+      { key: 'BudgetAmount', header: 'Amount', render: r => `£${(r.BudgetAmount || 0).toLocaleString()}` },
+      { key: 'BudgetPeriod', header: 'Period' },
+      { key: 'PercentUsed', header: 'Used', render: r => renderProgressBar(r.PercentUsed, '') },
+      { key: 'Status', header: 'Status', render: r => renderStatusPill(r.Status) },
+      { key: 'ForecastThreshold', header: 'Forecast Alert', render: r => r.ForecastThreshold ? `${r.ForecastThreshold}%` : '—' },
+      { key: 'ActualThreshold', header: 'Actual Alert', render: r => r.ActualThreshold ? `${r.ActualThreshold}%` : '—' }
+    ], budgets, 'SubscriptionName');
+  } else {
+    $('budgetCard').classList.add('hidden');
+  }
+  
+  // Action groups table
+  if (actionGroups.length > 0) {
+    $('alertCard').classList.remove('hidden');
+    renderTable($('alertTable'), [
+      { key: 'SubscriptionName', header: 'Subscription' },
+      { key: 'ActionGroupName', header: 'Action Group' },
+      { key: 'ResourceGroup', header: 'Resource Group' },
+      { key: 'Enabled', header: 'Enabled', render: r => renderYesNo(r.Enabled) },
+      { key: 'EmailReceivers', header: 'Email Recipients', render: r => {
+        const emails = r.EmailReceivers || '';
+        if (!emails) return '—';
+        const count = emails.split(';').filter(Boolean).length;
+        return `<span title="${escapeHtml(emails)}">${count} recipient(s)</span>`;
+      }},
+      { key: 'ITSMConnected', header: 'ITSM', render: r => renderYesNo(r.ITSMConnected) }
+    ], actionGroups, 'SubscriptionName');
+  } else {
+    $('alertCard').classList.add('hidden');
+  }
+  
+  // Tags table
+  if (tags.length > 0) {
+    $('tagCard').classList.remove('hidden');
+    renderTable($('tagTable'), [
+      { key: 'SubscriptionName', header: 'Subscription' },
+      { key: 'TotalResources', header: 'Total Resources' },
+      { key: 'TaggedResources', header: 'Tagged' },
+      { key: 'TagCoveragePercent', header: 'Coverage', render: r => renderProgressBar(r.TagCoveragePercent, '') },
+      { key: 'HasCostAllocationTags', header: 'Cost Tags', render: r => renderYesNo(r.HasCostAllocationTags) },
+      { key: 'CommonTags', header: 'Common Tags', render: r => {
+        const tags = r.CommonTags || '';
+        return tags ? `<span class="muted" style="font-size:11px">${escapeHtml(tags)}</span>` : '—';
+      }}
+    ], tags, 'SubscriptionName');
+  } else {
+    $('tagCard').classList.add('hidden');
+  }
+  
+  // Findings table
+  if (findings.length > 0) {
+    $('findingsCard').classList.remove('hidden');
+    renderTable($('findingsTable'), [
+      { key: 'SubscriptionName', header: 'Subscription' },
+      { key: 'Severity', header: 'Severity', render: r => renderSeverityPill(r.Severity) },
+      { key: 'Category', header: 'Category' },
+      { key: 'ResourceName', header: 'Resource' },
+      { key: 'Detail', header: 'Finding' },
+      { key: 'Recommendation', header: 'Recommendation' }
+    ], findings, 'SubscriptionName');
+  } else {
+    $('findingsCard').classList.add('hidden');
+  }
+}
+
+// File upload handler
+$('auditXlsx').addEventListener('change', async (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+  
+  const reader = new FileReader();
+  reader.onload = async (evt) => {
+    try {
+      const data = new Uint8Array(evt.target.result);
+      const wb = XLSX.read(data, { type: 'array' });
+      
+      DATA.summary = readSheet(wb, 'Summary');
+      DATA.subscriptions = readSheet(wb, 'Subscription_Summary');
+      DATA.budgets = readSheet(wb, 'Budgets');
+      DATA.actionGroups = readSheet(wb, 'Action_Groups');
+      DATA.tags = readSheet(wb, 'Tagging_Coverage');
+      DATA.findings = readSheet(wb, 'Findings');
+      
+      $('summarySection').classList.remove('hidden');
+      renderReport();
+      
+      alert(`Loaded successfully!\n${DATA.subscriptions.length} subscriptions, ${DATA.budgets.length} budgets, ${DATA.findings.length} findings.`);
+    } catch (err) {
+      alert('Error reading file: ' + err.message);
+      console.error(err);
+    }
+  };
+  reader.readAsArrayBuffer(file);
+});
+
+// Export HTML
+$('btnExportHTML').addEventListener('click', () => {
+  const html = '<!doctype html>' + document.documentElement.outerHTML;
+  const blob = new Blob([html], { type: 'text/html' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'TIEVA_Cost_Management_Analyzer_v1.0.html';
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+});
+
+// Export CSV
+$('btnDownloadCSV').addEventListener('click', () => {
+  const findings = FILTER.active ? filterData(DATA.findings) : DATA.findings;
+  
+  if (!findings.length) {
+    alert('No findings to export.');
+    return;
+  }
+  
+  const today = new Date().toISOString().slice(0, 10);
+  
+  const headers = [
+    'Date Identified',
+    'Subscription',
+    'Severity',
+    'Category',
+    'Resource Type',
+    'Resource Name',
+    'Finding',
+    'Recommendation',
+    'Status',
+    'Owner',
+    'Target Date',
+    'Notes'
+  ];
+  
+  let csv = headers.join(',') + '\n';
+  
+  findings.forEach(f => {
+    const row = [
+      today,
+      f.SubscriptionName || '',
+      f.Severity || '',
+      f.Category || '',
+      f.ResourceType || '',
+      f.ResourceName || '',
+      f.Detail || '',
+      f.Recommendation || '',
+      'Open',
+      '',
+      '',
+      ''
+    ].map(v => {
+      const s = String(v).replace(/"/g, '""');
+      return /[",\n]/.test(s) ? `"${s}"` : s;
+    });
+    csv += row.join(',') + '\n';
+  });
+  
+  const blob = new Blob([csv], { type: 'text/csv' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'cost_management_findings.csv';
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+});
+</script>
+</body>
+</html>
