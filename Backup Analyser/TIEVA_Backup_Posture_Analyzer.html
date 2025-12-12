@@ -1,0 +1,399 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>TIEVA — Backup Posture Analyzer</title>
+<style>
+:root{--tieva-teal:#2DA58E;--tieva-navy:#1B365D;--critical:#ef4444;--warning:#f59e0b;--success:#10b981;--fg:#111827;--muted:#6b7280;--border:#e5e7eb;--canvas:var(--tieva-teal);--content-max:1440px}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--canvas);color:var(--fg);font:14px/1.5 'Segoe UI',system-ui,sans-serif}
+.wrap{max-width:var(--content-max);margin:0 auto;padding:24px}
+.brandbar{background:var(--tieva-navy);color:#fff;box-shadow:0 2px 8px rgba(0,0,0,0.15)}
+.brandwrap{max-width:var(--content-max);margin:0 auto;padding:16px 24px;display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap}
+.brandtitle{font-size:20px;font-weight:700}
+.brandsubtitle{font-size:12px;opacity:0.85;margin-top:2px}
+.btnrow{display:flex;gap:8px;flex-wrap:wrap}
+.header-btn{border:1px solid rgba(255,255,255,.35);background:rgba(255,255,255,.1);color:#fff;border-radius:6px;padding:8px 14px;cursor:pointer;font-size:13px;font-weight:500;transition:all 0.2s}
+.header-btn:hover{background:rgba(255,255,255,.25)}
+.header-btn:disabled{opacity:0.5;cursor:not-allowed}
+.pagetitle{font-size:26px;font-weight:700;color:#fff;margin-bottom:8px}
+.pagedesc{font-size:14px;color:rgba(255,255,255,0.9);margin-bottom:20px}
+.row{display:flex;gap:20px;flex-wrap:wrap}
+.col{flex:1 1 360px}
+.card{background:#fff;border:1px solid var(--border);border-radius:12px;padding:20px;margin-bottom:20px;box-shadow:0 1px 3px rgba(0,0,0,0.05)}
+h2{margin:0 0 14px;font-size:18px;color:var(--tieva-navy)}
+h3{margin:0 0 12px;font-size:16px;color:var(--tieva-navy)}
+.muted{color:var(--muted)}
+.btn{padding:10px 16px;border:1px solid var(--border);border-radius:8px;background:#f9fafb;cursor:pointer;font-size:13px;font-weight:500}
+.btn.primary{background:var(--tieva-teal);color:#fff;border-color:var(--tieva-teal)}
+input[type=file]{border:2px dashed var(--border);border-radius:8px;padding:12px;background:#f9fafb;cursor:pointer;width:100%}
+input[type=file]:hover{border-color:var(--tieva-teal);background:#f0fdf4}
+input[type=text]{border:1px solid var(--border);border-radius:8px;padding:10px 14px;font-size:14px;width:100%}
+input[type=text]:focus{outline:none;border-color:var(--tieva-teal)}
+label{font-weight:600;font-size:13px;display:block;margin-bottom:6px}
+.hint{font-size:12px;color:var(--muted);margin-top:4px}
+
+/* Score */
+.score-container{display:flex;align-items:center;gap:24px;padding:24px;background:linear-gradient(135deg,#f8fafc,#f1f5f9);border-radius:12px;margin-bottom:20px}
+.score-ring{position:relative;width:140px;height:140px;flex-shrink:0}
+.score-ring svg{transform:rotate(-90deg);width:140px;height:140px}
+.score-ring circle{fill:none;stroke-width:12}
+.score-ring .bg{stroke:#e5e7eb}
+.score-ring .progress{stroke-linecap:round;transition:stroke-dashoffset 0.8s ease}
+.score-value{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);text-align:center}
+.score-value .number{font-size:36px;font-weight:700;color:var(--tieva-navy)}
+.score-value .label{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:1px}
+.score-details{flex:1}
+.score-details h3{margin:0 0 8px;font-size:20px}
+.score-details p{margin:0 0 12px;color:var(--muted);font-size:14px;line-height:1.5}
+.score-badge{display:inline-block;padding:6px 14px;border-radius:999px;font-size:13px;font-weight:600}
+.score-badge.critical{background:#fee2e2;color:#dc2626}
+.score-badge.warning{background:#fef3c7;color:#d97706}
+.score-badge.good{background:#d1fae5;color:#059669}
+.score-badge.excellent{background:#dbeafe;color:#1d4ed8}
+
+/* Report Header */
+.report-header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:24px;padding:20px;background:#fff;border-radius:12px;border-left:4px solid var(--tieva-teal)}
+.report-header .customer-name{font-size:24px;font-weight:700;color:var(--tieva-navy)}
+.report-header .report-type{font-size:14px;color:var(--muted);margin-top:4px}
+.report-header .report-meta{text-align:right;font-size:13px;color:var(--muted)}
+.report-header .report-meta div{margin-bottom:6px}
+.report-header .report-meta strong{color:var(--fg)}
+
+/* Tiles */
+.tiles{display:flex;gap:14px;flex-wrap:wrap}
+.tile{flex:1 1 150px;border:1px solid var(--border);border-radius:10px;padding:16px;background:#fff}
+.tile h4{margin:0 0 8px;font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:0.5px;font-weight:600}
+.tile .big{font-size:28px;font-weight:700;color:var(--tieva-navy)}
+
+/* Tables */
+table{border-collapse:collapse;width:100%}
+thead{background:var(--tieva-teal);color:#fff}
+th{text-align:left;padding:10px 12px;font-weight:600;font-size:12px;text-transform:uppercase}
+td{padding:10px 12px;border-bottom:1px solid var(--border);font-size:13px;vertical-align:top}
+tbody tr:hover{background:#f9fafb}
+tbody tr[data-filter]{cursor:pointer}
+tbody tr[data-filter]:hover{background:#f0fdf4}
+.scroller{max-height:480px;overflow:auto}
+
+/* Tags */
+.tag{display:inline-block;padding:3px 10px;border-radius:999px;font-size:11px;font-weight:600;color:#fff}
+.tag.high{background:var(--critical)}
+.tag.medium{background:var(--warning)}
+.tag.low{background:var(--success)}
+.pill{display:inline-block;font-size:12px;border-radius:999px;padding:4px 10px;border:1px solid var(--border);background:#f9fafb}
+.filterbar{display:flex;gap:10px;align-items:center;margin-bottom:12px;flex-wrap:wrap}
+
+.section{display:none}
+.section.visible{display:block}
+
+/* Loading */
+.loading-overlay{display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(255,255,255,0.95);z-index:9999;justify-content:center;align-items:center;flex-direction:column;gap:20px}
+.loading-overlay.active{display:flex}
+.spinner{width:56px;height:56px;border:5px solid var(--border);border-top-color:var(--tieva-teal);border-radius:50%;animation:spin 1s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.loading-text{font-size:18px;color:var(--tieva-navy);font-weight:600}
+
+/* Toast */
+.toast-container{position:fixed;top:24px;right:24px;z-index:10000;display:flex;flex-direction:column;gap:12px}
+.toast{background:#fff;border-radius:10px;padding:16px 20px;box-shadow:0 8px 24px rgba(0,0,0,0.15);animation:slideIn 0.3s ease;max-width:420px}
+.toast.success{border-left:4px solid var(--success)}
+.toast.error{border-left:4px solid var(--critical)}
+.toast.info{border-left:4px solid var(--tieva-teal)}
+@keyframes slideIn{from{transform:translateX(120%)}to{transform:translateX(0)}}
+
+@media print{.brandbar,.header-btn,.btn,input,.loading-overlay,.toast-container,#uploadCard{display:none!important}.wrap{padding:0}.card{box-shadow:none;page-break-inside:avoid}.section.visible{display:block!important}body{background:#fff}}
+</style>
+<script>
+(function(){var t=["https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"];function l(i){if(window.XLSX||i>=t.length)return;var s=document.createElement("script");s.src=t[i];s.async=true;s.onerror=function(){l(i+1)};document.head.appendChild(s)}l(0)})();
+</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+</head>
+<body>
+<div class="loading-overlay" id="loadingOverlay"><div class="spinner"></div><div class="loading-text" id="loadingText">Generating report...</div></div>
+<div class="toast-container" id="toastContainer"></div>
+
+<div class="brandbar">
+<div class="brandwrap">
+<div><div class="brandtitle">TIEVA — Backup Posture Analyzer</div><div class="brandsubtitle">Well-Architected Backup & DR Posture Explorer</div></div>
+<div class="btnrow">
+<button id="btnCSV" class="header-btn" disabled>Export to Customer Review</button>
+<button id="btnPDF" class="header-btn" disabled>Export PDF Report</button>
+<button id="btnHTML" class="header-btn">Export HTML</button>
+</div>
+</div>
+</div>
+
+<div class="wrap" id="mainContent">
+<div class="pagetitle">Backup & DR Posture Overview</div>
+<div class="pagedesc">Upload your Backup_Audit.xlsx and Backup_Effort_Mapping_v3.xlsx to analyze vault configurations, coverage gaps, and remediation priorities.</div>
+
+<div class="card" id="uploadCard">
+<div class="row"><div class="col"><label for="customerName">Customer Name</label><input type="text" id="customerName" placeholder="Enter customer name for report header"/></div></div>
+<div class="row" style="margin-top:16px">
+<div class="col"><label>1) Backup Audit (XLSX)</label><input id="auditFile" type="file" accept=".xlsx"/><div class="hint">Sheets: BackupVaults, RSV, VM_Coverage, VM_Detail, DB_Coverage, SQL_Detail</div></div>
+<div class="col"><label>2) Effort Mapping (XLSX)</label><input id="mapFile" type="file" accept=".xlsx"/><div class="hint">Sheet: Mapping with Finding, BaseHours, PerResourceHours, Owner, DefaultRisk</div></div>
+<div class="col" style="display:flex;align-items:flex-end"><div style="display:flex;gap:10px"><button id="btnGo" class="btn primary">Generate Report</button><button id="btnClear" class="btn">Clear Filter</button></div></div>
+</div>
+</div>
+
+<div id="reportHeaderSec" class="section">
+<div class="report-header">
+<div><div class="customer-name" id="rptCustomer">Customer Report</div><div class="report-type">Backup & DR Posture Analysis</div></div>
+<div class="report-meta"><div><strong>Generated:</strong> <span id="rptTime"></span></div><div><strong>Findings:</strong> <span id="rptItems">0</span></div><div><strong>Report ID:</strong> <span id="rptId"></span></div></div>
+</div>
+</div>
+
+<div id="scoreSec" class="section">
+<div class="score-container">
+<div class="score-ring">
+<svg viewBox="0 0 140 140"><circle class="bg" cx="70" cy="70" r="58"/><circle class="progress" id="scoreCircle" cx="70" cy="70" r="58" stroke-dasharray="364" stroke-dashoffset="364"/></svg>
+<div class="score-value"><div class="number" id="scoreNum">0</div><div class="label">Score</div></div>
+</div>
+<div class="score-details">
+<h3>Backup Posture Score</h3>
+<p id="scoreDesc">Upload your data to calculate your backup posture score based on coverage and configuration compliance.</p>
+<span class="score-badge" id="scoreBadge">Pending</span>
+</div>
+</div>
+</div>
+
+<div id="kpiSec" class="section">
+<div class="card">
+<h2>At a Glance</h2>
+<div class="tiles">
+<div class="tile"><h4>Total Remediation Hours</h4><div class="big" id="kpiHours">0</div></div>
+<div class="tile"><h4>Findings</h4><div class="big" id="kpiItems">0</div></div>
+<div class="tile"><h4>Unique Issues</h4><div class="big" id="kpiRecs">0</div></div>
+<div class="tile"><h4>High-Risk Share</h4><div class="big" id="kpiHigh">0%</div></div>
+</div>
+</div>
+</div>
+
+<div id="summarySec" class="section">
+<div class="card">
+<h2>Summary</h2>
+<div class="row">
+<div class="col"><h3>Top Effort by Finding</h3><div id="tblFind" class="scroller"></div></div>
+<div class="col"><h3>By Owner</h3><div id="tblOwner" class="scroller"></div></div>
+<div class="col"><h3>By Risk</h3><div id="tblRisk" class="scroller"></div></div>
+</div>
+<div class="row" style="margin-top:20px">
+<div class="col"><h3>By Workload</h3><div id="tblWork" class="scroller"></div></div>
+<div class="col"><h3>By Category</h3><div id="tblCat" class="scroller"></div></div>
+<div class="col"><h3>By Pillar</h3><div id="tblPillar" class="scroller"></div></div>
+</div>
+</div>
+</div>
+
+<div id="detailSec" class="section">
+<div class="card">
+<div class="filterbar"><h2 style="margin:0">Finding Instances</h2><span class="pill" id="activeFilter" style="display:none"></span></div>
+<div id="tblDetail" class="scroller"></div>
+</div>
+</div>
+</div>
+
+<script>
+const $=id=>document.getElementById(id);
+const fmt=n=>isFinite(n)?Math.round(n*10)/10:0;
+const pct=(n,d)=>d?Math.round(n/d*100):0;
+const norm=s=>String(s||"").trim().replace(/\s+/g," ").toLowerCase();
+
+let DETAIL=[],MAPPING={},FILTER=null;
+
+function toast(msg,type='info',dur=4000){const c=$('toastContainer'),t=document.createElement('div');t.className='toast '+type;t.innerHTML='<span>'+msg+'</span>';c.appendChild(t);setTimeout(()=>t.remove(),dur)}
+function showLoad(txt){$('loadingText').textContent=txt;$('loadingOverlay').classList.add('active')}
+function hideLoad(){$('loadingOverlay').classList.remove('active')}
+function genId(){const c='ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';let id='BKP-';for(let i=0;i<8;i++)id+=c[Math.floor(Math.random()*c.length)];return id}
+function fmtTime(d=new Date()){return d.toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'})}
+
+function getCI(o,k){if(!o)return undefined;const t=k.toLowerCase().replace(/[^a-z0-9]/g,'');for(const x of Object.keys(o)){if(x.toLowerCase().replace(/[^a-z0-9]/g,'')===t)return o[x]}return undefined}
+function yes(v){return /^(enabled|yes|true|on|alwayson)$/i.test(String(v||"").trim())}
+function truthyBool(v){if(v===true||v===false)return v;return /^(true|yes|enabled|y|1)$/i.test(String(v||"").trim())}
+
+function renderTable(el,cols,rows,ck){
+  let h='<table><thead><tr>';cols.forEach(c=>h+='<th>'+c.header+'</th>');h+='</tr></thead><tbody>';
+  rows.forEach(r=>{const v=ck?r[ck]:null,a=(ck&&v!=null)?' data-filter="'+ck+'" data-value="'+encodeURIComponent(v)+'"':'';h+='<tr'+a+'>';cols.forEach(c=>h+='<td>'+(c.render?c.render(r):(r[c.key]||""))+'</td>');h+='</tr>'});
+  h+='</tbody></table>';el.innerHTML=h;
+  if(ck)el.querySelectorAll('tr[data-filter]').forEach(tr=>tr.addEventListener('click',()=>applyFilter(tr.getAttribute('data-filter'),decodeURIComponent(tr.getAttribute('data-value')))));
+}
+function groupBy(a,k){const m={};a.forEach(x=>{const key=x[k]||"";(m[key]=m[key]||[]).push(x)});return m}
+function riskClass(v){const s=(v||"").toLowerCase();return s.startsWith('h')?'high':s.startsWith('m')?'medium':s.startsWith('l')?'low':''}
+function riskBadge(r){return '<span class="tag '+riskClass(r.risk)+'">'+(r.risk||"n/a")+'</span>'}
+
+function parseMapping(wb){
+  const sh=wb.Sheets["Mapping"];if(!sh)throw new Error('Need sheet "Mapping"');
+  const rows=XLSX.utils.sheet_to_json(sh,{defval:""}),map={};
+  rows.forEach(r=>{
+    const f=String(getCI(r,"Finding")||"").trim();if(!f)return;
+    map[norm(f)]={base:Number(getCI(r,"BaseHours")||0),per:Number(getCI(r,"PerResourceHours")||0),owner:getCI(r,"Owner")||"",risk:getCI(r,"DefaultRisk")||"",pillar:getCI(r,"Pillar")||"",whyEnable:getCI(r,"WhyEnableIt")||""};
+  });
+  return map;
+}
+
+function parseAudit(wb){
+  const findings=[];
+  const getSheet=n=>wb.Sheets[n]?XLSX.utils.sheet_to_json(wb.Sheets[n],{defval:""}):[];
+  const vaults=[...getSheet('BackupVaults').map(r=>({...r,__src:'BackupVaults'})),...getSheet('RSV').map(r=>({...r,__src:'RSV'}))];
+  
+  function push(base,finding,extra={}){
+    findings.push({workload:extra.workload||'Vault',category:base.VaultType||extra.category||"",subscription:base.SubscriptionName||"",rg:base.ResourceGroup||"",location:base.Location||"",name:base.VaultName||extra.name||"",finding:finding,riskHint:extra.risk||"",ownerHint:extra.owner||""});
+  }
+  
+  vaults.forEach(r=>{
+    const name=r.VaultName||"";
+    if(!yes(r.CloudSoftDeleteState)&&!yes(r.AlwaysOnSoftDelete))push(r,"Enable soft delete",{workload:'Vault'});
+    if(!yes(r.AlwaysOnSoftDelete))push(r,"Enable always-on soft delete",{workload:'Vault'});
+    if(r.CrossRegionRestore!==undefined&&!yes(r.CrossRegionRestore))push(r,"Enable cross-region restore",{workload:'Vault'});
+    if(String(r.PublicNetworkAccess||"").toLowerCase()==='enabled')push(r,"Restrict public network access",{workload:'Vault'});
+    if(r.MUAEnabled!==undefined&&!yes(r.MUAEnabled))push(r,"Enable multi-user authorisation (MUA)",{workload:'Vault'});
+    const sr=r.StorageRedundancy||"";if(sr&&!/grs|gzrs/i.test(sr))push(r,"Increase vault storage redundancy (GRS/GZRS)",{workload:'Vault'});
+    if(r.Immutable!==undefined&&/disabled|false/i.test(String(r.Immutable)))push(r,"Enable immutability",{workload:'Vault'});
+  });
+  
+  getSheet('VM_Coverage').forEach(r=>{
+    if(!truthyBool(getCI(r,"IsBackedUp"))){
+      const vmn=getCI(r,"VMName")||getCI(r,"VM Name")||"";
+      if(vmn)push({...r,__src:'VM_Coverage'},"VM not protected",{workload:'VM',name:vmn,category:'Virtual Machine'});
+    }
+  });
+  
+  getSheet('DB_Coverage').forEach(r=>{
+    const dbn=getCI(r,"DatabaseName")||"",dbt=getCI(r,"DbType")||"Database";
+    const backed=truthyBool(getCI(r,"IsBackedUp")),meets=truthyBool(getCI(r,"MeetsStandard"));
+    if(dbn&&!backed)push({...r},"Database not protected",{workload:dbt,name:dbn,category:dbt});
+    if(dbn&&backed&&!meets)push({...r},"Database backup below standard",{workload:dbt,name:dbn,category:dbt});
+  });
+  
+  return findings;
+}
+
+function estimate(findings,map){
+  const rows=findings.map(f=>{const k=norm(f.finding),m=map[k]||null;return{...f,pillar:m?.pillar||"",owner:m?.owner||f.ownerHint||"",risk:m?.risk||f.riskHint||"",whyEnable:m?.whyEnable||"",baseCfg:m?.base||0,per:m?.per||0,baseShow:0,total:0}});
+  const grp={};rows.forEach(r=>{const g=norm(r.finding);(grp[g]=grp[g]||[]).push(r)});
+  Object.values(grp).forEach(arr=>{const b=arr[0].baseCfg,p=arr[0].per,n=arr.length,bp=n?b/n:0;arr.forEach(r=>{r.baseShow=bp;r.total=p+bp})});
+  return rows;
+}
+
+function calcScore(data){
+  if(!data.length)return{score:100,label:'Excellent',cls:'excellent'};
+  const hi=data.filter(d=>/^h/i.test(d.risk)).length,med=data.filter(d=>/^m/i.test(d.risk)).length;
+  let s=100-hi*5-med*2;s=Math.max(0,Math.min(100,Math.round(s)));
+  let l,c;if(s>=80){l='Excellent';c='excellent'}else if(s>=60){l='Good';c='good'}else if(s>=40){l='Needs Attention';c='warning'}else{l='Critical';c='critical'}
+  return{score:s,label:l,cls:c};
+}
+function updateScore(sc){
+  const circ=364,off=circ-(sc.score/100)*circ;
+  $('scoreCircle').style.strokeDashoffset=off;
+  $('scoreCircle').style.stroke=sc.score>=80?'#10b981':sc.score>=60?'#3b82f6':sc.score>=40?'#f59e0b':'#ef4444';
+  $('scoreNum').textContent=sc.score;
+  $('scoreBadge').textContent=sc.label;
+  $('scoreBadge').className='score-badge '+sc.cls;
+}
+
+function applyFilter(k,v){
+  FILTER={key:k,value:v,fn:d=>{if(k==='finding')return norm(d.finding)===norm(v);if(k==='owner')return(d.owner||"")===v;if(k==='risk')return(d.risk||"")===v;if(k==='workload')return(d.workload||"")===v;if(k==='category')return(d.category||"")===v;if(k==='pillar')return(d.pillar||"")===v;return true}};
+  $('activeFilter').style.display='';$('activeFilter').textContent='Filter: '+k+' = '+v;renderAll();
+}
+$('btnClear').onclick=()=>{FILTER=null;$('activeFilter').style.display='none';renderAll()};
+
+function renderAll(){
+  const data=FILTER?DETAIL.filter(FILTER.fn):DETAIL.slice();
+  const sum=(a,fn)=>a.reduce((s,x)=>s+Number(fn(x)||0),0);
+  const totalH=sum(data,d=>d.total),items=data.length,uniq=new Set(data.map(d=>d.finding)).size;
+  const hiRisk=data.filter(d=>/^h/i.test(d.risk)).length;
+
+  $('kpiHours').textContent=fmt(totalH);
+  $('kpiItems').textContent=items;
+  $('kpiRecs').textContent=uniq;
+  $('kpiHigh').textContent=pct(hiRisk,items)+'%';
+  $('rptItems').textContent=items;
+
+  const byFind=Object.entries(groupBy(data,'finding')).map(([f,arr])=>({finding:f,pillar:arr[0]?.pillar||"",owner:arr[0]?.owner||"",risk:arr[0]?.risk||"",items:arr.length,hours:fmt(sum(arr,x=>x.total))})).sort((a,b)=>b.hours-a.hours);
+  renderTable($('tblFind'),[{key:'finding',header:'Finding'},{key:'pillar',header:'Pillar'},{key:'owner',header:'Owner'},{key:'risk',header:'Risk',render:riskBadge},{key:'items',header:'#'},{key:'hours',header:'Hours'}],byFind,'finding');
+
+  const byOwn=Object.entries(groupBy(data,'owner')).map(([o,arr])=>({owner:o||'(Unassigned)',items:arr.length,hours:fmt(sum(arr,x=>x.total))})).sort((a,b)=>b.hours-a.hours);
+  renderTable($('tblOwner'),[{key:'owner',header:'Owner'},{key:'items',header:'#'},{key:'hours',header:'Hours'}],byOwn,'owner');
+
+  const byRisk=Object.entries(groupBy(data,'risk')).map(([r,arr])=>({risk:r||'(n/a)',items:arr.length,hours:fmt(sum(arr,x=>x.total))})).sort((a,b)=>b.hours-a.hours);
+  renderTable($('tblRisk'),[{key:'risk',header:'Risk',render:riskBadge},{key:'items',header:'#'},{key:'hours',header:'Hours'}],byRisk,'risk');
+
+  const byWork=Object.entries(groupBy(data,'workload')).map(([w,arr])=>({workload:w||'(n/a)',items:arr.length,hours:fmt(sum(arr,x=>x.total))})).sort((a,b)=>b.hours-a.hours);
+  renderTable($('tblWork'),[{key:'workload',header:'Workload'},{key:'items',header:'#'},{key:'hours',header:'Hours'}],byWork,'workload');
+
+  const byCat=Object.entries(groupBy(data,'category')).map(([c,arr])=>({category:c||'(n/a)',items:arr.length,hours:fmt(sum(arr,x=>x.total))})).sort((a,b)=>b.hours-a.hours);
+  renderTable($('tblCat'),[{key:'category',header:'Category'},{key:'items',header:'#'},{key:'hours',header:'Hours'}],byCat,'category');
+
+  const byPillar=Object.entries(groupBy(data,'pillar')).map(([p,arr])=>({pillar:p||'(n/a)',items:arr.length,hours:fmt(sum(arr,x=>x.total))})).sort((a,b)=>b.hours-a.hours);
+  renderTable($('tblPillar'),[{key:'pillar',header:'Pillar'},{key:'items',header:'#'},{key:'hours',header:'Hours'}],byPillar,'pillar');
+
+  const detail=data.slice(0,3000).map(d=>({workload:d.workload,category:d.category,subscription:d.subscription,rg:d.rg,name:d.name,finding:d.finding,owner:d.owner,risk:d.risk,hours:fmt(d.total)}));
+  renderTable($('tblDetail'),[{key:'workload',header:'Workload'},{key:'category',header:'Category'},{key:'subscription',header:'Subscription'},{key:'rg',header:'RG'},{key:'name',header:'Name'},{key:'finding',header:'Finding'},{key:'owner',header:'Owner'},{key:'risk',header:'Risk',render:r=>'<span class="tag '+riskClass(r.risk)+'">'+(r.risk||"n/a")+'</span>'},{key:'hours',header:'Hrs'}],detail);
+
+  const show=data.length>0;
+  ['reportHeaderSec','scoreSec','kpiSec','summarySec','detailSec'].forEach(id=>$(id).classList.toggle('visible',show));
+  if(show)updateScore(calcScore(data));
+  ['btnCSV','btnPDF'].forEach(id=>$(id).disabled=!show);
+}
+
+function exportCSV(){
+  const data=FILTER?DETAIL.filter(FILTER.fn):DETAIL;
+  if(!data.length){toast('No data','error');return}
+  const today=new Date().toISOString().slice(0,10);
+  const clean=v=>String(v||"").replace(/^[=+\-@]+/,"").replace(/^-\s*/,"");
+  const hdr=["Date Identified","Ticket Number","Issue Description","Impact","Affected Resource(s)","Azure Service / Category","Root Cause","Recommendation","Justification / Benefit","Priority","Status","Owner / Engineer","Target Resolution Date","Date Resolved","Customer Feedback / Notes","Follow-up Actions","Validation Date","Comments"];
+  const rows=data.map(d=>({
+    "Date Identified":today,"Ticket Number":"","Issue Description":clean(d.finding),"Impact":clean(d.risk),
+    "Affected Resource(s)":clean([d.subscription,d.rg,d.name].filter(Boolean).join(" / ")),"Azure Service / Category":clean(d.category||d.workload),
+    "Root Cause":clean(d.finding),"Recommendation":clean(d.finding),"Justification / Benefit":clean(d.whyEnable||""),
+    "Priority":clean(d.risk),"Status":"Open","Owner / Engineer":clean(d.owner),"Target Resolution Date":"",
+    "Date Resolved":"","Customer Feedback / Notes":"","Follow-up Actions":"","Validation Date":"","Comments":"Effort: "+fmt(d.total)+"h"
+  }));
+  let csv=hdr.join(",")+"\n";
+  rows.forEach(r=>{csv+=hdr.map(h=>{const v=clean(r[h]||"");return /[",\n]/.test(v)?'"'+v.replace(/"/g,'""')+'"':v}).join(",")+"\n"});
+  const blob=new Blob([csv],{type:"text/csv"});
+  const a=document.createElement("a");a.href=URL.createObjectURL(blob);
+  a.download=($('customerName').value.trim()||"Customer").replace(/[^a-zA-Z0-9]/g,"_")+"_Backup_Review.csv";
+  a.click();toast('CSV exported!','success');
+}
+
+async function exportPDF(){
+  if(!DETAIL.length){toast('No data','error');return}
+  showLoad('Generating PDF...');
+  try{
+    const opt={margin:[10,10],filename:($('customerName').value.trim()||"Customer").replace(/[^a-zA-Z0-9]/g,"_")+"_Backup_Report.pdf",image:{type:'jpeg',quality:0.95},html2canvas:{scale:2},jsPDF:{unit:'mm',format:'a4',orientation:'landscape'}};
+    await html2pdf().set(opt).from($('mainContent')).save();
+    toast('PDF exported!','success');
+  }catch(e){toast('PDF failed: '+e.message,'error')}
+  hideLoad();
+}
+
+$('btnGo').onclick=async()=>{
+  const auditF=$('auditFile').files[0],mapF=$('mapFile').files[0];
+  if(!auditF){toast('Select Backup Audit','error');return}
+  if(!mapF){toast('Select Mapping','error');return}
+  if(typeof XLSX==='undefined'){toast('XLSX not loaded','error');return}
+  showLoad('Processing...');
+  try{
+    const [auditB,mapB]=await Promise.all([auditF.arrayBuffer(),mapF.arrayBuffer()]);
+    const auditWB=XLSX.read(auditB,{type:'array'}),mapWB=XLSX.read(mapB,{type:'array'});
+    MAPPING=parseMapping(mapWB);
+    const findings=parseAudit(auditWB);
+    DETAIL=estimate(findings,MAPPING);
+    FILTER=null;$('activeFilter').style.display='none';
+    $('rptCustomer').textContent=$('customerName').value.trim()||'Customer Report';
+    $('rptTime').textContent=fmtTime();
+    $('rptId').textContent=genId();
+    renderAll();
+    hideLoad();toast('Report generated! '+DETAIL.length+' findings.','success');
+  }catch(e){hideLoad();toast('Error: '+e.message,'error');console.error(e)}
+};
+
+$('btnCSV').onclick=exportCSV;
+$('btnPDF').onclick=exportPDF;
+$('btnHTML').onclick=()=>{const h='<!doctype html>'+document.documentElement.outerHTML;const b=new Blob([h],{type:'text/html'});const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download=($('customerName').value.trim()||"TIEVA").replace(/[^a-zA-Z0-9]/g,"_")+"_Backup_Report.html";a.click();toast('HTML exported!','success')};
+</script>
+</body>
+</html>

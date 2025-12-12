@@ -1,0 +1,364 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>TIEVA — Cost Management Analyzer</title>
+<style>
+:root{--tieva-teal:#2DA58E;--tieva-navy:#1B365D;--critical:#ef4444;--warning:#f59e0b;--success:#10b981;--fg:#111827;--muted:#6b7280;--border:#e5e7eb;--canvas:var(--tieva-teal);--content-max:1440px}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--canvas);color:var(--fg);font:14px/1.5 'Segoe UI',system-ui,sans-serif}
+.wrap{max-width:var(--content-max);margin:0 auto;padding:24px}
+.brandbar{background:var(--tieva-navy);color:#fff;box-shadow:0 2px 8px rgba(0,0,0,0.15)}
+.brandwrap{max-width:var(--content-max);margin:0 auto;padding:16px 24px;display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap}
+.brandtitle{font-size:20px;font-weight:700}
+.brandsubtitle{font-size:12px;opacity:0.85;margin-top:2px}
+.btnrow{display:flex;gap:8px;flex-wrap:wrap}
+.header-btn{border:1px solid rgba(255,255,255,.35);background:rgba(255,255,255,.1);color:#fff;border-radius:6px;padding:8px 14px;cursor:pointer;font-size:13px;font-weight:500;transition:all 0.2s}
+.header-btn:hover{background:rgba(255,255,255,.25)}
+.header-btn:disabled{opacity:0.5;cursor:not-allowed}
+.pagetitle{font-size:26px;font-weight:700;color:#fff;margin-bottom:8px}
+.pagedesc{font-size:14px;color:rgba(255,255,255,0.9);margin-bottom:20px}
+.row{display:flex;gap:20px;flex-wrap:wrap}
+.col{flex:1 1 360px}
+.card{background:#fff;border:1px solid var(--border);border-radius:12px;padding:20px;margin-bottom:20px;box-shadow:0 1px 3px rgba(0,0,0,0.05)}
+h2{margin:0 0 14px;font-size:18px;color:var(--tieva-navy)}
+h3{margin:0 0 12px;font-size:16px;color:var(--tieva-navy)}
+.muted{color:var(--muted)}
+.btn{padding:10px 16px;border:1px solid var(--border);border-radius:8px;background:#f9fafb;cursor:pointer;font-size:13px;font-weight:500}
+.btn.primary{background:var(--tieva-teal);color:#fff;border-color:var(--tieva-teal)}
+input[type=file]{border:2px dashed var(--border);border-radius:8px;padding:12px;background:#f9fafb;cursor:pointer;width:100%}
+input[type=file]:hover{border-color:var(--tieva-teal);background:#f0fdf4}
+input[type=text]{border:1px solid var(--border);border-radius:8px;padding:10px 14px;font-size:14px;width:100%}
+input[type=text]:focus{outline:none;border-color:var(--tieva-teal)}
+label{font-weight:600;font-size:13px;display:block;margin-bottom:6px}
+.hint{font-size:12px;color:var(--muted);margin-top:4px}
+.score-container{display:flex;align-items:center;gap:24px;padding:24px;background:linear-gradient(135deg,#f8fafc,#f1f5f9);border-radius:12px;margin-bottom:20px}
+.score-ring{position:relative;width:140px;height:140px;flex-shrink:0}
+.score-ring svg{transform:rotate(-90deg);width:140px;height:140px}
+.score-ring circle{fill:none;stroke-width:12}
+.score-ring .bg{stroke:#e5e7eb}
+.score-ring .progress{stroke-linecap:round;transition:stroke-dashoffset 0.8s ease}
+.score-value{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);text-align:center}
+.score-value .number{font-size:36px;font-weight:700;color:var(--tieva-navy)}
+.score-value .label{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:1px}
+.score-details{flex:1}
+.score-details h3{margin:0 0 8px;font-size:20px}
+.score-details p{margin:0 0 12px;color:var(--muted);font-size:14px;line-height:1.5}
+.score-badge{display:inline-block;padding:6px 14px;border-radius:999px;font-size:13px;font-weight:600}
+.score-badge.critical{background:#fee2e2;color:#dc2626}
+.score-badge.warning{background:#fef3c7;color:#d97706}
+.score-badge.good{background:#d1fae5;color:#059669}
+.score-badge.excellent{background:#dbeafe;color:#1d4ed8}
+.report-header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:24px;padding:20px;background:#fff;border-radius:12px;border-left:4px solid var(--tieva-teal)}
+.report-header .customer-name{font-size:24px;font-weight:700;color:var(--tieva-navy)}
+.report-header .report-type{font-size:14px;color:var(--muted);margin-top:4px}
+.report-header .report-meta{text-align:right;font-size:13px;color:var(--muted)}
+.report-header .report-meta div{margin-bottom:6px}
+.report-header .report-meta strong{color:var(--fg)}
+.tiles{display:flex;gap:14px;flex-wrap:wrap}
+.tile{flex:1 1 150px;border:1px solid var(--border);border-radius:10px;padding:16px;background:#fff}
+.tile h4{margin:0 0 8px;font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:0.5px;font-weight:600}
+.tile .big{font-size:28px;font-weight:700;color:var(--tieva-navy)}
+table{border-collapse:collapse;width:100%}
+thead{background:var(--tieva-teal);color:#fff}
+th{text-align:left;padding:10px 12px;font-weight:600;font-size:12px;text-transform:uppercase}
+td{padding:10px 12px;border-bottom:1px solid var(--border);font-size:13px;vertical-align:top}
+tbody tr:hover{background:#f9fafb}
+tbody tr[data-filter]{cursor:pointer}
+tbody tr[data-filter]:hover{background:#f0fdf4}
+.scroller{max-height:480px;overflow:auto}
+.tag{display:inline-block;padding:3px 10px;border-radius:999px;font-size:11px;font-weight:600;color:#fff}
+.tag.high{background:var(--critical)}
+.tag.medium{background:var(--warning)}
+.tag.low{background:var(--success)}
+.pill{display:inline-block;font-size:12px;border-radius:999px;padding:4px 10px;border:1px solid var(--border);background:#f9fafb}
+.pill-yes{background:#d1fae5;color:#059669;border-color:#a7f3d0}
+.pill-no{background:#fee2e2;color:#dc2626;border-color:#fecaca}
+.filterbar{display:flex;gap:10px;align-items:center;margin-bottom:12px;flex-wrap:wrap}
+.progress-bar{background:#e5e7eb;border-radius:999px;height:8px;overflow:hidden;width:100px}
+.progress-fill{height:100%;border-radius:999px}
+.progress-fill.good{background:var(--success)}
+.progress-fill.warning{background:var(--warning)}
+.progress-fill.critical{background:var(--critical)}
+.section{display:none}
+.section.visible{display:block}
+.loading-overlay{display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(255,255,255,0.95);z-index:9999;justify-content:center;align-items:center;flex-direction:column;gap:20px}
+.loading-overlay.active{display:flex}
+.spinner{width:56px;height:56px;border:5px solid var(--border);border-top-color:var(--tieva-teal);border-radius:50%;animation:spin 1s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.loading-text{font-size:18px;color:var(--tieva-navy);font-weight:600}
+.toast-container{position:fixed;top:24px;right:24px;z-index:10000;display:flex;flex-direction:column;gap:12px}
+.toast{background:#fff;border-radius:10px;padding:16px 20px;box-shadow:0 8px 24px rgba(0,0,0,0.15);animation:slideIn 0.3s ease;max-width:420px}
+.toast.success{border-left:4px solid var(--success)}
+.toast.error{border-left:4px solid var(--critical)}
+.toast.info{border-left:4px solid var(--tieva-teal)}
+@keyframes slideIn{from{transform:translateX(120%)}to{transform:translateX(0)}}
+@media print{.brandbar,.header-btn,.btn,input,.loading-overlay,.toast-container,#uploadCard{display:none!important}.wrap{padding:0}.card{box-shadow:none;page-break-inside:avoid}.section.visible{display:block!important}body{background:#fff}}
+</style>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+</head>
+<body>
+<div class="loading-overlay" id="loadingOverlay"><div class="spinner"></div><div class="loading-text" id="loadingText">Generating report...</div></div>
+<div class="toast-container" id="toastContainer"></div>
+<div class="brandbar">
+<div class="brandwrap">
+<div><div class="brandtitle">TIEVA — Cost Management Analyzer</div><div class="brandsubtitle">Azure Spend & Budget Posture Explorer</div></div>
+<div class="btnrow">
+<button id="btnCSV" class="header-btn" disabled>Export to Customer Review</button>
+<button id="btnPDF" class="header-btn" disabled>Export PDF Report</button>
+<button id="btnHTML" class="header-btn">Export HTML</button>
+</div>
+</div>
+</div>
+<div class="wrap" id="mainContent">
+<div class="pagetitle">Cost Management Posture Overview</div>
+<div class="pagedesc">Upload your Cost_Management_Audit.xlsx to analyze budget configurations, alert settings, and cost allocation tags.</div>
+<div class="card" id="uploadCard">
+<div class="row"><div class="col"><label for="customerName">Customer Name</label><input type="text" id="customerName" placeholder="Enter customer name for report header"/></div></div>
+<div class="row" style="margin-top:16px">
+<div class="col"><label>Cost Management Audit (XLSX)</label><input id="auditFile" type="file" accept=".xlsx"/><div class="hint">Sheets: Subscription_Summary, Budgets, Action_Groups, Tagging_Coverage, Findings</div></div>
+<div class="col" style="display:flex;align-items:flex-end"><div style="display:flex;gap:10px"><button id="btnGo" class="btn primary">Generate Report</button><button id="btnClear" class="btn">Clear Filter</button></div></div>
+</div>
+</div>
+<div id="reportHeaderSec" class="section">
+<div class="report-header">
+<div><div class="customer-name" id="rptCustomer">Customer Report</div><div class="report-type">Cost Management Posture Analysis</div></div>
+<div class="report-meta"><div><strong>Generated:</strong> <span id="rptTime"></span></div><div><strong>Subscriptions:</strong> <span id="rptSubs">0</span></div><div><strong>Report ID:</strong> <span id="rptId"></span></div></div>
+</div>
+</div>
+<div id="scoreSec" class="section">
+<div class="score-container">
+<div class="score-ring">
+<svg viewBox="0 0 140 140"><circle class="bg" cx="70" cy="70" r="58"/><circle class="progress" id="scoreCircle" cx="70" cy="70" r="58" stroke-dasharray="364" stroke-dashoffset="364"/></svg>
+<div class="score-value"><div class="number" id="scoreNum">0</div><div class="label">Score</div></div>
+</div>
+<div class="score-details">
+<h3>Cost Management Score</h3>
+<p id="scoreDesc">Upload your data to calculate your cost management maturity score.</p>
+<span class="score-badge" id="scoreBadge">Pending</span>
+</div>
+</div>
+</div>
+<div id="kpiSec" class="section">
+<div class="card">
+<h2>Executive Summary</h2>
+<div class="tiles">
+<div class="tile"><h4>Subscriptions</h4><div class="big" id="kpiSubs">0</div></div>
+<div class="tile"><h4>With Budgets</h4><div class="big" id="kpiBudgets">0</div></div>
+<div class="tile"><h4>Total Budgets</h4><div class="big" id="kpiTotalBudgets">0</div></div>
+<div class="tile"><h4>Action Groups</h4><div class="big" id="kpiActions">0</div></div>
+<div class="tile"><h4>High Findings</h4><div class="big" id="kpiHigh">0</div></div>
+<div class="tile"><h4>Medium Findings</h4><div class="big" id="kpiMed">0</div></div>
+</div>
+</div>
+</div>
+<div id="subsSec" class="section">
+<div class="card"><h2>Subscription Budget Coverage</h2><div id="tblSubs" class="scroller"></div></div>
+</div>
+<div id="budgetSec" class="section">
+<div class="card"><h2>Budget Status & Spend Tracking</h2><div id="tblBudgets" class="scroller"></div></div>
+</div>
+<div id="alertSec" class="section">
+<div class="card"><h2>Alert & Integration Status</h2><div id="tblAlerts" class="scroller"></div></div>
+</div>
+<div id="tagSec" class="section">
+<div class="card"><h2>Cost Allocation Tagging</h2><div id="tblTags" class="scroller"></div></div>
+</div>
+<div id="findingSec" class="section">
+<div class="card">
+<div class="filterbar"><h2 style="margin:0">Findings & Recommendations</h2><span class="pill" id="activeFilter" style="display:none"></span></div>
+<div id="tblFindings" class="scroller"></div>
+</div>
+</div>
+</div>
+<script>
+const el=id=>document.getElementById(id);
+let DATA={subs:[],budgets:[],alerts:[],tags:[],findings:[]};
+let FILTER=null;
+
+function toast(msg,type='info',dur=4000){const c=el('toastContainer'),t=document.createElement('div');t.className='toast '+type;t.innerHTML='<span>'+msg+'</span>';c.appendChild(t);setTimeout(()=>t.remove(),dur)}
+function showLoad(txt){el('loadingText').textContent=txt;el('loadingOverlay').classList.add('active')}
+function hideLoad(){el('loadingOverlay').classList.remove('active')}
+function genId(){const c='ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';let id='CST-';for(let i=0;i<8;i++)id+=c[Math.floor(Math.random()*c.length)];return id}
+function fmtTime(d=new Date()){return d.toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'})}
+function readSheet(wb,n){return wb.SheetNames.includes(n)?XLSX.utils.sheet_to_json(wb.Sheets[n],{defval:""}):[]}
+
+function renderTable(container,cols,rows,ck){
+  let h='<table><thead><tr>';cols.forEach(c=>h+='<th>'+c.header+'</th>');h+='</tr></thead><tbody>';
+  rows.forEach(r=>{const v=ck?r[ck]:null,a=(ck&&v!=null)?' data-filter="'+ck+'" data-value="'+encodeURIComponent(v)+'"':'';h+='<tr'+a+'>';cols.forEach(c=>h+='<td>'+(c.render?c.render(r):(r[c.key]||""))+'</td>');h+='</tr>'});
+  h+='</tbody></table>';container.innerHTML=h;
+  if(ck)container.querySelectorAll('tr[data-filter]').forEach(tr=>tr.addEventListener('click',()=>applyFilter(tr.getAttribute('data-filter'),decodeURIComponent(tr.getAttribute('data-value')))));
+}
+
+function yesNo(v){const s=String(v||"").toLowerCase();if(s==='yes'||s==='true')return '<span class="pill pill-yes">Yes</span>';if(s==='no'||s==='false')return '<span class="pill pill-no">No</span>';return v||"—"}
+function sevBadge(s){const v=(s||"").toLowerCase();if(v==='high')return '<span class="tag high">HIGH</span>';if(v==='medium')return '<span class="tag medium">MEDIUM</span>';if(v==='low')return '<span class="tag low">LOW</span>';return s||"—"}
+function progressBar(pct){const p=Math.min(100,Math.max(0,pct||0));const cls=p<50?'critical':p<80?'warning':'good';return '<div style="display:flex;align-items:center;gap:8px"><div class="progress-bar"><div class="progress-fill '+cls+'" style="width:'+p+'%"></div></div><span>'+p+'%</span></div>'}
+
+function calcScore(){
+  const subs=DATA.subs,findings=DATA.findings;
+  if(!subs.length)return{score:0,label:'No Data',cls:'critical'};
+  const withBudget=subs.filter(s=>s.BudgetConfigured==='Yes').length;
+  const budgetPct=(withBudget/subs.length)*100;
+  const hi=findings.filter(f=>f.Severity==='High').length;
+  const med=findings.filter(f=>f.Severity==='Medium').length;
+  let s=budgetPct-hi*5-med*2;s=Math.max(0,Math.min(100,Math.round(s)));
+  let l,c;if(s>=80){l='Excellent';c='excellent'}else if(s>=60){l='Good';c='good'}else if(s>=40){l='Needs Attention';c='warning'}else{l='Critical';c='critical'}
+  return{score:s,label:l,cls:c};
+}
+
+function updateScore(sc){
+  const circ=364,off=circ-(sc.score/100)*circ;
+  el('scoreCircle').style.strokeDashoffset=off;
+  el('scoreCircle').style.stroke=sc.score>=80?'#10b981':sc.score>=60?'#3b82f6':sc.score>=40?'#f59e0b':'#ef4444';
+  el('scoreNum').textContent=sc.score;
+  el('scoreBadge').textContent=sc.label;
+  el('scoreBadge').className='score-badge '+sc.cls;
+}
+
+function applyFilter(k,v){FILTER={key:k,value:v};el('activeFilter').style.display='';el('activeFilter').textContent='Filter: '+k+' = '+v;renderAll()}
+el('btnClear').onclick=()=>{FILTER=null;el('activeFilter').style.display='none';renderAll()};
+
+function renderAll(){
+  const subs=DATA.subs,budgets=DATA.budgets,alerts=DATA.alerts,tags=DATA.tags;
+  let findings=DATA.findings;
+  if(FILTER)findings=findings.filter(f=>(f[FILTER.key]||"")===FILTER.value);
+  const withBudget=subs.filter(s=>s.BudgetConfigured==='Yes').length;
+  const hi=DATA.findings.filter(f=>f.Severity==='High').length;
+  const med=DATA.findings.filter(f=>f.Severity==='Medium').length;
+
+  el('kpiSubs').textContent=subs.length;
+  el('kpiBudgets').textContent=withBudget;
+  el('kpiTotalBudgets').textContent=budgets.length;
+  el('kpiActions').textContent=alerts.length;
+  el('kpiHigh').textContent=hi;
+  el('kpiMed').textContent=med;
+  el('rptSubs').textContent=subs.length;
+
+  renderTable(el('tblSubs'),[
+    {key:'SubscriptionName',header:'Subscription'},
+    {key:'BudgetCount',header:'Budgets'},
+    {key:'BudgetConfigured',header:'Configured',render:r=>yesNo(r.BudgetConfigured)},
+    {key:'ActionGroupCount',header:'Action Groups'},
+    {key:'ITSMIntegrated',header:'ITSM',render:r=>yesNo(r.ITSMIntegrated)},
+    {key:'TagCoverage',header:'Tag Coverage',render:r=>progressBar(r.TagCoverage)},
+    {key:'FindingsCount',header:'Findings',render:r=>r.FindingsCount>0?'<span class="tag medium">'+r.FindingsCount+'</span>':'0'}
+  ],subs,'SubscriptionName');
+
+  if(budgets.length){
+    el('budgetSec').classList.add('visible');
+    renderTable(el('tblBudgets'),[
+      {key:'SubscriptionName',header:'Subscription'},
+      {key:'BudgetName',header:'Budget'},
+      {key:'BudgetAmount',header:'Amount',render:r=>'£'+(r.BudgetAmount||0).toLocaleString()},
+      {key:'BudgetPeriod',header:'Period'},
+      {key:'PercentUsed',header:'Used',render:r=>progressBar(r.PercentUsed)},
+      {key:'Status',header:'Status',render:r=>{const s=(r.Status||"").toLowerCase();return s.includes('under')?'<span class="pill pill-yes">Under</span>':s.includes('over')?'<span class="pill pill-no">Over</span>':r.Status}},
+      {key:'ForecastThreshold',header:'Forecast Alert',render:r=>r.ForecastThreshold?r.ForecastThreshold+'%':'—'},
+      {key:'ActualThreshold',header:'Actual Alert',render:r=>r.ActualThreshold?r.ActualThreshold+'%':'—'}
+    ],budgets,'SubscriptionName');
+  }else{el('budgetSec').classList.remove('visible')}
+
+  if(alerts.length){
+    el('alertSec').classList.add('visible');
+    renderTable(el('tblAlerts'),[
+      {key:'SubscriptionName',header:'Subscription'},
+      {key:'ActionGroupName',header:'Action Group'},
+      {key:'ResourceGroup',header:'RG'},
+      {key:'Enabled',header:'Enabled',render:r=>yesNo(r.Enabled)},
+      {key:'EmailReceivers',header:'Recipients',render:r=>{const e=r.EmailReceivers||"";if(!e)return"—";const c=e.split(';').filter(Boolean).length;return c+' recipient(s)'}},
+      {key:'ITSMConnected',header:'ITSM',render:r=>yesNo(r.ITSMConnected)}
+    ],alerts,'SubscriptionName');
+  }else{el('alertSec').classList.remove('visible')}
+
+  if(tags.length){
+    el('tagSec').classList.add('visible');
+    renderTable(el('tblTags'),[
+      {key:'SubscriptionName',header:'Subscription'},
+      {key:'TotalResources',header:'Resources'},
+      {key:'TaggedResources',header:'Tagged'},
+      {key:'TagCoveragePercent',header:'Coverage',render:r=>progressBar(r.TagCoveragePercent)},
+      {key:'HasCostAllocationTags',header:'Cost Tags',render:r=>yesNo(r.HasCostAllocationTags)},
+      {key:'CommonTags',header:'Common Tags',render:r=>'<span class="muted" style="font-size:11px">'+(r.CommonTags||"—")+'</span>'}
+    ],tags,'SubscriptionName');
+  }else{el('tagSec').classList.remove('visible')}
+
+  if(findings.length){
+    el('findingSec').classList.add('visible');
+    renderTable(el('tblFindings'),[
+      {key:'SubscriptionName',header:'Subscription'},
+      {key:'Severity',header:'Severity',render:r=>sevBadge(r.Severity)},
+      {key:'Category',header:'Category'},
+      {key:'ResourceName',header:'Resource'},
+      {key:'Detail',header:'Finding'},
+      {key:'Recommendation',header:'Recommendation'}
+    ],findings,'SubscriptionName');
+  }else{el('findingSec').classList.remove('visible')}
+
+  const show=subs.length>0;
+  ['reportHeaderSec','scoreSec','kpiSec','subsSec'].forEach(id=>el(id).classList.toggle('visible',show));
+  if(show)updateScore(calcScore());
+  ['btnCSV','btnPDF'].forEach(id=>el(id).disabled=!show);
+}
+
+function exportCSV(){
+  const findings=DATA.findings;
+  if(!findings.length){toast('No findings','error');return}
+  const today=new Date().toISOString().slice(0,10);
+  const clean=v=>String(v||"").replace(/^[=+\-@]+/,"");
+  const hdr=["Date Identified","Ticket Number","Issue Description","Impact","Affected Resource(s)","Azure Service / Category","Root Cause","Recommendation","Justification / Benefit","Priority","Status","Owner / Engineer","Target Resolution Date","Date Resolved","Customer Feedback / Notes","Follow-up Actions","Validation Date","Comments"];
+  const rows=findings.map(f=>({
+    "Date Identified":today,"Ticket Number":"","Issue Description":clean(f.Detail),"Impact":clean(f.Severity),
+    "Affected Resource(s)":clean([f.SubscriptionName,f.ResourceName].filter(Boolean).join(" / ")),"Azure Service / Category":clean(f.Category||"Cost Management"),
+    "Root Cause":clean(f.Detail),"Recommendation":clean(f.Recommendation||f.Detail),"Justification / Benefit":"",
+    "Priority":clean(f.Severity),"Status":"Open","Owner / Engineer":"","Target Resolution Date":"",
+    "Date Resolved":"","Customer Feedback / Notes":"","Follow-up Actions":"","Validation Date":"","Comments":""
+  }));
+  let csv=hdr.join(",")+"\n";
+  rows.forEach(r=>{csv+=hdr.map(h=>{const v=clean(r[h]||"");return /[",\n]/.test(v)?'"'+v.replace(/"/g,'""')+'"':v}).join(",")+"\n"});
+  const blob=new Blob([csv],{type:"text/csv"});
+  const a=document.createElement("a");a.href=URL.createObjectURL(blob);
+  a.download=(el('customerName').value.trim()||"Customer").replace(/[^a-zA-Z0-9]/g,"_")+"_Cost_Review.csv";
+  a.click();toast('CSV exported!','success');
+}
+
+async function exportPDF(){
+  if(!DATA.subs.length){toast('No data','error');return}
+  showLoad('Generating PDF...');
+  try{
+    const opt={margin:[10,10],filename:(el('customerName').value.trim()||"Customer").replace(/[^a-zA-Z0-9]/g,"_")+"_Cost_Report.pdf",image:{type:'jpeg',quality:0.95},html2canvas:{scale:2},jsPDF:{unit:'mm',format:'a4',orientation:'landscape'}};
+    await html2pdf().set(opt).from(el('mainContent')).save();
+    toast('PDF exported!','success');
+  }catch(e){toast('PDF failed: '+e.message,'error')}
+  hideLoad();
+}
+
+el('btnGo').onclick=async()=>{
+  const f=el('auditFile').files[0];
+  if(!f){toast('Select audit file','error');return}
+  if(typeof XLSX==='undefined'){toast('XLSX not loaded','error');return}
+  showLoad('Processing...');
+  try{
+    const buf=await f.arrayBuffer();
+    const wb=XLSX.read(buf,{type:'array'});
+    DATA.subs=readSheet(wb,'Subscription_Summary');
+    DATA.budgets=readSheet(wb,'Budgets');
+    DATA.alerts=readSheet(wb,'Action_Groups');
+    DATA.tags=readSheet(wb,'Tagging_Coverage');
+    DATA.findings=readSheet(wb,'Findings');
+    FILTER=null;el('activeFilter').style.display='none';
+    el('rptCustomer').textContent=el('customerName').value.trim()||'Customer Report';
+    el('rptTime').textContent=fmtTime();
+    el('rptId').textContent=genId();
+    renderAll();
+    hideLoad();toast('Report generated! '+DATA.subs.length+' subscriptions.','success');
+  }catch(e){hideLoad();toast('Error: '+e.message,'error');console.error(e)}
+};
+
+el('btnCSV').onclick=exportCSV;
+el('btnPDF').onclick=exportPDF;
+el('btnHTML').onclick=()=>{const h='<!doctype html>'+document.documentElement.outerHTML;const b=new Blob([h],{type:'text/html'});const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download=(el('customerName').value.trim()||"TIEVA").replace(/[^a-zA-Z0-9]/g,"_")+"_Cost_Report.html";a.click();toast('HTML exported!','success')};
+</script>
+</body>
+</html>
