@@ -1,66 +1,82 @@
-<# =======================================================================
-   Azure Backup Posture Auditor (RSV + Backup Vaults) — tenant-agnostic
-   - Enumerates subscriptions (optionally limited via $TargetSubscriptions
-     and/or name/ID regex filters)
-   - Reports vault posture + VM/DB backup coverage
-   - Uses RSV **root GET** (2025-08-01) first, then backupResourceConfig / backupconfig
-   - Handles Backup Vaults returned without ResourceGroupName
-   - REST with retry, pagination for BackupInstances (x-ms-continuation) and
-     RSV backupProtectedItems (nextLink)
-   - VMs: backup cadence (policy → fallback to RP spacing), optional window,
-     last backup time/status, observed RPO, RpoSource, ProtectionState
-   - SQL in VM (workload): full/diff/log cadence + optional window (policy),
-     last backup status/time, observed RPO from RPs (prefers log)
-   - Azure SQL (PaaS): observed RPO from PITR (latest restorable time)
-   - Produces:
-       * Console tables
-       * XLSX with multiple sheets (RSV, BackupVaults, VM/DB coverage,
-         VM & SQL detail, Findings, Subscription_Summary, Summary)
-======================================================================= #>
+<#
+.SYNOPSIS
+  TIEVA Backup Posture Auditor
+  
+.DESCRIPTION
+  Comprehensive Azure backup audit for AMS customer meetings:
+  - Recovery Services Vaults (RSV) posture and configuration
+  - Backup Vaults (Data Protection) inventory
+  - VM backup coverage and RPO analysis
+  - SQL/Database backup coverage (workload + PaaS)
+  - Backup cadence, retention, and policy analysis
+  - Security settings (soft delete, MUA, immutability)
+  
+  Outputs multi-sheet Excel workbook: Backup_Audit.xlsx
+  
+.PARAMETER SubscriptionIds
+  Optional array of subscription IDs to audit. If not specified, audits all accessible subscriptions.
+  
+.PARAMETER OutPath
+  Output directory for the Excel file. Defaults to current user's Downloads folder.
+  
+.PARAMETER SubIncludeNameRegex
+  Optional regex filter to include subscriptions by name (e.g. 'Prod|Contoso')
+  
+.PARAMETER SubIncludeIdRegex
+  Optional regex filter to include subscriptions by ID
+  
+.PARAMETER Diagnostics
+  Enable verbose diagnostic warnings. Default: true
+  
+.EXAMPLE
+  .\BackupAudit.ps1
+  Audits all accessible subscriptions
+  
+.EXAMPLE
+  .\BackupAudit.ps1 -SubscriptionIds @("sub-id-1","sub-id-2")
+  Audits specific subscriptions
+  
+.EXAMPLE
+  .\BackupAudit.ps1 -SubIncludeNameRegex 'Prod|UAT'
+  Audits subscriptions matching the name pattern
+  
+.NOTES
+  Requires: Az.Accounts, Az.Resources, Az.RecoveryServices, Az.DataProtection, Az.Compute, Az.Sql, Az.PostgreSql modules
+  Permissions: Backup Reader, Reader on subscriptions
+#>
+
+[CmdletBinding()]
+param(
+  [Parameter(HelpMessage = "Subscription IDs to audit (optional - defaults to all accessible)")]
+  [string[]]$SubscriptionIds,
+  
+  [Parameter(HelpMessage = "Output directory for the Excel file")]
+  [string]$OutPath = "$HOME\Downloads",
+  
+  [Parameter(HelpMessage = "Regex filter for subscription names")]
+  [string]$SubIncludeNameRegex = '',
+  
+  [Parameter(HelpMessage = "Regex filter for subscription IDs")]
+  [string]$SubIncludeIdRegex = '',
+  
+  [Parameter(HelpMessage = "Enable diagnostic warnings")]
+  [bool]$Diagnostics = $true
+)
 
 $ErrorActionPreference = 'Stop'
 
-# --- Control which subscriptions to include ---
-$TargetSubscriptions = @(
-  '5961d092-dde6-40e2-90e5-2b6dab00b739',
-'03127f90-4f1f-4f83-b9a7-a23b39ecc91e',
-'fcaca3a0-0f22-4db3-9f41-248ba1e9be20',
-'c9400257-0d1b-4a59-b227-36b3aea73b0a',
-'961271eb-fe4d-455e-9f53-5b0a5a931bcb',
-'00f0e475-b85a-4f4e-a4df-84a44d547d95',
-'6ee22078-9979-48d2-996d-2c14734618dc',
-'5eac3012-879c-4bd6-81a7-e5cc0a531901',
-'1e08993c-9844-43ed-bdbc-ef2587524458',
-'68d0c954-0825-43ce-ac75-a906c966bd25',
-'0bfd305f-a119-4e90-b50d-1f9e89d0218e',
-'03c21c87-03df-4269-8afd-02ca992ac41a',
-'355305cb-774b-46a0-8f0b-71a9e5142b54',
-'38d0c9ac-0831-4f1c-894d-39366b733986',
-'f1aaf818-695c-4ef4-b33d-36c4ad28e9cd',
-'f2270be2-080c-49f0-8185-c3b4abb8c363',
-'5427645e-29fb-4ef3-9c2a-4f2f16a7f857',
-'e23df4c5-d3ac-4e8c-85bd-9eb34302b840',
-'05a2b24b-81bb-4e91-adac-d8e1953e73d9',
-'439d7cb9-6337-4538-9fd5-3f02004aeea0',
-'b4aace36-0bab-405a-87a1-9618cee47152',
-'5f938282-6c79-4d89-8ed5-6c8a50fc5a99',
-'c817d346-4bcc-4d26-8adf-85923187d757',
-'2a9d8c25-c84c-4de3-82fe-aa7cc2746559',
-'a5925d87-1398-410e-b127-c34d02f4672c',
-'354118f8-195a-4a00-b8c8-915b82bf58c5',
-'d93d85d7-6a3c-4b03-a510-7d5e3d1d621c',
-'0cb811e8-b6c5-441c-92d9-be021a8fd5b4',
-'17553ace-0f3b-47f6-96c9-9b9e2812b1fb'
-)
+# ============================================================================
+# BANNER
+# ============================================================================
+
+Write-Host "`n==========================================" -ForegroundColor Cyan
+Write-Host "TIEVA Backup Posture Auditor" -ForegroundColor Cyan
+Write-Host "==========================================" -ForegroundColor Cyan
+Write-Host "Started: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')" -ForegroundColor Gray
+Write-Host ""
 
 # ---------------- Settings ----------------
-$ExportCsv   = $false                  # reserved if you later want CSV
-$OutPath     = "$HOME\Downloads"
-$Diagnostics = $true                   # set $false to silence warnings
-
-# Optional subscription include filters (regex). Leave blank to include all.
-$SubIncludeNameRegex = ''              # e.g. 'Prod|Contoso'
-$SubIncludeIdRegex   = ''              # e.g. '^[0-9a-f-]{36}$'
+$ExportCsv = $false                    # reserved if you later want CSV
 
 # RPO thresholds (hours)
 $VmRpoWarningHours    = 26
@@ -116,7 +132,7 @@ function To-AlwaysOnBool {
   (($A -eq 'AlwaysON') -or ($B -eq 'AlwaysON'))
 }
 
-# Normalize "On/Off" → "Enabled/Disabled"
+# Normalize "On/Off" â†’ "Enabled/Disabled"
 function Normalize-SD {
   param([string]$Value)
   if ([string]::IsNullOrWhiteSpace($Value)) { return $null }
@@ -269,7 +285,7 @@ function Parse-Iso8601Duration {
   New-TimeSpan -Days $days -Hours $hrs -Minutes $mins -Seconds $secs
 }
 
-# Snap cadence to nice values (avoid 3.76h; allow ±20m tolerance)
+# Snap cadence to nice values (avoid 3.76h; allow Â±20m tolerance)
 function Format-TimeSpanText {
   param($ts)
   if ($null -eq $ts) { return $null }
@@ -727,7 +743,7 @@ function Get-RsvVmItems {
     if ($items) { $all += $items; $pathCounts.direct = ($items | Measure-Object).Count }
   } catch {}
 
-  # Path 2: Containers → items
+  # Path 2: Containers â†’ items
   if (($all | Measure-Object).Count -eq 0) {
     foreach ($ctype in 'AzureVM','AzureVMAppContainer') {
       try {
@@ -742,7 +758,7 @@ function Get-RsvVmItems {
     }
   }
 
-  # Path 3: REST fallback — use known vault resourceId
+  # Path 3: REST fallback â€” use known vault resourceId
   if (($all | Measure-Object).Count -eq 0 -and $VaultResourceId) {
     foreach ($vApi in @($Api.RSV_ProtectedItems, '2023-08-01', '2021-12-01') | Select-Object -Unique) {
       foreach ($uri0 in @(
@@ -813,7 +829,7 @@ function Get-RsvVmItems {
   }
 
   if ($VerboseDiag) {
-    Write-Host ("[Diag] VM discovery paths ⇒ direct={0} containers={1} rest={2}" -f `
+    Write-Host ("[Diag] VM discovery paths â‡’ direct={0} containers={1} rest={2}" -f `
       $pathCounts.direct, $pathCounts.containers, $pathCounts.rest) -ForegroundColor DarkCyan
   }
 
@@ -948,16 +964,24 @@ function Get-RsvPosture {
 }
 
 # ---------------- Iterate subscriptions ----------------
-$useExplicitTargets = $TargetSubscriptions -and $TargetSubscriptions.Count -gt 0
+$useExplicitTargets = $SubscriptionIds -and $SubscriptionIds.Count -gt 0
 
-$subs = Get-AzSubscription | Where-Object {
-  # If explicit targets are defined, only include subs whose Id OR Name is in $TargetSubscriptions
-  (-not $useExplicitTargets -or ($TargetSubscriptions -contains $_.Id -or $TargetSubscriptions -contains $_.Name)) -and
+$subs = Get-AzSubscription -TenantId (Get-AzContext).Tenant.Id | Where-Object {
+  # If explicit targets are defined, only include subs whose Id is in $SubscriptionIds
+  (-not $useExplicitTargets -or ($SubscriptionIds -contains $_.Id)) -and
   (-not $SubIncludeNameRegex -or $_.Name -match $SubIncludeNameRegex) -and
   (-not $SubIncludeIdRegex   -or $_.Id   -match $SubIncludeIdRegex)
 } | Sort-Object Name
 
+if (-not $subs -or $subs.Count -eq 0) {
+  Write-Error "No accessible subscriptions found matching the specified criteria."
+  exit 1
+}
+
+Write-Host "`nFound $($subs.Count) subscription(s) to audit`n" -ForegroundColor Green
+
 foreach ($sub in $subs) {
+  Write-Host "Processing: $($sub.Name) ($($sub.Id))" -ForegroundColor Yellow
   Set-AzContext -SubscriptionId $sub.Id | Out-Null
 
   # Ensure providers registered (idempotent)
@@ -1069,7 +1093,7 @@ foreach ($sub in $subs) {
       $vmName  = if ($ridInfo) { $ridInfo.VMName } else { $it.Properties.FriendlyName }
       $vmRG    = if ($ridInfo) { $ridInfo.ResourceGroup } else { $null }
 
-      # Policy lookup (cmdlet cache → REST by policyId)
+      # Policy lookup (cmdlet cache â†’ REST by policyId)
       $policyName = $it.Properties.PolicyName
       $policyObj  = $null
 
@@ -1088,7 +1112,7 @@ foreach ($sub in $subs) {
         }
       }
 
-      # Configured cadence/window (policy) — fallback to recovery points
+      # Configured cadence/window (policy) â€” fallback to recovery points
       $sched = Get-PolicyScheduleInfo -Policy $policyObj
       $cadenceTs   = $sched.CadenceTS
       $cadenceText = $sched.CadenceText
@@ -1162,7 +1186,7 @@ foreach ($sub in $subs) {
       })
     }
 
-    # --- SQL in VM (workload) — detailed cadence + RPO (per database) ---
+    # --- SQL in VM (workload) â€” detailed cadence + RPO (per database) ---
     try {
       $awContainers = Get-AzRecoveryServicesBackupContainer -ContainerType AzureWorkload -Status Registered -ErrorAction SilentlyContinue
       foreach ($aw in $awContainers) {
@@ -1170,7 +1194,7 @@ foreach ($sub in $subs) {
         foreach ($it in ($sqlItems | Where-Object { $_ })) {
           $p = $it.Properties ?? $it.properties
 
-          # Policy lookup (name → cmdlet; else policyId via REST)
+          # Policy lookup (name â†’ cmdlet; else policyId via REST)
           $polObj  = $null
           $polName = $p.PolicyName ?? $p.policyName
 
@@ -1195,7 +1219,7 @@ foreach ($sub in $subs) {
             }
           }
 
-          # Configured cadence/window (policy) — tenant-agnostic
+          # Configured cadence/window (policy) â€” tenant-agnostic
           $sched   = Get-SqlVmPolicyScheduleInfo -Policy $polObj
           $fullCad = $sched.FullCadenceText
           $diffCad = $sched.DiffCadenceText
@@ -1324,7 +1348,7 @@ foreach ($sub in $subs) {
       $stor = $bv.Properties.StorageSettings
     }
 
-    # storageSettings → redundancy
+    # storageSettings â†’ redundancy
     $redundancy = $null
     if ($stor) {
       if ($stor -is [System.Collections.IEnumerable] -and -not ($stor -is [string])) {
@@ -1558,7 +1582,7 @@ foreach ($sub in $subs) {
   }
 
   # ==================================================
-  # Azure SQL DB (PaaS) — observed RPO from PITR
+  # Azure SQL DB (PaaS) â€” observed RPO from PITR
   # ==================================================
   $sqlServers = @()
   try {
@@ -1738,17 +1762,17 @@ Print-Section "Backup Vaults" $bvReport @(
   'SecurityLevel','MUAEnabled','Immutable'
 ) @('SubscriptionName','ResourceGroup','VaultName')
 
-Print-Section "Virtual Machines – Backup Coverage" $vmReport @(
+Print-Section "Virtual Machines â€“ Backup Coverage" $vmReport @(
   'SubscriptionName','VMName','ResourceGroup','Location','PowerState','IsBackedUp','Method'
 ) @('SubscriptionName','ResourceGroup','VMName')
 
-Print-Section "Backed-up VMs — Cadence & RPO" $vmDetailReport @(
+Print-Section "Backed-up VMs â€” Cadence & RPO" $vmDetailReport @(
   'SubscriptionName','VaultName','VMName','VMResourceGroup','PolicyName',
   'ConfiguredCadence','ConfiguredWindow','LastBackupTime','LastBackupStatus',
   'ObservedRPOHours','RpoSource','ProtectionState'
 ) @('SubscriptionName','VaultName','VMResourceGroup','VMName')
 
-Print-Section "SQL — Cadence & RPO" $sqlDetailReport @(
+Print-Section "SQL â€” Cadence & RPO" $sqlDetailReport @(
   'SubscriptionName','VaultName','Workload','ServerOrInstance','DatabaseName','PolicyName','PolicyPattern',
   'ConfiguredCadenceFull','ConfiguredCadenceDiff','ConfiguredCadenceLog','ConfiguredWindow',
   'LastBackupTime','LastBackupStatus','ObservedRPOHours','RpoSource','RpoStatus','ProtectionState'
@@ -1960,5 +1984,5 @@ if ($ExportXlsx) {
 
   Export-Sheet -Data $summary -WorksheetName 'Summary' -TableName 'Summary' -Columns @('Metric','Value')
 
-  Write-Host "`nExcel export complete → $XlsxPath" -ForegroundColor Green
+  Write-Host "`nExcel export complete â†’ $XlsxPath" -ForegroundColor Green
 }

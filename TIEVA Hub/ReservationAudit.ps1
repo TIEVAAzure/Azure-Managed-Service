@@ -68,12 +68,12 @@ function Get-SubscriptionList {
   if ($SubscriptionIds -and $SubscriptionIds.Count -gt 0) {
     $subs = @()
     foreach ($id in $SubscriptionIds) {
-      try { $subs += Get-AzSubscription -SubscriptionId $id -ErrorAction Stop } 
+      try { $subs += Get-AzSubscription -SubscriptionId $id -TenantId (Get-AzContext).Tenant.Id -ErrorAction Stop } 
       catch { Write-Warning "Could not access subscription $id : $_" }
     }
     return $subs
   } else {
-    return Get-AzSubscription | Where-Object { $_.State -eq 'Enabled' }
+    return Get-AzSubscription -TenantId (Get-AzContext).Tenant.Id | Where-Object { $_.State -eq 'Enabled' }
   }
 }
 

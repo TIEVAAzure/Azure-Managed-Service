@@ -1,41 +1,35 @@
 <#
 .SYNOPSIS
-  TIEVA Cost & Spend Management Audit Script
+  TIEVA Cost & Spend Management Audit Script v3
+  Fixed for guest accounts, SecureString tokens, and correct API endpoint
   
 .DESCRIPTION
-  Scans Azure subscriptions for cost management configurations including:
-  - Budgets (amounts, periods, thresholds, alerts)
-  - Cost allocation tags
-  - Alert configurations and ITSM integration
-  - Anomaly detection settings (Premium tier)
-  - Historical spend data
-  
-  Outputs multi-sheet Excel workbook: Cost_Management_Audit.xlsx
+  Audits Azure subscriptions for budget configurations, alerts, and cost management posture.
+  Uses Microsoft.CostManagement API (not deprecated Consumption API).
+  Handles SecureString tokens in newer Az module versions.
+  Supports guest user access to customer tenants.
   
 .PARAMETER SubscriptionIds
-  Optional array of subscription IDs to audit. If not specified, audits all accessible subscriptions.
+  Array of subscription IDs to audit. If not specified, audits all accessible subscriptions.
   
 .PARAMETER OutPath
-  Output directory for the Excel file. Defaults to current directory.
+  Output directory for Excel file. Defaults to current directory.
+  
+.PARAMETER TenantId
+  Target tenant ID for guest user access.
   
 .PARAMETER IncludeSpendHistory
-  Include last 3 months of spend data. Requires additional API calls.
+  Include historical spend data (optional - increases runtime)
   
 .EXAMPLE
-  .\CostManagementAudit.ps1
-  
-.EXAMPLE
-  .\CostManagementAudit.ps1 -SubscriptionIds @("sub-id-1","sub-id-2") -IncludeSpendHistory
-  
-.NOTES
-  Requires: Az.Accounts, Az.CostManagement, Az.Monitor, ImportExcel modules
-  Permissions: Cost Management Reader, Reader on subscriptions
+  .\CostManagementAudit.ps1 -SubscriptionIds @("sub1","sub2") -TenantId "tenant-guid"
 #>
 
 [CmdletBinding()]
 param(
   [string[]]$SubscriptionIds,
   [string]$OutPath = ".",
+  [string]$TenantId,
   [switch]$IncludeSpendHistory
 )
 
@@ -43,52 +37,62 @@ $ErrorActionPreference = 'Continue'
 $WarningPreference = 'SilentlyContinue'
 
 Write-Host "`n======================================" -ForegroundColor Cyan
-Write-Host "TIEVA Cost Management Audit v1.0" -ForegroundColor Cyan
+Write-Host "TIEVA Cost Management Audit v3.0" -ForegroundColor Cyan
 Write-Host "======================================`n" -ForegroundColor Cyan
 
-# ============================================================================
-# HELPER FUNCTIONS
-# ============================================================================
+# Check authentication
+$context = Get-AzContext
+if ($null -eq $context) {
+  Write-Host "Not authenticated. Run: Connect-AzAccount -TenantId <tenant-id>" -ForegroundColor Red
+  exit 1
+}
 
+Write-Host "✓ Authenticated as: $($context.Account.Id)" -ForegroundColor Green
+Write-Host "  Tenant: $($context.Tenant.Id)" -ForegroundColor Gray
+
+# Use tenant from context if not specified
+if (-not $TenantId) {
+  $TenantId = $context.Tenant.Id
+}
+
+# Function to get token (handles SecureString in newer Az modules)
+function Get-PlainToken {
+  param([string]$TenantId)
+  
+  $tokenResponse = Get-AzAccessToken -ResourceUrl "https://management.azure.com" -TenantId $TenantId
+  $token = $tokenResponse.Token
+  
+  # Handle SecureString (newer Az module versions)
+  if ($token -is [System.Security.SecureString]) {
+    $token = [System.Runtime.InteropServices.Marshal]::PtrToStringAuto(
+      [System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($token)
+    )
+  }
+  
+  return $token
+}
+
+# Get subscriptions
 function Get-SubscriptionList {
-  if ($SubscriptionIds) {
+  if ($SubscriptionIds -and $SubscriptionIds.Count -gt 0) {
     $subs = @()
     foreach ($id in $SubscriptionIds) {
       try {
-        $sub = Get-AzSubscription -SubscriptionId $id -ErrorAction Stop
+        $sub = Get-AzSubscription -SubscriptionId $id -TenantId $TenantId -ErrorAction Stop
         $subs += $sub
       } catch {
-        Write-Warning "Could not access subscription $id : $_"
+        Write-Warning "Could not access subscription $id"
       }
     }
     return $subs
   } else {
-    return Get-AzSubscription | Where-Object { $_.State -eq 'Enabled' }
+    return Get-AzSubscription -TenantId $TenantId | Where-Object { $_.State -eq 'Enabled' }
   }
 }
-
-function Get-MonthStartEnd {
-  param([int]$MonthsAgo = 0)
-  $now = Get-Date
-  $start = $now.AddMonths(-$MonthsAgo).Date.AddDays(1 - $now.Day)
-  if ($MonthsAgo -eq 0) {
-    $end = $now
-  } else {
-    $end = $start.AddMonths(1).AddDays(-1).AddHours(23).AddMinutes(59).AddSeconds(59)
-  }
-  return @{
-    Start = $start.ToString("yyyy-MM-ddTHH:mm:ss")
-    End = $end.ToString("yyyy-MM-ddTHH:mm:ss")
-  }
-}
-
-# ============================================================================
-# DATA COLLECTION
-# ============================================================================
 
 $subscriptions = Get-SubscriptionList
 
-if (-not $subscriptions) {
+if (-not $subscriptions -or $subscriptions.Count -eq 0) {
   Write-Error "No accessible subscriptions found."
   exit 1
 }
@@ -98,42 +102,46 @@ Write-Host "Found $($subscriptions.Count) subscription(s) to audit`n" -Foregroun
 $budgetReport = @()
 $subscriptionReport = @()
 $alertReport = @()
-$tagReport = @()
-$spendReport = @()
 $findings = @()
+$spendHistoryReport = @()
 
 foreach ($sub in $subscriptions) {
-  Write-Host "Processing: $($sub.Name) ($($sub.Id))" -ForegroundColor Yellow
+  Write-Host "Processing: $($sub.Name)" -ForegroundColor Yellow
   
   try {
-    Set-AzContext -SubscriptionId $sub.Id -ErrorAction Stop | Out-Null
+    $null = Set-AzContext -SubscriptionId $sub.Id -TenantId $TenantId -ErrorAction Stop
   } catch {
-    Write-Warning "  Could not set context: $_"
+    Write-Warning "  Could not set context"
     continue
   }
   
-  # -----------------------------------------------------------
-  # 1. BUDGETS
-  # -----------------------------------------------------------
-  Write-Host "  → Checking budgets..." -NoNewline
-  
-  $budgets = @()
-  try {
-    # Get budgets at subscription scope
-    $budgetScope = "/subscriptions/$($sub.Id)"
-    $budgets = Get-AzConsumptionBudget -Scope $budgetScope -ErrorAction SilentlyContinue
-    
-    if (-not $budgets) {
-      $budgets = @()
-    }
-  } catch {
-    Write-Verbose "    Could not retrieve budgets: $_"
+  # Get fresh token for this tenant
+  $token = Get-PlainToken -TenantId $TenantId
+  $headers = @{
+    'Authorization' = "Bearer $token"
+    'Content-Type'  = 'application/json'
   }
   
-  Write-Host " $($budgets.Count) found" -ForegroundColor Cyan
+  # Use the CORRECT API: Microsoft.CostManagement (not Consumption)
+  Write-Host "  → Checking budgets..." -NoNewline
+  $budgets = @()
   
+  $uri = "https://management.azure.com/subscriptions/$($sub.Id)/providers/Microsoft.CostManagement/budgets?api-version=2024-08-01"
+  
+  try {
+    $response = Invoke-RestMethod -Uri $uri -Headers $headers -Method Get -ErrorAction Stop
+    
+    if ($response.value) {
+      $budgets = $response.value
+    }
+  } catch {
+    # Silent fail - will show 0 budgets
+  }
+  
+  Write-Host " $($budgets.Count) found" -ForegroundColor $(if ($budgets.Count -gt 0) { "Green" } else { "Yellow" })
+  
+  # Finding if no budgets
   if ($budgets.Count -eq 0) {
-    # No budgets configured
     $findings += [PSCustomObject]@{
       SubscriptionName = $sub.Name
       SubscriptionId   = $sub.Id
@@ -141,26 +149,24 @@ foreach ($sub in $subscriptions) {
       Category         = 'Cost Management'
       ResourceType     = 'Subscription'
       ResourceName     = $sub.Name
-      ResourceGroup    = 'N/A'
       Detail           = 'No budgets configured for this subscription'
       Recommendation   = 'Configure monthly budget with forecast and actual spend alerts'
     }
   }
   
   foreach ($budget in $budgets) {
+    $props = $budget.properties
+    
     $forecastThreshold = $null
     $actualThreshold = $null
     $alertEmails = @()
     
-    # Parse notifications/alerts
-    if ($budget.Notification) {
-      foreach ($notifKey in $budget.Notification.Keys) {
-        $notif = $budget.Notification[$notifKey]
-        
-        if ($notif.Enabled) {
-          $threshold = $notif.Threshold
-          $operator = $notif.Operator
-          $thresholdType = $notif.ThresholdType
+    if ($props.notifications) {
+      foreach ($notifName in $props.notifications.PSObject.Properties.Name) {
+        $notif = $props.notifications.$notifName
+        if ($notif.enabled) {
+          $threshold = $notif.threshold
+          $thresholdType = $notif.thresholdType
           
           if ($thresholdType -eq 'Forecasted') {
             if ($null -eq $forecastThreshold -or $threshold -lt $forecastThreshold) {
@@ -172,47 +178,45 @@ foreach ($sub in $subscriptions) {
             }
           }
           
-          # Collect contact emails
-          if ($notif.ContactEmails) {
-            $alertEmails += $notif.ContactEmails
+          if ($notif.contactEmails) {
+            # Handle both string and array formats
+            if ($notif.contactEmails -is [string]) {
+              $alertEmails += $notif.contactEmails -split '\s+'
+            } else {
+              $alertEmails += $notif.contactEmails
+            }
           }
         }
       }
     }
     
     $alertEmailsStr = ($alertEmails | Select-Object -Unique) -join '; '
-    
-    # Budget period
-    $timeGrain = $budget.TimeGrain
-    $period = switch ($timeGrain) {
-      'Monthly' { 'Monthly' }
-      'Quarterly' { 'Quarterly' }
-      'Annually' { 'Annually' }
-      default { $timeGrain }
-    }
-    
-    $budgetAmount = $budget.Amount
-    $currentSpend = $budget.CurrentSpend
+    $budgetAmount = $props.amount
+    $currentSpend = if ($props.currentSpend) { $props.currentSpend.amount } else { 0 }
+    $forecastSpend = if ($props.forecastSpend) { $props.forecastSpend.amount } else { 0 }
+    $currency = if ($props.currentSpend) { $props.currentSpend.unit } else { 'GBP' }
     
     $budgetReport += [PSCustomObject]@{
       SubscriptionName      = $sub.Name
       SubscriptionId        = $sub.Id
-      BudgetName            = $budget.Name
-      BudgetAmount          = $budgetAmount
-      Currency              = 'GBP'
-      BudgetPeriod          = $period
-      StartDate             = $budget.TimePeriod.StartDate
-      EndDate               = $budget.TimePeriod.EndDate
+      BudgetName            = $budget.name
+      BudgetAmount          = [math]::Round($budgetAmount, 2)
+      Currency              = $currency
+      BudgetPeriod          = $props.timeGrain
+      StartDate             = $props.timePeriod.startDate
+      EndDate               = $props.timePeriod.endDate
       ForecastThreshold     = $forecastThreshold
       ActualThreshold       = $actualThreshold
       AlertRecipients       = $alertEmailsStr
-      CurrentSpend          = $currentSpend
-      BudgetRemaining       = ($budgetAmount - $currentSpend)
+      CurrentSpend          = [math]::Round($currentSpend, 2)
+      ForecastSpend         = [math]::Round($forecastSpend, 2)
+      BudgetRemaining       = [math]::Round(($budgetAmount - $currentSpend), 2)
       PercentUsed           = if ($budgetAmount -gt 0) { [math]::Round(($currentSpend / $budgetAmount) * 100, 1) } else { 0 }
+      PercentForecasted     = if ($budgetAmount -gt 0) { [math]::Round(($forecastSpend / $budgetAmount) * 100, 1) } else { 0 }
       Status                = if ($currentSpend -lt $budgetAmount) { 'Under Budget' } else { 'Over Budget' }
     }
     
-    # Findings: Missing thresholds
+    # Findings for missing configurations
     if ($null -eq $forecastThreshold) {
       $findings += [PSCustomObject]@{
         SubscriptionName = $sub.Name
@@ -220,10 +224,9 @@ foreach ($sub in $subscriptions) {
         Severity         = 'Medium'
         Category         = 'Budget Configuration'
         ResourceType     = 'Budget'
-        ResourceName     = $budget.Name
-        ResourceGroup    = 'N/A'
-        Detail           = 'Budget does not have forecast threshold alert configured'
-        Recommendation   = 'Add forecast alert at 80% threshold for proactive notification'
+        ResourceName     = $budget.name
+        Detail           = 'Budget missing forecast threshold alert'
+        Recommendation   = 'Add forecast alert at 80% threshold'
       }
     }
     
@@ -234,9 +237,8 @@ foreach ($sub in $subscriptions) {
         Severity         = 'Medium'
         Category         = 'Budget Configuration'
         ResourceType     = 'Budget'
-        ResourceName     = $budget.Name
-        ResourceGroup    = 'N/A'
-        Detail           = 'Budget does not have actual spend threshold alert configured'
+        ResourceName     = $budget.name
+        Detail           = 'Budget missing actual spend threshold alert'
         Recommendation   = 'Add actual spend alert at 100% threshold'
       }
     }
@@ -248,201 +250,97 @@ foreach ($sub in $subscriptions) {
         Severity         = 'High'
         Category         = 'Budget Configuration'
         ResourceType     = 'Budget'
-        ResourceName     = $budget.Name
-        ResourceGroup    = 'N/A'
-        Detail           = 'Budget has no email recipients configured for alerts'
-        Recommendation   = 'Configure alert recipients including customer budget owners and TIEVA CloudOps'
+        ResourceName     = $budget.name
+        Detail           = 'Budget has no email recipients'
+        Recommendation   = 'Configure alert recipients'
       }
     }
   }
   
-  # -----------------------------------------------------------
-  # 2. COST ALERTS (Action Groups)
-  # -----------------------------------------------------------
-  Write-Host "  → Checking alert configurations..." -NoNewline
-  
+  # Action Groups
+  Write-Host "  → Checking action groups..." -NoNewline
   $actionGroups = @()
   try {
-    $actionGroups = Get-AzActionGroup -ErrorAction SilentlyContinue
-  } catch {
-    Write-Verbose "    Could not retrieve action groups: $_"
-  }
-  
-  Write-Host " $($actionGroups.Count) action group(s)" -ForegroundColor Cyan
+    $actionGroups = @(Get-AzActionGroup -ErrorAction SilentlyContinue)
+  } catch { }
+  Write-Host " $($actionGroups.Count) found" -ForegroundColor Cyan
   
   foreach ($ag in $actionGroups) {
     $emailReceivers = @()
-    $webhookReceivers = @()
-    $itsmConnected = $false
-    
     if ($ag.EmailReceiver) {
       $emailReceivers = $ag.EmailReceiver | ForEach-Object { $_.EmailAddress }
     }
     
-    if ($ag.WebhookReceiver) {
-      $webhookReceivers = $ag.WebhookReceiver | ForEach-Object { $_.ServiceUri }
-      
-      # Check if any webhook points to ITSM (common patterns)
-      foreach ($uri in $webhookReceivers) {
-        if ($uri -match 'servicenow|jira|itsm|freshservice|zendesk') {
-          $itsmConnected = $true
-          break
-        }
-      }
-    }
-    
-    if ($ag.ItsmReceiver) {
-      $itsmConnected = $true
-    }
-    
     $alertReport += [PSCustomObject]@{
-      SubscriptionName  = $sub.Name
-      SubscriptionId    = $sub.Id
-      ActionGroupName   = $ag.Name
-      ResourceGroup     = $ag.ResourceGroupName
-      Enabled           = $ag.Enabled
-      EmailReceivers    = ($emailReceivers -join '; ')
-      WebhookCount      = $webhookReceivers.Count
-      ITSMConnected     = $itsmConnected
-      Location          = $ag.Location
-    }
-  }
-  
-  # -----------------------------------------------------------
-  # 3. COST ALLOCATION TAGS
-  # -----------------------------------------------------------
-  Write-Host "  → Analyzing cost allocation tags..." -NoNewline
-  
-  $resources = @()
-  try {
-    $resources = Get-AzResource -ErrorAction SilentlyContinue | Select-Object -First 500
-  } catch {
-    Write-Verbose "    Could not retrieve resources: $_"
-  }
-  
-  $taggedResources = 0
-  $commonTags = @{}
-  $costAllocationTags = @('CostCenter', 'Department', 'Project', 'Environment', 'Owner', 'Application', 'BusinessUnit')
-  
-  foreach ($res in $resources) {
-    if ($res.Tags -and $res.Tags.Count -gt 0) {
-      $taggedResources++
-      
-      foreach ($tagKey in $res.Tags.Keys) {
-        if (-not $commonTags.ContainsKey($tagKey)) {
-          $commonTags[$tagKey] = 0
-        }
-        $commonTags[$tagKey]++
-      }
-    }
-  }
-  
-  $tagCoverage = if ($resources.Count -gt 0) { [math]::Round(($taggedResources / $resources.Count) * 100, 1) } else { 0 }
-  
-  # Check for cost allocation tags
-  $hasCostAllocationTags = $false
-  foreach ($tag in $costAllocationTags) {
-    if ($commonTags.ContainsKey($tag)) {
-      $hasCostAllocationTags = $true
-      break
-    }
-  }
-  
-  Write-Host " $tagCoverage% coverage" -ForegroundColor Cyan
-  
-  $tagReport += [PSCustomObject]@{
-    SubscriptionName      = $sub.Name
-    SubscriptionId        = $sub.Id
-    TotalResources        = $resources.Count
-    TaggedResources       = $taggedResources
-    TagCoveragePercent    = $tagCoverage
-    CommonTags            = (($commonTags.Keys | Select-Object -First 10) -join ', ')
-    HasCostAllocationTags = $hasCostAllocationTags
-  }
-  
-  # Finding: Low tag coverage
-  if ($tagCoverage -lt 50) {
-    $findings += [PSCustomObject]@{
       SubscriptionName = $sub.Name
       SubscriptionId   = $sub.Id
-      Severity         = 'Medium'
-      Category         = 'Cost Allocation'
-      ResourceType     = 'Subscription'
-      ResourceName     = $sub.Name
-      ResourceGroup    = 'N/A'
-      Detail           = "Only $tagCoverage% of resources have tags configured"
-      Recommendation   = 'Implement tagging policy with cost allocation tags (CostCenter, Department, Project)'
+      ActionGroupName  = $ag.Name
+      ResourceGroup    = $ag.ResourceGroupName
+      Enabled          = $ag.Enabled
+      EmailReceivers   = ($emailReceivers -join '; ')
+      ITSMConnected    = [bool]($ag.ItsmReceiver -or $ag.WebhookReceiver)
     }
   }
   
-  if (-not $hasCostAllocationTags) {
-    $findings += [PSCustomObject]@{
-      SubscriptionName = $sub.Name
-      SubscriptionId   = $sub.Id
-      Severity         = 'High'
-      Category         = 'Cost Allocation'
-      ResourceType     = 'Subscription'
-      ResourceName     = $sub.Name
-      ResourceGroup    = 'N/A'
-      Detail           = 'No standard cost allocation tags detected'
-      Recommendation   = 'Define and apply cost allocation tagging strategy for financial accountability'
-    }
-  }
-  
-  # -----------------------------------------------------------
-  # 4. HISTORICAL SPEND DATA (if requested)
-  # -----------------------------------------------------------
+  # Spend History (if requested)
   if ($IncludeSpendHistory) {
-    Write-Host "  → Retrieving spend history..." -NoNewline
+    Write-Host "  → Fetching spend history..." -NoNewline
     
-    for ($i = 2; $i -ge 0; $i--) {
-      $period = Get-MonthStartEnd -MonthsAgo $i
-      $monthLabel = (Get-Date).AddMonths(-$i).ToString("MMM yyyy")
+    try {
+      # Get last 3 months of spend data using Cost Management Query API
+      $endDate = Get-Date
+      $startDate = $endDate.AddMonths(-3)
       
-      try {
-        # Use Azure Cost Management API
-        $costParams = @{
-          Scope = "/subscriptions/$($sub.Id)"
-          Timeframe = 'Custom'
-          TimePeriodFrom = $period.Start
-          TimePeriodTo = $period.End
-          Granularity = 'None'
-          ErrorAction = 'SilentlyContinue'
+      $queryUri = "https://management.azure.com/subscriptions/$($sub.Id)/providers/Microsoft.CostManagement/query?api-version=2023-11-01"
+      
+      $queryBody = @{
+        type = "ActualCost"
+        timeframe = "Custom"
+        timePeriod = @{
+          from = $startDate.ToString("yyyy-MM-dd")
+          to = $endDate.ToString("yyyy-MM-dd")
         }
-        
-        $usage = Get-AzConsumptionUsageDetail @costParams | Measure-Object -Property PretaxCost -Sum
-        $totalCost = if ($usage.Sum) { [math]::Round($usage.Sum, 2) } else { 0 }
-        
-        $spendReport += [PSCustomObject]@{
-          SubscriptionName = $sub.Name
-          SubscriptionId   = $sub.Id
-          Month            = $monthLabel
-          TotalSpend       = $totalCost
-          Currency         = 'GBP'
+        dataset = @{
+          granularity = "Monthly"
+          aggregation = @{
+            totalCost = @{
+              name = "Cost"
+              function = "Sum"
+            }
+          }
         }
-      } catch {
-        Write-Verbose "    Could not retrieve spend for $monthLabel : $_"
+      } | ConvertTo-Json -Depth 10
+      
+      $costResponse = Invoke-RestMethod -Uri $queryUri -Headers $headers -Method Post -Body $queryBody -ErrorAction Stop
+      
+      if ($costResponse.properties.rows) {
+        foreach ($row in $costResponse.properties.rows) {
+          $spendHistoryReport += [PSCustomObject]@{
+            SubscriptionName = $sub.Name
+            SubscriptionId   = $sub.Id
+            Period           = $row[1]  # Date
+            Cost             = [math]::Round($row[0], 2)  # Cost
+            Currency         = $costResponse.properties.columns[2].name  # Currency info
+          }
+        }
+        Write-Host " $($costResponse.properties.rows.Count) months" -ForegroundColor Green
+      } else {
+        Write-Host " no data" -ForegroundColor Yellow
       }
+    } catch {
+      Write-Host " failed" -ForegroundColor Red
     }
-    
-    Write-Host " 3 months retrieved" -ForegroundColor Cyan
   }
   
-  # -----------------------------------------------------------
-  # 5. SUBSCRIPTION SUMMARY
-  # -----------------------------------------------------------
-  
+  # Subscription summary
   $subscriptionReport += [PSCustomObject]@{
-    SubscriptionName    = $sub.Name
-    SubscriptionId      = $sub.Id
-    State               = $sub.State
-    BudgetCount         = $budgets.Count
-    BudgetConfigured    = if ($budgets.Count -gt 0) { 'Yes' } else { 'No' }
-    ActionGroupCount    = $actionGroups.Count
-    ITSMIntegrated      = ($actionGroups | Where-Object { $_.ITSMConnected }).Count -gt 0
-    TagCoverage         = $tagCoverage
-    HasCostTags         = $hasCostAllocationTags
-    FindingsCount       = ($findings | Where-Object { $_.SubscriptionId -eq $sub.Id }).Count
+    SubscriptionName = $sub.Name
+    SubscriptionId   = $sub.Id
+    State            = $sub.State
+    BudgetCount      = $budgets.Count
+    BudgetConfigured = if ($budgets.Count -gt 0) { 'Yes' } else { 'No' }
+    ActionGroupCount = $actionGroups.Count
+    FindingsCount    = ($findings | Where-Object { $_.SubscriptionId -eq $sub.Id }).Count
   }
 }
 
@@ -450,133 +348,57 @@ Write-Host "`n========================================" -ForegroundColor Green
 Write-Host "AUDIT COMPLETE" -ForegroundColor Green
 Write-Host "========================================`n" -ForegroundColor Green
 
-# ============================================================================
-# CONSOLE OUTPUT
-# ============================================================================
+Write-Host "Summary:" -ForegroundColor Cyan
+Write-Host "  Subscriptions: $($subscriptions.Count)" -ForegroundColor White
+Write-Host "  Budgets: $($budgetReport.Count)" -ForegroundColor White
+Write-Host "  Findings: $($findings.Count)" -ForegroundColor White
 
-Write-Host "`n=== Subscription Summary ===" -ForegroundColor Cyan
-if ($subscriptionReport.Count -gt 0) {
-  $subscriptionReport | Format-Table SubscriptionName, BudgetConfigured, ActionGroupCount, ITSMIntegrated, TagCoverage, FindingsCount -AutoSize
-}
-
-Write-Host "`n=== Budgets ===" -ForegroundColor Cyan
-if ($budgetReport.Count -gt 0) {
-  $budgetReport | Format-Table SubscriptionName, BudgetName, BudgetAmount, BudgetPeriod, PercentUsed, Status -AutoSize
-} else {
-  Write-Host "No budgets found across any subscriptions." -ForegroundColor Yellow
-}
-
-Write-Host "`n=== Findings Summary ===" -ForegroundColor Cyan
 if ($findings.Count -gt 0) {
-  $highFindings = ($findings | Where-Object Severity -eq 'High').Count
-  $medFindings = ($findings | Where-Object Severity -eq 'Medium').Count
-  $lowFindings = ($findings | Where-Object Severity -eq 'Low').Count
-  
-  Write-Host "  High Priority:   $highFindings" -ForegroundColor Red
-  Write-Host "  Medium Priority: $medFindings" -ForegroundColor Yellow
-  Write-Host "  Low Priority:    $lowFindings" -ForegroundColor Gray
-  
-  Write-Host "`nTop Findings:" -ForegroundColor Cyan
-  $findings | Select-Object -First 10 | Format-Table SubscriptionName, Severity, Category, Detail -AutoSize
-} else {
-  Write-Host "No findings - excellent cost management posture!" -ForegroundColor Green
+  $high = ($findings | Where-Object Severity -eq 'High').Count
+  $med = ($findings | Where-Object Severity -eq 'Medium').Count
+  Write-Host "    High: $high | Medium: $med" -ForegroundColor Yellow
 }
 
-# ============================================================================
-# EXCEL EXPORT
-# ============================================================================
+# Excel export
+Write-Host "`nExporting to Excel..." -ForegroundColor Yellow
 
-$ExportXlsx = $true
+if (-not (Get-Module -ListAvailable -Name ImportExcel)) {
+  Write-Host "  Installing ImportExcel module..." -ForegroundColor Yellow
+  Install-Module ImportExcel -Scope CurrentUser -Force
+}
+
+Import-Module ImportExcel
+
 $XlsxPath = Join-Path $OutPath 'Cost_Management_Audit.xlsx'
 
-if ($ExportXlsx) {
-  Write-Host "`n=== Exporting to Excel ===" -ForegroundColor Cyan
-  
-  # Ensure ImportExcel module is available
-  if (-not (Get-Module -ListAvailable -Name ImportExcel)) {
-    Write-Host "Installing ImportExcel module..." -ForegroundColor Yellow
-    try {
-      if (-not (Get-PSRepository -Name PSGallery -ErrorAction SilentlyContinue)) {
-        Register-PSRepository -Default
-      }
-      Set-PSRepository -Name PSGallery -InstallationPolicy Trusted -ErrorAction SilentlyContinue | Out-Null
-      Install-Module ImportExcel -Scope CurrentUser -Force -ErrorAction Stop
-    } catch {
-      Write-Warning "Could not install ImportExcel automatically: $_"
-      Write-Host "Please run: Install-Module ImportExcel -Scope CurrentUser" -ForegroundColor Yellow
-      exit 1
-    }
-  }
-  
-  Import-Module ImportExcel -ErrorAction Stop
-  
-  # Remove existing file
-  if (Test-Path $XlsxPath) {
-    Remove-Item $XlsxPath -Force
-  }
-  
-  # Helper function to export sheets
-  function Export-Sheet {
-    param($Data, $WorksheetName, $TableName, $Columns = $null)
-    
-    if ($Data.Count -eq 0) {
-      Write-Host "  Skipping empty sheet: $WorksheetName" -ForegroundColor Gray
-      return
-    }
-    
-    $exportParams = @{
-      Path          = $XlsxPath
-      WorksheetName = $WorksheetName
-      TableName     = $TableName
-      TableStyle    = 'Medium9'
-      AutoSize      = $true
-      FreezeTopRow  = $true
-      BoldTopRow    = $true
-    }
-    
-    if ($Columns) {
-      $Data | Select-Object $Columns | Export-Excel @exportParams
-    } else {
-      $Data | Export-Excel @exportParams
-    }
-    
-    Write-Host "  ✓ $WorksheetName" -ForegroundColor Green
-  }
-  
-  # Export all sheets
-  Export-Sheet -Data $subscriptionReport -WorksheetName 'Subscription_Summary' -TableName 'Subscriptions'
-  Export-Sheet -Data $budgetReport -WorksheetName 'Budgets' -TableName 'Budgets'
-  Export-Sheet -Data $alertReport -WorksheetName 'Action_Groups' -TableName 'ActionGroups'
-  Export-Sheet -Data $tagReport -WorksheetName 'Tagging_Coverage' -TableName 'Tags'
-  
-  if ($spendReport.Count -gt 0) {
-    Export-Sheet -Data $spendReport -WorksheetName 'Spend_History' -TableName 'SpendHistory'
-  }
-  
-  if ($findings.Count -gt 0) {
-    Export-Sheet -Data $findings -WorksheetName 'Findings' -TableName 'Findings'
-  }
-  
-  # Summary sheet
-  $overallSummary = @(
-    [PSCustomObject]@{ Metric = 'Subscriptions Audited';     Value = $subscriptions.Count }
-    [PSCustomObject]@{ Metric = 'Subscriptions with Budgets'; Value = ($subscriptionReport | Where-Object BudgetConfigured -eq 'Yes').Count }
-    [PSCustomObject]@{ Metric = 'Total Budgets';              Value = $budgetReport.Count }
-    [PSCustomObject]@{ Metric = 'Action Groups';              Value = $alertReport.Count }
-    [PSCustomObject]@{ Metric = 'ITSM Integrated';            Value = ($alertReport | Where-Object ITSMConnected -eq $true).Count }
-    [PSCustomObject]@{ Metric = 'High Priority Findings';     Value = ($findings | Where-Object Severity -eq 'High').Count }
-    [PSCustomObject]@{ Metric = 'Medium Priority Findings';   Value = ($findings | Where-Object Severity -eq 'Medium').Count }
-    [PSCustomObject]@{ Metric = 'Low Priority Findings';      Value = ($findings | Where-Object Severity -eq 'Low').Count }
-  )
-  
-  Export-Sheet -Data $overallSummary -WorksheetName 'Summary' -TableName 'Summary'
-  
-  Write-Host "`nExcel export complete → $XlsxPath" -ForegroundColor Green
+if (Test-Path $XlsxPath) {
+  Remove-Item $XlsxPath -Force
 }
 
-Write-Host "`n✓ Audit complete!" -ForegroundColor Green
-Write-Host "Next steps:" -ForegroundColor Cyan
-Write-Host "  1. Review findings in the Findings sheet" -ForegroundColor White
-Write-Host "  2. Upload Cost_Management_Audit.xlsx to the HTML analyzer" -ForegroundColor White
-Write-Host "  3. Engage customers on subscriptions without budgets" -ForegroundColor White
-Write-Host "  4. Configure missing alerts and cost allocation tags`n" -ForegroundColor White
+function Export-Sheet {
+  param($Data, $WorksheetName, $TableName)
+  if ($Data.Count -eq 0) { return }
+  $Data | Export-Excel -Path $XlsxPath -WorksheetName $WorksheetName -TableName $TableName `
+    -TableStyle 'Medium9' -AutoSize -FreezeTopRow -BoldTopRow
+  Write-Host "  ✓ $WorksheetName ($($Data.Count) rows)" -ForegroundColor Green
+}
+
+Export-Sheet -Data $subscriptionReport -WorksheetName 'Subscription_Summary' -TableName 'Subscriptions'
+Export-Sheet -Data $budgetReport -WorksheetName 'Budgets' -TableName 'Budgets'
+Export-Sheet -Data $alertReport -WorksheetName 'Action_Groups' -TableName 'ActionGroups'
+Export-Sheet -Data $findings -WorksheetName 'Findings' -TableName 'Findings'
+
+if ($IncludeSpendHistory -and $spendHistoryReport.Count -gt 0) {
+  Export-Sheet -Data $spendHistoryReport -WorksheetName 'Spend_History' -TableName 'SpendHistory'
+}
+
+$summary = @(
+  [PSCustomObject]@{ Metric = 'Subscriptions Audited'; Value = $subscriptions.Count }
+  [PSCustomObject]@{ Metric = 'Budgets Found'; Value = $budgetReport.Count }
+  [PSCustomObject]@{ Metric = 'High Findings'; Value = ($findings | Where-Object Severity -eq 'High').Count }
+  [PSCustomObject]@{ Metric = 'Medium Findings'; Value = ($findings | Where-Object Severity -eq 'Medium').Count }
+)
+Export-Sheet -Data $summary -WorksheetName 'Summary' -TableName 'Summary'
+
+Write-Host "`n✓ Complete: $XlsxPath" -ForegroundColor Green
+Write-Host "`nNext: Upload to TIEVA_Cost_Management_Analyzer.html`n" -ForegroundColor Cyan
