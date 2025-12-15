@@ -1,0 +1,537 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>TIEVA — Network Topology Analyzer</title>
+<style>
+  :root{
+    --brand-green:#2DA58E; --critical:#ef4444; --moderate:#f59e0b; --excellent:#10b981;
+    --fg:#111827; --muted:#6b7280; --border:#e5e7eb; --canvas: var(--brand-green);
+    --link:#0f5eff; --content-max: 1440px;
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{
+    margin:0;
+    background:var(--canvas);
+    color:var(--fg);
+    font:14px/1.45 system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;
+  }
+  a{color:var(--link);text-decoration:none}
+  a:hover{text-decoration:underline}
+  .wrap{max-width:var(--content-max);margin:0 auto;padding:24px}
+  .brandbar{background:#000;color:#fff}
+  .brandwrap{
+    max-width:var(--content-max);
+    margin:0 auto;
+    padding:14px 24px;
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:12px;
+  }
+  .brandtitle{font-size:18px;font-weight:600}
+  .btnrow{display:flex;gap:8px;flex-wrap:wrap}
+  .header-btn{
+    appearance:none;
+    border:1px solid rgba(255,255,255,.25);
+    background:transparent;
+    color:#fff;
+    border-radius:8px;
+    padding:8px 12px;
+    cursor:pointer;
+    font-size:13px;
+  }
+  .header-btn:hover{border-color:#fff}
+  .row{display:flex;gap:20px;flex-wrap:wrap}
+  .col{flex:1 1 360px}
+  .card{
+    background:#fff;
+    border:1px solid var(--border);
+    border-radius:10px;
+    padding:16px;
+    margin:18px 0;
+  }
+  h2{margin:0 0 10px;font-size:18px}
+  h3{margin:0 0 10px;font-size:16px}
+  h4{margin:0 0 6px;font-size:13px}
+  .muted{color:var(--muted)}
+  .pill{
+    display:inline-block;
+    font-size:12px;
+    border-radius:999px;
+    padding:2px 8px;
+    border:1px solid var(--border);
+    background:#f9fafb;
+  }
+  .btn{
+    padding:8px 12px;
+    border:1px solid var(--border);
+    border-radius:8px;
+    background:#f9fafb;
+    cursor:pointer;
+    font-size:13px;
+  }
+  .btn.primary{
+    background:#0f5eff;
+    color:#fff;
+    border-color:#0f5eff;
+  }
+  input[type=file]{
+    border:1px solid var(--border);
+    border-radius:8px;
+    padding:6px 8px;
+    width:100%;
+  }
+  table{border-collapse:collapse;width:100%}
+  thead th{background:#fafafa}
+  th,td{
+    border-bottom:1px solid var(--border);
+    padding:6px 8px;
+    text-align:left;
+    font-size:13px;
+    vertical-align:top;
+  }
+  .scroller{max-height:520px;overflow:auto}
+  .tiles{display:flex;gap:12px;flex-wrap:wrap}
+  .tile{
+    flex:1 1 160px;
+    border:1px solid var(--border);
+    border-radius:10px;
+    padding:12px;
+    background:#fff;
+  }
+  .tile h4{
+    margin:0 0 6px;
+    font-size:12px;
+    color:#6b7280;
+    text-transform:uppercase;
+    letter-spacing:.3px;
+  }
+  .tile .big{font-size:22px;font-weight:700}
+  tbody tr[data-filter]{cursor:pointer}
+  tbody tr[data-filter]:hover{background:#f5f7fb}
+  .filterbar{
+    display:flex;
+    gap:8px;
+    align-items:center;
+    margin-bottom:8px;
+    flex-wrap:wrap;
+  }
+  .key{
+    font-size:12px;
+    color:#374151;
+    padding:4px 8px;
+    border:1px solid var(--border);
+    border-radius:8px;
+    background:#f9fafb;
+  }
+  .tag{
+    display:inline-block;
+    padding:2px 8px;
+    border-radius:999px;
+    font-size:12px;
+    color:#fff;
+    white-space:nowrap;
+  }
+  .tag.high,.tag.critical{background:var(--critical)}
+  .tag.medium,.tag.warning{background:var(--moderate)}
+  .tag.low,.tag.good{background:var(--excellent)}
+  .tag.info{background:#3b82f6}
+  .hidden{display:none!important}
+  .status{color:#fff;opacity:.95;margin-bottom:12px}
+  .pagetitle{color:#fff;font-weight:700;font-size:16px;margin-bottom:4px}
+</style>
+<script>
+(function(){var t=["https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js","https://unpkg.com/xlsx@0.18.5/dist/xlsx.full.min.js","https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"];function l(i){if(window.XLSX||i>=t.length)return;var s=document.createElement("script");s.src=t[i];s.async=true;s.onerror=function(){l(i+1)};document.head.appendChild(s)}l(0)})();
+</script>
+</head>
+<body>
+  <div class="brandbar">
+    <div class="brandwrap">
+      <div class="brandtitle">TIEVA — Network Topology Analyzer</div>
+      <div class="btnrow">
+        <button id="btnExportHTML" class="header-btn">Export HTML</button>
+        <button id="btnDownloadDetail" class="header-btn">Download Detail CSV</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="wrap">
+    <div class="pagetitle">Network security and topology posture overview</div>
+    <div class="status">
+      Upload your <strong>Network_Audit.xlsx</strong> to analyze VNets, subnets, NSG rules, 
+      public IPs, private endpoints, and network security findings.
+    </div>
+
+    <div class="card">
+      <div class="row">
+        <div class="col">
+          <h3>Network Audit (.xlsx)</h3>
+          <input id="auditXlsx" type="file" accept=".xlsx" />
+          <div class="muted" style="font-size:12px;margin-top:4px">
+            Expected sheets: <code>VNets</code>, <code>Subnets</code>, <code>NSG_Rules</code>, 
+            <code>Public_IPs</code>, <code>Findings</code>
+          </div>
+        </div>
+        <div class="col" style="display:flex;align-items:flex-end;gap:8px">
+          <div class="btn primary" id="go" role="button" tabindex="0">Generate report</div>
+          <div class="btn" id="clearFilter">Clear filter</div>
+          <span id="status" class="muted" style="align-self:center"></span>
+        </div>
+      </div>
+    </div>
+
+    <div id="kpiSec" class="row hidden">
+      <div class="col card">
+        <h2>At a glance</h2>
+        <div class="tiles">
+          <div class="tile"><h4>VNets</h4><div class="big" id="kpiVnets">0</div></div>
+          <div class="tile"><h4>Subnets</h4><div class="big" id="kpiSubnets">0</div></div>
+          <div class="tile"><h4>NSG Rules</h4><div class="big" id="kpiNsgRules">0</div></div>
+          <div class="tile"><h4>Public IPs</h4><div class="big" id="kpiPublicIps">0</div></div>
+          <div class="tile"><h4>High-Risk Rules</h4><div class="big" id="kpiHighRisk">0</div></div>
+          <div class="tile"><h4>Findings</h4><div class="big" id="kpiFindings">0</div></div>
+        </div>
+      </div>
+    </div>
+
+    <div id="summarySec" class="row hidden">
+      <div class="col card">
+        <h2>Summary</h2>
+        <div class="row">
+          <div class="col">
+            <h3>NSG Rules by Risk</h3>
+            <div id="tblRiskSummary" class="scroller"></div>
+          </div>
+          <div class="col">
+            <h3>High-Risk NSG Rules</h3>
+            <div id="tblHighRiskRules" class="scroller"></div>
+          </div>
+          <div class="col">
+            <h3>Subnets without NSG</h3>
+            <div id="tblNoNsgSubnets" class="scroller"></div>
+          </div>
+        </div>
+        <div class="row">
+          <div class="col">
+            <h3>Public IPs</h3>
+            <div id="tblPublicIps" class="scroller"></div>
+          </div>
+          <div class="col">
+            <h3>VNet Peerings</h3>
+            <div id="tblPeerings" class="scroller"></div>
+          </div>
+          <div class="col">
+            <h3>By Subscription</h3>
+            <div id="tblSubscriptions" class="scroller"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div id="findingsSec" class="row hidden">
+      <div class="col card">
+        <div class="filterbar">
+          <h2 style="margin:0">Findings & Recommendations</h2>
+          <span class="pill" id="activeFilter" style="display:none"></span>
+        </div>
+        <div id="tblFindings" class="scroller"></div>
+      </div>
+    </div>
+
+    <div id="detailSec" class="row hidden">
+      <div class="col card">
+        <h2>All NSG Rules</h2>
+        <div id="tblAllRules" class="scroller"></div>
+      </div>
+    </div>
+  </div>
+
+<script>
+let DATA = { vnets:[], subnets:[], nsgRules:[], publicIps:[], peerings:[], findings:[], subscriptions:[] };
+let FILTER = { active:false, key:null, value:null };
+
+const $ = id => document.getElementById(id);
+const escapeHtml = s => String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+
+function status(t){ $('status').textContent = t||''; }
+
+function readSheet(wb, name) {
+  if (!wb.SheetNames.includes(name)) return [];
+  return XLSX.utils.sheet_to_json(wb.Sheets[name], {defval:''});
+}
+
+function applyFilter(key, value) {
+  FILTER = { active:true, key, value };
+  $('activeFilter').style.display = '';
+  $('activeFilter').textContent = 'Filter: ' + key + ' = ' + value;
+  renderAll();
+}
+
+function clearFilter() {
+  FILTER = { active:false, key:null, value:null };
+  $('activeFilter').style.display = 'none';
+  renderAll();
+}
+
+function filterData(data) {
+  if (!FILTER.active) return data;
+  return data.filter(item => String(item[FILTER.key]||'').toLowerCase() === String(FILTER.value).toLowerCase());
+}
+
+function renderTable(el, columns, rows, clickKey) {
+  let html = '<table><thead><tr>';
+  columns.forEach(c => html += `<th>${c.header}</th>`);
+  html += '</tr></thead><tbody>';
+  rows.forEach(r => {
+    const attr = clickKey && r[clickKey] != null ? ` data-filter="${clickKey}" data-value="${escapeHtml(r[clickKey])}"` : '';
+    html += `<tr${attr}>`;
+    columns.forEach(c => html += `<td>${c.render ? c.render(r) : escapeHtml(r[c.key]||'')}</td>`);
+    html += '</tr>';
+  });
+  html += '</tbody></table>';
+  el.innerHTML = html;
+  if (clickKey) {
+    el.querySelectorAll('tbody tr[data-filter]').forEach(tr => {
+      tr.addEventListener('click', () => applyFilter(tr.getAttribute('data-filter'), tr.getAttribute('data-value')));
+    });
+  }
+}
+
+function riskPill(risk) {
+  const r = String(risk||'').toLowerCase();
+  if (r === 'critical') return '<span class="tag critical">CRITICAL</span>';
+  if (r === 'high') return '<span class="tag high">HIGH</span>';
+  if (r === 'medium') return '<span class="tag medium">MEDIUM</span>';
+  if (r === 'low') return '<span class="tag low">LOW</span>';
+  return `<span class="tag">${escapeHtml(risk)}</span>`;
+}
+
+function severityPill(sev) {
+  const s = String(sev||'').toLowerCase();
+  if (s === 'high') return '<span class="tag high">HIGH</span>';
+  if (s === 'medium') return '<span class="tag medium">MEDIUM</span>';
+  if (s === 'low') return '<span class="tag low">LOW</span>';
+  return `<span class="tag">${escapeHtml(sev)}</span>`;
+}
+
+function groupBy(arr, key) {
+  const m = {};
+  arr.forEach(x => { const k = x[key]||'(blank)'; (m[k]||(m[k]=[])).push(x); });
+  return m;
+}
+
+function renderAll() {
+  const vnets = filterData(DATA.vnets);
+  const subnets = filterData(DATA.subnets);
+  const nsgRules = filterData(DATA.nsgRules);
+  const publicIps = filterData(DATA.publicIps);
+  const peerings = filterData(DATA.peerings);
+  const findings = filterData(DATA.findings);
+
+  $('kpiVnets').textContent = vnets.length;
+  $('kpiSubnets').textContent = subnets.length;
+  $('kpiNsgRules').textContent = nsgRules.length;
+  $('kpiPublicIps').textContent = publicIps.length;
+  
+  const highRiskRules = nsgRules.filter(r => r.RiskLevel === 'Critical' || r.RiskLevel === 'High');
+  $('kpiHighRisk').textContent = highRiskRules.length;
+  $('kpiFindings').textContent = findings.filter(f => f.Severity === 'High').length;
+
+  const byRisk = groupBy(nsgRules, 'RiskLevel');
+  const riskRows = Object.entries(byRisk).map(([risk, arr]) => ({ risk, count: arr.length }))
+    .sort((a,b) => { const order = {Critical:0,High:1,Medium:2,Low:3}; return (order[a.risk]??4) - (order[b.risk]??4); });
+  
+  renderTable($('tblRiskSummary'), [
+    { key:'risk', header:'Risk Level', render: r => riskPill(r.risk) },
+    { key:'count', header:'Rules' }
+  ], riskRows, 'risk');
+
+  renderTable($('tblHighRiskRules'), [
+    { key:'SubscriptionName', header:'Subscription' },
+    { key:'NSGName', header:'NSG' },
+    { key:'RuleName', header:'Rule' },
+    { key:'Direction', header:'Dir' },
+    { key:'SourceAddressPrefix', header:'Source' },
+    { key:'DestinationPortRange', header:'Dest Port' },
+    { key:'RiskLevel', header:'Risk', render: r => riskPill(r.RiskLevel) }
+  ], highRiskRules.slice(0, 50), 'SubscriptionName');
+
+  const noNsgSubnets = subnets.filter(s => !s.NSGName && !s.HasNSG);
+  renderTable($('tblNoNsgSubnets'), [
+    { key:'SubscriptionName', header:'Subscription' },
+    { key:'VNetName', header:'VNet' },
+    { key:'SubnetName', header:'Subnet' },
+    { key:'AddressPrefix', header:'Address' }
+  ], noNsgSubnets, 'SubscriptionName');
+
+  renderTable($('tblPublicIps'), [
+    { key:'SubscriptionName', header:'Subscription' },
+    { key:'Name', header:'Name' },
+    { key:'IPAddress', header:'IP Address' },
+    { key:'SKU', header:'SKU' },
+    { key:'AssociatedTo', header:'Associated To' }
+  ], publicIps.slice(0, 50), 'SubscriptionName');
+
+  renderTable($('tblPeerings'), [
+    { key:'SubscriptionName', header:'Subscription' },
+    { key:'VNetName', header:'VNet' },
+    { key:'PeeringName', header:'Peering' },
+    { key:'PeeringState', header:'State' },
+    { key:'RemoteVNet', header:'Remote VNet' }
+  ], peerings, 'SubscriptionName');
+
+  const bySub = groupBy([...vnets, ...subnets], 'SubscriptionName');
+  const subRows = Object.entries(bySub).map(([sub, arr]) => {
+    const subFindings = findings.filter(f => f.SubscriptionName === sub);
+    return { subscription: sub, resources: arr.length, findings: subFindings.length };
+  }).sort((a,b) => b.findings - a.findings);
+  
+  renderTable($('tblSubscriptions'), [
+    { key:'subscription', header:'Subscription' },
+    { key:'resources', header:'Resources' },
+    { key:'findings', header:'Findings' }
+  ], subRows, 'subscription');
+
+  renderTable($('tblFindings'), [
+    { key:'SubscriptionName', header:'Subscription' },
+    { key:'Severity', header:'Severity', render: r => severityPill(r.Severity) },
+    { key:'Category', header:'Category' },
+    { key:'ResourceType', header:'Type' },
+    { key:'ResourceName', header:'Resource' },
+    { key:'Detail', header:'Finding' },
+    { key:'Recommendation', header:'Recommendation' }
+  ], findings, 'SubscriptionName');
+
+  renderTable($('tblAllRules'), [
+    { key:'SubscriptionName', header:'Subscription' },
+    { key:'NSGName', header:'NSG' },
+    { key:'RuleName', header:'Rule' },
+    { key:'Priority', header:'Priority' },
+    { key:'Direction', header:'Dir' },
+    { key:'Access', header:'Access' },
+    { key:'SourceAddressPrefix', header:'Source' },
+    { key:'DestinationPortRange', header:'Dest Port' },
+    { key:'RiskLevel', header:'Risk', render: r => riskPill(r.RiskLevel) }
+  ], nsgRules.slice(0, 500), 'SubscriptionName');
+
+  const show = DATA.vnets.length > 0 || DATA.findings.length > 0;
+  ['kpiSec','summarySec','findingsSec','detailSec'].forEach(id => {
+    $(id).classList.toggle('hidden', !show);
+  });
+}
+
+function cleanCell(v) {
+  if (!v) return '';
+  let s = String(v).trim();
+  s = s.replace(/^[=+\-@]+/, '');
+  s = s.replace(/^-\s*/, '');
+  return s;
+}
+
+async function handleGenerate() {
+  try {
+    status('');
+    const file = $('auditXlsx').files[0];
+    if (!file) { status('Choose the Network audit workbook.'); return; }
+    
+    if (typeof XLSX === 'undefined') { status('XLSX library loading...'); return; }
+    
+    const btn = $('go');
+    btn.textContent = 'Generating…';
+    btn.style.opacity = '.7';
+    
+    const buf = await file.arrayBuffer();
+    const wb = XLSX.read(buf, { type: 'array' });
+    
+    DATA.vnets = readSheet(wb, 'VNets');
+    DATA.subnets = readSheet(wb, 'Subnets');
+    DATA.nsgRules = readSheet(wb, 'NSG_Rules');
+    DATA.publicIps = readSheet(wb, 'Public_IPs');
+    DATA.peerings = readSheet(wb, 'VNet_Peerings');
+    DATA.findings = readSheet(wb, 'Findings');
+    DATA.subscriptions = readSheet(wb, 'Subscription_Summary');
+    
+    FILTER = { active:false, key:null, value:null };
+    $('activeFilter').style.display = 'none';
+    renderAll();
+    
+    status(`Report generated — ${DATA.findings.length} findings.`);
+  } catch (err) {
+    console.error(err);
+    status('Error: ' + (err?.message || err));
+  } finally {
+    $('go').textContent = 'Generate report';
+    $('go').style.opacity = '';
+  }
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  $('go').addEventListener('click', handleGenerate);
+  $('clearFilter').addEventListener('click', clearFilter);
+  
+  $('btnDownloadDetail').addEventListener('click', () => {
+    const data = FILTER.active ? filterData(DATA.findings) : DATA.findings;
+    if (!data.length) { alert('Generate report first.'); return; }
+    
+    const today = new Date().toISOString().slice(0, 10);
+    
+    const rows = data.map(d => ({
+      "Date Identified": today,
+      "Ticket Number": "",
+      "Issue Description": cleanCell(d.Detail),
+      "Impact": cleanCell(d.Severity),
+      "Affected Resource(s)": cleanCell([d.SubscriptionName, d.ResourceGroup, d.ResourceName].filter(Boolean).join(" / ")),
+      "Azure Service / Category": cleanCell(d.Category || d.ResourceType),
+      "Root Cause": cleanCell(d.Detail),
+      "Recommendation": cleanCell(d.Recommendation),
+      "Justification / Benefit": cleanCell(d.Recommendation),
+      "Priority": cleanCell(d.Severity),
+      "Status": "Open",
+      "Owner / Engineer": "",
+      "Target Resolution Date": "",
+      "Date Resolved": "",
+      "Customer Feedback / Notes": "",
+      "Follow-up Actions": "",
+      "Validation Date": "",
+      "Comments": ""
+    }));
+    
+    const headers = [
+      "Date Identified", "Ticket Number", "Issue Description", "Impact",
+      "Affected Resource(s)", "Azure Service / Category", "Root Cause",
+      "Recommendation", "Justification / Benefit", "Priority", "Status",
+      "Owner / Engineer", "Target Resolution Date", "Date Resolved",
+      "Customer Feedback / Notes", "Follow-up Actions", "Validation Date", "Comments"
+    ];
+    
+    let csv = headers.join(",") + "\n";
+    rows.forEach(r => {
+      const vals = headers.map(h => {
+        const v = cleanCell(r[h] || "");
+        return /[",\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v;
+      });
+      csv += vals.join(",") + "\n";
+    });
+    
+    const blob = new Blob([csv], { type: "text/csv" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = "network_topology_findings.csv";
+    a.click();
+  });
+  
+  $('btnExportHTML').addEventListener('click', () => {
+    const html = '<!doctype html>' + document.documentElement.outerHTML;
+    const blob = new Blob([html], { type: 'text/html' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'TIEVA — Network Topology Analyzer.html';
+    a.click();
+  });
+});
+</script>
+</body>
+</html>

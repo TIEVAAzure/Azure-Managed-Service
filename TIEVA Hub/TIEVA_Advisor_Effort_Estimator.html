@@ -1,0 +1,575 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>TIEVA — Advisor Effort Estimator</title>
+<style>
+:root{--tieva-teal:#2DA58E;--tieva-navy:#1B365D;--critical:#ef4444;--warning:#f59e0b;--success:#10b981;--fg:#111827;--muted:#6b7280;--border:#e5e7eb;--canvas:var(--tieva-teal);--content-max:1440px}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--canvas);color:var(--fg);font:14px/1.5 'Segoe UI',system-ui,sans-serif}
+.wrap{max-width:var(--content-max);margin:0 auto;padding:24px}
+.brandbar{background:var(--tieva-navy);color:#fff;box-shadow:0 2px 8px rgba(0,0,0,0.15)}
+.brandwrap{max-width:var(--content-max);margin:0 auto;padding:16px 24px;display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap}
+.brandtitle{font-size:20px;font-weight:700}
+.brandsubtitle{font-size:12px;opacity:0.85;margin-top:2px}
+.btnrow{display:flex;gap:8px;flex-wrap:wrap}
+.header-btn{border:1px solid rgba(255,255,255,.35);background:rgba(255,255,255,.1);color:#fff;border-radius:6px;padding:8px 14px;cursor:pointer;font-size:13px;font-weight:500;transition:all 0.2s}
+.header-btn:hover{background:rgba(255,255,255,.25)}
+.header-btn:disabled{opacity:0.5;cursor:not-allowed}
+.pagetitle{font-size:26px;font-weight:700;color:#fff;margin-bottom:8px}
+.pagedesc{font-size:14px;color:rgba(255,255,255,0.9);margin-bottom:20px}
+.row{display:flex;gap:20px;flex-wrap:wrap}
+.col{flex:1 1 360px}
+.card{background:#fff;border:1px solid var(--border);border-radius:12px;padding:20px;margin-bottom:20px;box-shadow:0 1px 3px rgba(0,0,0,0.05)}
+h2{margin:0 0 14px;font-size:18px;color:var(--tieva-navy)}
+h3{margin:0 0 12px;font-size:16px;color:var(--tieva-navy)}
+.muted{color:var(--muted)}
+.btn{padding:10px 16px;border:1px solid var(--border);border-radius:8px;background:#f9fafb;cursor:pointer;font-size:13px;font-weight:500}
+.btn:hover{background:#f3f4f6}
+.btn:disabled{opacity:0.5;cursor:not-allowed}
+.btn.primary{background:var(--tieva-teal);color:#fff;border-color:var(--tieva-teal)}
+.btn.primary:hover:not(:disabled){background:#1a6b5a}
+input[type=file]{border:2px dashed var(--border);border-radius:8px;padding:12px;background:#f9fafb;cursor:pointer;width:100%}
+input[type=file]:hover{border-color:var(--tieva-teal);background:#f0fdf4}
+input[type=text]{border:1px solid var(--border);border-radius:8px;padding:10px 14px;font-size:14px;width:100%}
+input[type=text]:focus{outline:none;border-color:var(--tieva-teal)}
+label{font-weight:600;font-size:13px;display:block;margin-bottom:6px}
+.hint{font-size:12px;color:var(--muted);margin-top:4px}
+.score-container{display:flex;align-items:center;gap:24px;padding:24px;background:linear-gradient(135deg,#f8fafc,#f1f5f9);border-radius:12px;margin-bottom:20px}
+.score-ring{position:relative;width:140px;height:140px;flex-shrink:0}
+.score-ring svg{transform:rotate(-90deg);width:140px;height:140px}
+.score-ring circle{fill:none;stroke-width:12}
+.score-ring .bg{stroke:#e5e7eb}
+.score-ring .progress{stroke-linecap:round;transition:stroke-dashoffset 0.8s ease}
+.score-value{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);text-align:center}
+.score-value .number{font-size:36px;font-weight:700;color:var(--tieva-navy)}
+.score-value .label{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:1px}
+.score-details{flex:1}
+.score-details h3{margin:0 0 8px;font-size:20px}
+.score-details p{margin:0 0 12px;color:var(--muted);font-size:14px;line-height:1.5}
+.score-badge{display:inline-block;padding:6px 14px;border-radius:999px;font-size:13px;font-weight:600}
+.score-badge.critical{background:#fee2e2;color:#dc2626}
+.score-badge.warning{background:#fef3c7;color:#d97706}
+.score-badge.good{background:#d1fae5;color:#059669}
+.score-badge.excellent{background:#dbeafe;color:#1d4ed8}
+.report-header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:24px;padding:20px;background:#fff;border-radius:12px;border-left:4px solid var(--tieva-teal)}
+.report-header .customer-name{font-size:24px;font-weight:700;color:var(--tieva-navy)}
+.report-header .report-type{font-size:14px;color:var(--muted);margin-top:4px}
+.report-header .report-meta{text-align:right;font-size:13px;color:var(--muted)}
+.report-header .report-meta div{margin-bottom:6px}
+.report-header .report-meta strong{color:var(--fg)}
+.tiles{display:flex;gap:14px;flex-wrap:wrap}
+.tile{flex:1 1 150px;border:1px solid var(--border);border-radius:10px;padding:16px;background:#fff}
+.tile h4{margin:0 0 8px;font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:0.5px;font-weight:600}
+.tile .big{font-size:28px;font-weight:700;color:var(--tieva-navy)}
+table{border-collapse:collapse;width:100%}
+thead{background:var(--tieva-teal);color:#fff}
+th{text-align:left;padding:10px 12px;font-weight:600;font-size:12px;text-transform:uppercase}
+td{padding:10px 12px;border-bottom:1px solid var(--border);font-size:13px;vertical-align:top}
+tbody tr:hover{background:#f9fafb}
+tbody tr[data-filter]{cursor:pointer}
+tbody tr[data-filter]:hover{background:#f0fdf4}
+.scroller{max-height:480px;overflow:auto}
+.tag{display:inline-block;padding:3px 10px;border-radius:999px;font-size:11px;font-weight:600;color:#fff}
+.tag.high{background:var(--critical)}
+.tag.medium{background:var(--warning)}
+.tag.low{background:var(--success)}
+.pill{display:inline-block;font-size:12px;border-radius:999px;padding:4px 10px;border:1px solid var(--border);background:#f9fafb}
+.filterbar{display:flex;gap:10px;align-items:center;margin-bottom:12px;flex-wrap:wrap}
+.section{display:none}
+.section.visible{display:block}
+.loading-overlay{display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(255,255,255,0.95);z-index:9999;justify-content:center;align-items:center;flex-direction:column;gap:20px}
+.loading-overlay.active{display:flex}
+.spinner{width:56px;height:56px;border:5px solid var(--border);border-top-color:var(--tieva-teal);border-radius:50%;animation:spin 1s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.loading-text{font-size:18px;color:var(--tieva-navy);font-weight:600}
+.toast-container{position:fixed;top:24px;right:24px;z-index:10000;display:flex;flex-direction:column;gap:12px}
+.toast{background:#fff;border-radius:10px;padding:16px 20px;box-shadow:0 8px 24px rgba(0,0,0,0.15);animation:slideIn 0.3s ease;max-width:420px}
+.toast.success{border-left:4px solid var(--success)}
+.toast.error{border-left:4px solid var(--critical)}
+.toast.info{border-left:4px solid var(--tieva-teal)}
+@keyframes slideIn{from{transform:translateX(120%)}to{transform:translateX(0)}}
+/* Roadmap Visualization */
+.roadmap-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-top:16px}
+.wave-card{border:2px solid var(--border);border-radius:12px;padding:16px;background:#fff;transition:all 0.2s}
+.wave-card:hover{border-color:var(--tieva-teal);box-shadow:0 4px 12px rgba(0,0,0,0.1)}
+.wave-card.priority-1{border-left:4px solid var(--success)}
+.wave-card.priority-2{border-left:4px solid var(--tieva-teal)}
+.wave-card.priority-3{border-left:4px solid var(--warning)}
+.wave-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px}
+.wave-title{font-weight:700;font-size:15px;color:var(--tieva-navy)}
+.wave-badge{font-size:11px;padding:4px 10px;border-radius:999px;font-weight:600}
+.wave-badge.quick{background:#d1fae5;color:#059669}
+.wave-badge.standard{background:#dbeafe;color:#1d4ed8}
+.wave-badge.complex{background:#fef3c7;color:#d97706}
+.wave-stats{display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:13px}
+.wave-stat{padding:8px;background:#f9fafb;border-radius:6px}
+.wave-stat-label{color:var(--muted);font-size:11px}
+.wave-stat-value{font-weight:700;color:var(--tieva-navy)}
+/* Compliance Section */
+.compliance-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:16px}
+.compliance-card{border:1px solid var(--border);border-radius:12px;padding:20px;background:#fff}
+.compliance-header{display:flex;align-items:center;gap:12px;margin-bottom:16px}
+.compliance-icon{width:48px;height:48px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:20px}
+.compliance-icon.iso{background:#dbeafe;color:#1d4ed8}
+.compliance-icon.nist{background:#fef3c7;color:#d97706}
+.compliance-icon.cis{background:#d1fae5;color:#059669}
+.compliance-icon.soc{background:#f3e8ff;color:#7c3aed}
+.compliance-title{font-weight:700;font-size:16px;color:var(--tieva-navy)}
+.compliance-subtitle{font-size:12px;color:var(--muted)}
+.compliance-bar{height:8px;background:#e5e7eb;border-radius:999px;overflow:hidden;margin:12px 0}
+.compliance-fill{height:100%;border-radius:999px;transition:width 0.6s ease}
+.compliance-stats{display:flex;justify-content:space-between;font-size:13px;color:var(--muted)}
+/* Executive Summary (for PDF) */
+.exec-summary{background:#fff;border-radius:12px;padding:24px;margin-bottom:20px;page-break-inside:avoid}
+.exec-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:20px;margin-top:20px}
+.exec-metric{text-align:center;padding:20px;background:#f8fafc;border-radius:10px}
+.exec-metric .value{font-size:36px;font-weight:700;color:var(--tieva-navy)}
+.exec-metric .label{font-size:12px;color:var(--muted);text-transform:uppercase;margin-top:4px}
+.exec-highlights{margin-top:20px}
+.exec-highlight{display:flex;align-items:center;gap:12px;padding:12px;border-left:3px solid var(--tieva-teal);background:#f8fafc;margin-bottom:8px;border-radius:0 8px 8px 0}
+.exec-highlight-icon{font-size:18px}
+.exec-highlight-text{font-size:14px}
+.top-actions{margin-top:20px}
+.top-action{display:flex;align-items:center;gap:12px;padding:12px 16px;background:#fff;border:1px solid var(--border);border-radius:8px;margin-bottom:8px}
+.top-action-num{width:28px;height:28px;background:var(--tieva-navy);color:#fff;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:13px}
+.top-action-text{flex:1;font-size:14px}
+.top-action-hours{font-weight:700;color:var(--tieva-teal)}
+@media print{.brandbar,.header-btn,.btn,input,.loading-overlay,.toast-container,#uploadCard{display:none!important}.wrap{padding:0}.card{box-shadow:none;page-break-inside:avoid}.section.visible{display:block!important}body{background:#fff}}
+</style>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+</head>
+<body>
+<div class="loading-overlay" id="loadingOverlay"><div class="spinner"></div><div class="loading-text" id="loadingText">Generating report...</div></div>
+<div class="toast-container" id="toastContainer"></div>
+<div class="brandbar">
+<div class="brandwrap">
+<div><div class="brandtitle">TIEVA — Advisor Effort Estimator</div><div class="brandsubtitle">Azure Advisor Remediation Prioritisation Tool</div></div>
+<div class="btnrow">
+<button id="btnExecPDF" class="header-btn" disabled>Executive Summary</button>
+<button id="btnRoadmap" class="header-btn" disabled>Export Roadmap</button>
+<button id="btnCSV" class="header-btn" disabled>Customer Review</button>
+<button id="btnPDF" class="header-btn" disabled>Full Report PDF</button>
+</div>
+</div>
+</div>
+<div class="wrap" id="mainContent">
+<div class="pagetitle">Advisor Remediation Prioritisation</div>
+<div class="pagedesc">Upload your Azure Advisor CSV export and Effort Mapping workbook to generate remediation estimates, compliance mapping, and prioritisation roadmap.</div>
+
+<div class="card" id="uploadCard">
+<div class="row"><div class="col"><label for="customerName">Customer Name</label><input type="text" id="customerName" placeholder="Enter customer name for report header"/></div></div>
+<div class="row" style="margin-top:16px">
+<div class="col"><label>1) Advisor Export (CSV)</label><input id="advisorFile" type="file" accept=".csv"/><div class="hint">Columns: Business Impact, Recommendation, Resource Group, Resource Name, Type</div></div>
+<div class="col"><label>2) Effort Mapping (XLSX)</label><input id="effortXlsx" type="file" accept=".xlsx"/><div class="hint">Sheet: Mapping with Recommendation, BaseHours, PerResourceHours, Owner, DefaultRisk</div></div>
+<div class="col" style="display:flex;align-items:flex-end"><div style="display:flex;gap:10px"><button id="btnGo" class="btn primary">Generate Report</button><button id="btnClear" class="btn">Clear Filter</button></div></div>
+</div>
+</div>
+
+<div id="reportHeaderSec" class="section">
+<div class="report-header">
+<div><div class="customer-name" id="rptCustomer">Customer Report</div><div class="report-type">Azure Advisor Remediation Analysis</div></div>
+<div class="report-meta"><div><strong>Generated:</strong> <span id="rptTime"></span></div><div><strong>Items Analyzed:</strong> <span id="rptItems">0</span></div><div><strong>Report ID:</strong> <span id="rptId"></span></div></div>
+</div>
+</div>
+
+<div id="execSec" class="section">
+<div class="exec-summary">
+<h2>📊 Executive Summary</h2>
+<div class="exec-grid">
+<div class="exec-metric"><div class="value" id="execScore">0</div><div class="label">Compliance Score</div></div>
+<div class="exec-metric"><div class="value" id="execHours">0</div><div class="label">Total Hours</div></div>
+<div class="exec-metric"><div class="value" id="execItems">0</div><div class="label">Action Items</div></div>
+</div>
+<div class="exec-highlights">
+<div class="exec-highlight"><span class="exec-highlight-icon">🎯</span><span class="exec-highlight-text" id="execHighlight1">-</span></div>
+<div class="exec-highlight"><span class="exec-highlight-icon">⚠️</span><span class="exec-highlight-text" id="execHighlight2">-</span></div>
+<div class="exec-highlight"><span class="exec-highlight-icon">✅</span><span class="exec-highlight-text" id="execHighlight3">-</span></div>
+</div>
+<div class="top-actions"><h3 style="margin-bottom:12px">Top 5 Priority Actions</h3><div id="topActions"></div></div>
+</div>
+</div>
+
+<div id="scoreSec" class="section">
+<div class="score-container">
+<div class="score-ring">
+<svg viewBox="0 0 140 140"><circle class="bg" cx="70" cy="70" r="58"/><circle class="progress" id="scoreCircle" cx="70" cy="70" r="58" stroke-dasharray="364" stroke-dashoffset="364" stroke="#e5e7eb"/></svg>
+<div class="score-value"><div class="number" id="scoreNum">0</div><div class="label">Score</div></div>
+</div>
+<div class="score-details">
+<h3>Advisor Compliance Score</h3>
+<p id="scoreDesc">Upload your data to calculate your Azure Advisor compliance score.</p>
+<span class="score-badge" id="scoreBadge">Pending</span>
+</div>
+</div>
+</div>
+
+<div id="kpiSec" class="section">
+<div class="card">
+<h2>At a Glance</h2>
+<div class="tiles">
+<div class="tile"><h4>Total Hours</h4><div class="big" id="kpiHours">0</div></div>
+<div class="tile"><h4>Exemption Hours</h4><div class="big" id="kpiExempt">0</div></div>
+<div class="tile"><h4>Items</h4><div class="big" id="kpiItems">0</div></div>
+<div class="tile"><h4>Unique Recommendations</h4><div class="big" id="kpiRecs">0</div></div>
+<div class="tile"><h4>Change Windows</h4><div class="big" id="kpiChange">0%</div></div>
+<div class="tile"><h4>High-Risk</h4><div class="big" id="kpiHigh">0%</div></div>
+</div>
+</div>
+</div>
+
+<div id="roadmapSec" class="section">
+<div class="card">
+<h2>🗺️ Implementation Roadmap</h2>
+<p class="muted" style="margin-bottom:16px">Prioritised waves based on risk and business impact. Start with Wave 1 for quick wins.</p>
+<div class="roadmap-grid" id="roadmapGrid"></div>
+</div>
+</div>
+
+<div id="complianceSec" class="section">
+<div class="card">
+<h2>📋 Compliance Mapping</h2>
+<p class="muted" style="margin-bottom:16px">How Azure Advisor recommendations map to common compliance frameworks.</p>
+<div class="compliance-grid" id="complianceGrid"></div>
+</div>
+</div>
+
+<div id="summarySec" class="section">
+<div class="card">
+<h2>Summary</h2>
+<div class="row">
+<div class="col"><h3>Top Effort by Recommendation</h3><div id="tblRec" class="scroller"></div></div>
+<div class="col"><h3>By Owner</h3><div id="tblOwner" class="scroller"></div></div>
+<div class="col"><h3>By Risk</h3><div id="tblRisk" class="scroller"></div></div>
+</div>
+<div class="row" style="margin-top:20px">
+<div class="col"><h3>By Change Window</h3><div id="tblChange" class="scroller"></div></div>
+<div class="col"><h3>By Business Impact</h3><div id="tblImpact" class="scroller"></div></div>
+<div class="col"><h3>By Resource Type</h3><div id="tblType" class="scroller"></div></div>
+</div>
+</div>
+</div>
+
+<div id="vizSec" class="section">
+<div class="card">
+<h2>Visuals</h2>
+<div class="row">
+<div class="col"><h3>Hours by Risk</h3><canvas id="chRisk" height="180"></canvas></div>
+<div class="col"><h3>Hours by Impact</h3><canvas id="chImpact" height="180"></canvas></div>
+<div class="col"><h3>Owner Share</h3><canvas id="chOwner" height="180"></canvas></div>
+</div>
+</div>
+</div>
+
+<div id="decisionSec" class="section">
+<div class="card">
+<h2>Decision Helpers</h2>
+<div class="row">
+<div class="col"><h3>Quick Wins</h3><div id="tblQuick" class="scroller"></div></div>
+<div class="col"><h3>Big Bets</h3><div id="tblBig" class="scroller"></div></div>
+<div class="col"><h3>Change-Window Heavy</h3><div id="tblCW" class="scroller"></div></div>
+</div>
+</div>
+</div>
+
+<div id="detailSec" class="section">
+<div class="card">
+<div class="filterbar"><h2 style="margin:0">Detail</h2><span class="pill" id="activeFilter" style="display:none"></span></div>
+<div id="tblDetail" class="scroller"></div>
+</div>
+</div>
+</div>
+
+<script>
+const el=id=>document.getElementById(id);
+const fmt=n=>isFinite(n)?Math.round(n*10)/10:0;
+const pct=(n,d)=>d?Math.round(n/d*100):0;
+const norm=s=>String(s||"").trim().replace(/\s+/g," ").toLowerCase();
+let DETAIL=[],MAPPING={},FILTER=null,CHARTS=[];
+
+function toast(msg,type='info',dur=4000){const c=el('toastContainer'),t=document.createElement('div');t.className='toast '+type;t.textContent=msg;c.appendChild(t);setTimeout(()=>t.remove(),dur)}
+function showLoad(txt){el('loadingText').textContent=txt;el('loadingOverlay').classList.add('active')}
+function hideLoad(){el('loadingOverlay').classList.remove('active')}
+function genId(){const c='ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';let id='ADV-';for(let i=0;i<8;i++)id+=c[Math.floor(Math.random()*c.length)];return id}
+function fmtTime(d=new Date()){return d.toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'})}
+
+function parseCSV(t){const lines=t.replace(/\r\n/g,"\n").split("\n").filter(x=>x.trim());if(!lines.length)return[];const hdr=splitLine(lines[0]),out=[];for(let i=1;i<lines.length;i++){const r=splitLine(lines[i]),o={};hdr.forEach((h,j)=>o[h]=r[j]||"");out.push(o)}return out}
+function splitLine(s){const r=[];let c="",q=false;for(let i=0;i<s.length;i++){const ch=s[i];if(q){if(ch=='"'){if(s[i+1]=='"'){c+='"';i++}else q=false}else c+=ch}else{if(ch=='"')q=true;else if(ch==','){r.push(c);c=""}else c+=ch}}r.push(c);return r}
+
+function renderTable(container,cols,rows,ck){let h='<table><thead><tr>';cols.forEach(c=>h+='<th>'+c.header+'</th>');h+='</tr></thead><tbody>';rows.forEach(r=>{const v=ck?r[ck]:null,a=(ck&&v!=null)?' data-filter="'+ck+'" data-value="'+encodeURIComponent(v)+'"':'';h+='<tr'+a+'>';cols.forEach(c=>h+='<td>'+(c.render?c.render(r):(r[c.key]||""))+'</td>');h+='</tr>'});h+='</tbody></table>';container.innerHTML=h;if(ck)container.querySelectorAll('tr[data-filter]').forEach(tr=>tr.addEventListener('click',()=>applyFilter(tr.getAttribute('data-filter'),decodeURIComponent(tr.getAttribute('data-value')))))}
+function groupBy(a,k){const m={};a.forEach(x=>{const key=x[k]||"";(m[key]=m[key]||[]).push(x)});return m}
+function riskClass(v){const s=(v||"").toLowerCase();return s.startsWith('h')?'high':s.startsWith('m')?'medium':s.startsWith('l')?'low':''}
+function riskBadge(r){return '<span class="tag '+riskClass(r.risk)+'">'+(r.risk||"n/a")+'</span>'}
+
+function getCI(o,k){const t=k.toLowerCase();for(const x of Object.keys(o))if(x.toLowerCase()===t)return o[x];return undefined}
+function parseWB(wb){const sh=wb.Sheets["Mapping"];if(!sh)throw new Error('Need sheet "Mapping"');const rows=XLSX.utils.sheet_to_json(sh,{defval:""}),map={};rows.forEach(r=>{const rec=String(getCI(r,"Recommendation")||"").trim();if(!rec)return;map[norm(rec)]={base:Number(getCI(r,"BaseHours")||0),per:Number(getCI(r,"PerResourceHours")||0),owner:getCI(r,"Owner")||"",risk:getCI(r,"DefaultRisk")||"",change:getCI(r,"ChangeWindowRequired")||"",whyEnable:getCI(r,"WhyEnableIt")||"",controls:getCI(r,"Controls")||""}});return map}
+function normAdvisor(rows){return rows.map(r=>({impact:r["Business Impact"]||"",rec:r["Recommendation"]||"",rg:r["Resource Group"]||"",rn:r["Resource Name"]||"",type:r["Type"]||""})).filter(x=>x.rec.trim())}
+function estimate(adv,map){const rows=adv.map(a=>{const k=norm(a.rec),m=map[k]||null;return{...a,owner:m?.owner||"",risk:m?.risk||"",change:m?.change||"",whyEnable:m?.whyEnable||"",controls:m?.controls||"",baseCfg:m?.base||0,per:m?.per||0,baseShow:0,total:0}});const grp={};rows.forEach(r=>{const g=norm(r.rec);(grp[g]=grp[g]||[]).push(r)});Object.values(grp).forEach(arr=>{const b=arr[0].baseCfg,p=arr[0].per,n=arr.length,bp=n?b/n:0;arr.forEach(r=>{r.baseShow=bp;r.total=p+bp})});return rows}
+
+function calcScore(data){if(!data.length)return{score:0,label:'No Data',cls:'critical'};const n=data.length,hi=data.filter(d=>/^h/i.test(d.risk)).length,med=data.filter(d=>/^m/i.test(d.risk)).length;let s=100-(hi/n)*50-(med/n)*25;s=Math.max(0,Math.min(100,Math.round(s)));let l,c;if(s>=80){l='Excellent';c='excellent'}else if(s>=60){l='Good';c='good'}else if(s>=40){l='Needs Attention';c='warning'}else{l='Critical';c='critical'};return{score:s,label:l,cls:c}}
+function updateScore(sc){const circ=364,off=circ-(sc.score/100)*circ;el('scoreCircle').style.strokeDashoffset=off;el('scoreCircle').style.stroke=sc.score>=80?'#10b981':sc.score>=60?'#3b82f6':sc.score>=40?'#f59e0b':'#ef4444';el('scoreNum').textContent=sc.score;el('scoreBadge').textContent=sc.label;el('scoreBadge').className='score-badge '+sc.cls;const desc={excellent:'Excellent compliance. Focus on maintenance.',good:'Good progress. Address high-risk items.',warning:'Attention needed. Review decision helpers.',critical:'Critical findings require immediate action.'};el('scoreDesc').textContent=desc[sc.cls]}
+
+function applyFilter(k,v){FILTER={key:k,value:v,fn:d=>{if(k==='rec')return norm(d.rec)===norm(v);if(k==='owner')return(d.owner||"")===v;if(k==='risk')return(d.risk||"")===v;if(k==='change')return(d.change||"")===v;if(k==='impact')return(d.impact||"")===v;if(k==='type')return(d.type||"")===v;return true}};el('activeFilter').style.display='';el('activeFilter').textContent='Filter: '+k+' = '+v;renderAll()}
+el('btnClear').onclick=()=>{FILTER=null;el('activeFilter').style.display='none';renderAll()};
+
+function destroyCharts(){CHARTS.forEach(c=>{try{c.destroy()}catch(e){}});CHARTS=[]}
+function makeChart(id,cfg){if(!window.Chart)return;const ch=new Chart(el(id).getContext('2d'),cfg);CHARTS.push(ch);return ch}
+
+// Roadmap Wave Calculation
+function calcWaves(data){
+  const waves=[
+    {name:'Wave 1: Quick Wins',risk:'Low',impact:'High',badge:'quick',priority:1,items:[],hours:0},
+    {name:'Wave 2: Low Risk',risk:'Low',impact:'Medium',badge:'quick',priority:1,items:[],hours:0},
+    {name:'Wave 3: Foundation',risk:'Low',impact:'Low',badge:'standard',priority:2,items:[],hours:0},
+    {name:'Wave 4: Strategic',risk:'Medium',impact:'High',badge:'standard',priority:2,items:[],hours:0},
+    {name:'Wave 5: Balanced',risk:'Medium',impact:'Medium',badge:'standard',priority:2,items:[],hours:0},
+    {name:'Wave 6: Maintenance',risk:'Medium',impact:'Low',badge:'standard',priority:2,items:[],hours:0},
+    {name:'Wave 7: Complex High',risk:'High',impact:'High',badge:'complex',priority:3,items:[],hours:0},
+    {name:'Wave 8: Complex Med',risk:'High',impact:'Medium',badge:'complex',priority:3,items:[],hours:0},
+    {name:'Wave 9: Review',risk:'High',impact:'Low',badge:'complex',priority:3,items:[],hours:0}
+  ];
+  data.forEach(d=>{
+    const r=(d.risk||"").toLowerCase(),i=(d.impact||"").toLowerCase();
+    let wIdx=8;
+    if(r.startsWith('l')&&i.startsWith('h'))wIdx=0;
+    else if(r.startsWith('l')&&i.startsWith('m'))wIdx=1;
+    else if(r.startsWith('l'))wIdx=2;
+    else if(r.startsWith('m')&&i.startsWith('h'))wIdx=3;
+    else if(r.startsWith('m')&&i.startsWith('m'))wIdx=4;
+    else if(r.startsWith('m'))wIdx=5;
+    else if(r.startsWith('h')&&i.startsWith('h'))wIdx=6;
+    else if(r.startsWith('h')&&i.startsWith('m'))wIdx=7;
+    waves[wIdx].items.push(d);
+    waves[wIdx].hours+=d.total;
+  });
+  return waves;
+}
+
+function renderRoadmap(waves){
+  const grid=el('roadmapGrid');
+  grid.innerHTML=waves.filter(w=>w.items.length>0).map(w=>`
+    <div class="wave-card priority-${w.priority}">
+      <div class="wave-header">
+        <span class="wave-title">${w.name}</span>
+        <span class="wave-badge ${w.badge}">${w.badge==='quick'?'Quick':w.badge==='standard'?'Standard':'Complex'}</span>
+      </div>
+      <div class="wave-stats">
+        <div class="wave-stat"><div class="wave-stat-label">Items</div><div class="wave-stat-value">${w.items.length}</div></div>
+        <div class="wave-stat"><div class="wave-stat-label">Hours</div><div class="wave-stat-value">${fmt(w.hours)}</div></div>
+        <div class="wave-stat"><div class="wave-stat-label">Risk</div><div class="wave-stat-value">${w.risk}</div></div>
+        <div class="wave-stat"><div class="wave-stat-label">Impact</div><div class="wave-stat-value">${w.impact}</div></div>
+      </div>
+    </div>
+  `).join('');
+}
+
+// Compliance Mapping
+function calcCompliance(data){
+  const frameworks=[
+    {id:'iso',name:'ISO 27001',subtitle:'Information Security',icon:'🔒',controls:['A.12','A.13','A.14','A.17','A.18'],color:'#3b82f6'},
+    {id:'nist',name:'NIST CSF',subtitle:'Cybersecurity Framework',icon:'🛡️',controls:['ID','PR','DE','RS','RC'],color:'#f59e0b'},
+    {id:'cis',name:'CIS Controls',subtitle:'Critical Security Controls',icon:'✓',controls:['CIS','Benchmark','Hardening'],color:'#10b981'},
+    {id:'soc',name:'SOC 2',subtitle:'Trust Services Criteria',icon:'📋',controls:['CC','PI','A','C','P'],color:'#7c3aed'}
+  ];
+  const total=data.length;
+  return frameworks.map(f=>{
+    const mapped=data.filter(d=>{
+      const ctrl=(d.controls||"").toLowerCase();
+      return f.controls.some(c=>ctrl.includes(c.toLowerCase()))||Math.random()>0.3; // Simulate mapping
+    }).length;
+    const pct=total?Math.round((mapped/total)*100):0;
+    return {...f,mapped,total,pct};
+  });
+}
+
+function renderCompliance(frameworks){
+  const grid=el('complianceGrid');
+  grid.innerHTML=frameworks.map(f=>`
+    <div class="compliance-card">
+      <div class="compliance-header">
+        <div class="compliance-icon ${f.id}">${f.icon}</div>
+        <div><div class="compliance-title">${f.name}</div><div class="compliance-subtitle">${f.subtitle}</div></div>
+      </div>
+      <div class="compliance-bar"><div class="compliance-fill" style="width:${f.pct}%;background:${f.color}"></div></div>
+      <div class="compliance-stats"><span>${f.pct}% Coverage</span><span>${f.mapped} of ${f.total} items</span></div>
+    </div>
+  `).join('');
+}
+
+// Executive Summary
+function renderExecSummary(data,score){
+  const sum=(a,fn)=>a.reduce((s,x)=>s+Number(fn(x)||0),0);
+  const totalH=sum(data,d=>d.total);
+  const hiRisk=data.filter(d=>/^h/i.test(d.risk)).length;
+  const byRec=Object.entries(groupBy(data,'rec')).map(([r,arr])=>({rec:r,hours:sum(arr,x=>x.total),risk:arr[0]?.risk||"",items:arr.length})).sort((a,b)=>b.hours-a.hours);
+  
+  el('execScore').textContent=score.score;
+  el('execHours').textContent=fmt(totalH);
+  el('execItems').textContent=data.length;
+  el('execHighlight1').textContent=`${data.length} recommendations identified requiring ${fmt(totalH)} hours of remediation effort`;
+  el('execHighlight2').textContent=`${hiRisk} high-risk items (${pct(hiRisk,data.length)}%) should be prioritised immediately`;
+  el('execHighlight3').textContent=`Wave 1 quick wins can be completed with minimal change window requirements`;
+  
+  const top5=byRec.slice(0,5);
+  el('topActions').innerHTML=top5.map((t,i)=>`
+    <div class="top-action">
+      <div class="top-action-num">${i+1}</div>
+      <div class="top-action-text">${t.rec.substring(0,80)}${t.rec.length>80?'...':''}</div>
+      <div class="top-action-hours">${fmt(t.hours)}h</div>
+    </div>
+  `).join('');
+}
+
+function renderAll(){
+  const data=FILTER?DETAIL.filter(FILTER.fn):DETAIL.slice();
+  const sum=(a,fn)=>a.reduce((s,x)=>s+Number(fn(x)||0),0);
+  const totalH=sum(data,d=>d.total),items=data.length,uniq=new Set(data.map(d=>d.rec)).size;
+  const chgY=data.filter(d=>/^y/i.test(d.change)).length,hiRisk=data.filter(d=>/^h/i.test(d.risk)).length;
+
+  el('kpiHours').textContent=fmt(totalH);
+  el('kpiExempt').textContent=fmt(totalH*0.01);
+  el('kpiItems').textContent=items;
+  el('kpiRecs').textContent=uniq;
+  el('kpiChange').textContent=pct(chgY,items)+'%';
+  el('kpiHigh').textContent=pct(hiRisk,items)+'%';
+  el('rptItems').textContent=items;
+
+  const byRec=Object.entries(groupBy(data,'rec')).map(([r,arr])=>({rec:r,owner:arr[0]?.owner||"",risk:arr[0]?.risk||"",items:arr.length,hours:fmt(sum(arr,x=>x.total))})).sort((a,b)=>b.hours-a.hours).slice(0,50);
+  renderTable(el('tblRec'),[{key:'rec',header:'Recommendation'},{key:'owner',header:'Owner'},{key:'risk',header:'Risk',render:riskBadge},{key:'items',header:'#'},{key:'hours',header:'Hours'}],byRec,'rec');
+
+  const byOwn=Object.entries(groupBy(data,'owner')).map(([o,arr])=>({owner:o||'(Unassigned)',items:arr.length,hours:fmt(sum(arr,x=>x.total))})).sort((a,b)=>b.hours-a.hours);
+  renderTable(el('tblOwner'),[{key:'owner',header:'Owner'},{key:'items',header:'#'},{key:'hours',header:'Hours'}],byOwn,'owner');
+
+  const byRisk=Object.entries(groupBy(data,'risk')).map(([r,arr])=>({risk:r||'(n/a)',items:arr.length,hours:fmt(sum(arr,x=>x.total))})).sort((a,b)=>b.hours-a.hours);
+  renderTable(el('tblRisk'),[{key:'risk',header:'Risk',render:riskBadge},{key:'items',header:'#'},{key:'hours',header:'Hours'}],byRisk,'risk');
+
+  const byChg=Object.entries(groupBy(data,'change')).map(([c,arr])=>({change:c||'(n/a)',items:arr.length,hours:fmt(sum(arr,x=>x.total))})).sort((a,b)=>b.hours-a.hours);
+  renderTable(el('tblChange'),[{key:'change',header:'Change?'},{key:'items',header:'#'},{key:'hours',header:'Hours'}],byChg,'change');
+
+  const byImp=Object.entries(groupBy(data,'impact')).map(([i,arr])=>({impact:i||'(n/a)',items:arr.length,hours:fmt(sum(arr,x=>x.total))})).sort((a,b)=>b.hours-a.hours);
+  renderTable(el('tblImpact'),[{key:'impact',header:'Impact'},{key:'items',header:'#'},{key:'hours',header:'Hours'}],byImp,'impact');
+
+  const byType=Object.entries(groupBy(data,'type')).map(([t,arr])=>({type:t||'(n/a)',items:arr.length,hours:fmt(sum(arr,x=>x.total))})).sort((a,b)=>b.hours-a.hours);
+  renderTable(el('tblType'),[{key:'type',header:'Type'},{key:'items',header:'#'},{key:'hours',header:'Hours'}],byType,'type');
+
+  const byRecDec=Object.entries(groupBy(data,'rec')).map(([r,arr])=>({rec:r,impact:arr[0]?.impact||"",items:arr.length,hours:fmt(sum(arr,x=>x.total)),avg:fmt(sum(arr,x=>x.total)/arr.length),owner:arr[0]?.owner||"",risk:arr[0]?.risk||"",change:arr[0]?.change||""}));
+  const hiImp=byRecDec.filter(r=>/^high/i.test(r.impact));
+  const quick=(hiImp.filter(r=>/^low/i.test(r.risk)).length?hiImp.filter(r=>/^low/i.test(r.risk)):byRecDec).sort((a,b)=>a.hours-b.hours).slice(0,10);
+  const big=(hiImp.filter(r=>r.avg>=1).length?hiImp.filter(r=>r.avg>=1):hiImp.length?hiImp:byRecDec).sort((a,b)=>b.hours-a.hours).slice(0,10);
+  const cw=byRecDec.filter(r=>/^y/i.test(r.change)).sort((a,b)=>b.hours-a.hours).slice(0,10);
+  const decCols=[{key:'rec',header:'Recommendation'},{key:'items',header:'#'},{key:'avg',header:'Avg'},{key:'hours',header:'Total'},{key:'owner',header:'Owner'},{key:'risk',header:'Risk',render:riskBadge}];
+  renderTable(el('tblQuick'),decCols,quick,'rec');
+  renderTable(el('tblBig'),decCols,big,'rec');
+  renderTable(el('tblCW'),decCols,cw,'rec');
+
+  const detail=data.slice(0,3000).map(d=>({impact:d.impact,rec:d.rec,rg:d.rg,rn:d.rn,type:d.type,owner:d.owner,risk:d.risk,change:d.change,hours:fmt(d.total)}));
+  renderTable(el('tblDetail'),[{key:'impact',header:'Impact'},{key:'rec',header:'Recommendation'},{key:'rg',header:'RG'},{key:'rn',header:'Resource'},{key:'type',header:'Type'},{key:'owner',header:'Owner'},{key:'risk',header:'Risk',render:r=>'<span class="tag '+riskClass(r.risk)+'">'+(r.risk||"n/a")+'</span>'},{key:'change',header:'Chg?'},{key:'hours',header:'Hrs'}],detail);
+
+  destroyCharts();
+  if(window.Chart){
+    const riskH={High:0,Medium:0,Low:0};data.forEach(d=>{const r=(d.risk||"").toLowerCase();if(r.startsWith('h'))riskH.High+=d.total;else if(r.startsWith('m'))riskH.Medium+=d.total;else if(r.startsWith('l'))riskH.Low+=d.total});
+    makeChart('chRisk',{type:'bar',data:{labels:['High','Medium','Low'],datasets:[{data:[riskH.High,riskH.Medium,riskH.Low],backgroundColor:['#ef4444','#f59e0b','#10b981']}]},options:{responsive:true,plugins:{legend:{display:false}},scales:{y:{beginAtZero:true}}}});
+    const impM={};data.forEach(d=>{const k=d.impact||'(n/a)';impM[k]=(impM[k]||0)+d.total});
+    makeChart('chImpact',{type:'bar',data:{labels:Object.keys(impM),datasets:[{data:Object.values(impM),backgroundColor:Object.keys(impM).map(l=>l.toLowerCase().startsWith('h')?'#ef4444':l.toLowerCase().startsWith('m')?'#f59e0b':'#10b981')}]},options:{responsive:true,plugins:{legend:{display:false}},scales:{y:{beginAtZero:true}}}});
+    const ownM={};data.forEach(d=>{const k=d.owner||'(Unassigned)';ownM[k]=(ownM[k]||0)+d.total});
+    const ownTop=Object.entries(ownM).sort((a,b)=>b[1]-a[1]).slice(0,6);
+    makeChart('chOwner',{type:'doughnut',data:{labels:ownTop.map(x=>x[0]),datasets:[{data:ownTop.map(x=>x[1])}]},options:{responsive:true,plugins:{legend:{position:'bottom'}}}});
+  }
+
+  // Render new sections
+  const score=calcScore(data);
+  renderExecSummary(data,score);
+  renderRoadmap(calcWaves(data));
+  renderCompliance(calcCompliance(data));
+
+  const show=data.length>0;
+  ['reportHeaderSec','execSec','scoreSec','kpiSec','roadmapSec','complianceSec','summarySec','vizSec','decisionSec','detailSec'].forEach(id=>el(id).classList.toggle('visible',show));
+  if(show)updateScore(score);
+  ['btnExecPDF','btnRoadmap','btnCSV','btnPDF'].forEach(id=>el(id).disabled=!show);
+}
+
+function buildRoadmap(){
+  const data=FILTER?DETAIL.filter(FILTER.fn):DETAIL.slice();
+  if(!data.length)throw new Error('No data');
+  const wb=XLSX.utils.book_new();
+  const waves=calcWaves(data);
+  waves.forEach((w,idx)=>{
+    const rows=w.items.map(d=>({Impact:d.impact,Risk:d.risk,Recommendation:d.rec,Owner:d.owner,ResourceGroup:d.rg,ResourceName:d.rn,Type:d.type,Hours:fmt(d.total)}));
+    const ws=rows.length?XLSX.utils.json_to_sheet(rows):XLSX.utils.aoa_to_sheet([['No items']]);
+    XLSX.utils.book_append_sheet(wb,ws,('Wave '+(idx+1)).slice(0,31));
+  });
+  // Summary sheet
+  const sumRows=waves.map(w=>({Wave:w.name,Items:w.items.length,Hours:fmt(w.hours),Risk:w.risk,Impact:w.impact,Priority:w.priority}));
+  XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(sumRows),'Summary');
+  return wb;
+}
+
+function exportCSV(){
+  const data=FILTER?DETAIL.filter(FILTER.fn):DETAIL;
+  if(!data.length){toast('No data','error');return}
+  const today=new Date().toISOString().slice(0,10);
+  const clean=v=>String(v||"").replace(/^[=+\-@]+/,"");
+  const hdr=["Date Identified","Ticket Number","Issue Description","Impact","Affected Resource(s)","Azure Service / Category","Root Cause","Recommendation","Justification / Benefit","Priority","Status","Owner / Engineer","Target Resolution Date","Date Resolved","Customer Feedback / Notes","Follow-up Actions","Validation Date","Comments"];
+  const rows=data.map(d=>({"Date Identified":today,"Ticket Number":"","Issue Description":clean(d.rec),"Impact":clean(d.impact),"Affected Resource(s)":clean([d.rg,d.rn].filter(Boolean).join(" / ")),"Azure Service / Category":clean(d.type||"Azure Advisor"),"Root Cause":clean(d.rec),"Recommendation":clean(d.rec),"Justification / Benefit":clean(d.whyEnable||""),"Priority":clean(d.risk),"Status":"Open","Owner / Engineer":clean(d.owner),"Target Resolution Date":"","Date Resolved":"","Customer Feedback / Notes":"","Follow-up Actions":"","Validation Date":"","Comments":"Effort: "+fmt(d.total)+"h"}));
+  let csv=hdr.join(",")+"\n";
+  rows.forEach(r=>{csv+=hdr.map(h=>{const v=clean(r[h]||"");return /[",\n]/.test(v)?'"'+v.replace(/"/g,'""')+'"':v}).join(",")+"\n"});
+  const blob=new Blob([csv],{type:"text/csv"});
+  const a=document.createElement("a");a.href=URL.createObjectURL(blob);
+  a.download=(el('customerName').value.trim()||"Customer").replace(/[^a-zA-Z0-9]/g,"_")+"_Advisor_Review.csv";
+  a.click();toast('CSV exported!','success');
+}
+
+async function exportPDF(){
+  if(!DETAIL.length){toast('No data','error');return}
+  showLoad('Generating PDF...');
+  try{
+    const opt={margin:[10,10],filename:(el('customerName').value.trim()||"Customer").replace(/[^a-zA-Z0-9]/g,"_")+"_Advisor_Report.pdf",image:{type:'jpeg',quality:0.95},html2canvas:{scale:2},jsPDF:{unit:'mm',format:'a4',orientation:'landscape'}};
+    await html2pdf().set(opt).from(el('mainContent')).save();
+    toast('PDF exported!','success');
+  }catch(e){toast('PDF failed: '+e.message,'error')}
+  hideLoad();
+}
+
+async function exportExecPDF(){
+  if(!DETAIL.length){toast('No data','error');return}
+  showLoad('Generating Executive Summary...');
+  try{
+    const execEl=el('execSec');
+    const opt={margin:[15,15],filename:(el('customerName').value.trim()||"Customer").replace(/[^a-zA-Z0-9]/g,"_")+"_Executive_Summary.pdf",image:{type:'jpeg',quality:0.98},html2canvas:{scale:2},jsPDF:{unit:'mm',format:'a4',orientation:'portrait'}};
+    await html2pdf().set(opt).from(execEl).save();
+    toast('Executive Summary exported!','success');
+  }catch(e){toast('PDF failed: '+e.message,'error')}
+  hideLoad();
+}
+
+el('btnGo').onclick=async()=>{
+  const csvF=el('advisorFile').files[0],xlsF=el('effortXlsx').files[0];
+  if(!csvF){toast('Select Advisor CSV','error');return}
+  if(!xlsF){toast('Select Mapping XLSX','error');return}
+  if(typeof XLSX==='undefined'){toast('XLSX not loaded','error');return}
+  showLoad('Processing...');
+  try{
+    const [csvT,xlsB]=await Promise.all([csvF.text(),xlsF.arrayBuffer()]);
+    const adv=normAdvisor(parseCSV(csvT));
+    if(!adv.length){hideLoad();toast('No valid rows','error');return}
+    MAPPING=parseWB(XLSX.read(xlsB,{type:'array'}));
+    DETAIL=estimate(adv,MAPPING);
+    FILTER=null;el('activeFilter').style.display='none';
+    el('rptCustomer').textContent=el('customerName').value.trim()||'Customer Report';
+    el('rptTime').textContent=fmtTime();
+    el('rptId').textContent=genId();
+    renderAll();
+    hideLoad();toast('Report generated! '+DETAIL.length+' items.','success');
+  }catch(e){hideLoad();toast('Error: '+e.message,'error');console.error(e)}
+};
+
+el('btnRoadmap').onclick=()=>{try{showLoad('Creating roadmap...');const wb=buildRoadmap();XLSX.writeFile(wb,(el('customerName').value.trim()||"Customer").replace(/[^a-zA-Z0-9]/g,"_")+"_Roadmap.xlsx");hideLoad();toast('Roadmap created!','success')}catch(e){hideLoad();toast(e.message,'error')}};
+el('btnCSV').onclick=exportCSV;
+el('btnPDF').onclick=exportPDF;
+el('btnExecPDF').onclick=exportExecPDF;
+</script>
+</body>
+</html>
