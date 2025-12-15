@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>TIEVA — Reservation & Savings Analyzer</title>
+<style>
+  :root{--brand-green:#2DA58E;--critical:#ef4444;--moderate:#f59e0b;--excellent:#10b981;--fg:#111827;--muted:#6b7280;--border:#e5e7eb;--canvas:var(--brand-green);--link:#0f5eff;--content-max:1440px}
+  *{box-sizing:border-box}html{scroll-behavior:smooth}body{margin:0;background:var(--canvas);color:var(--fg);font:14px/1.45 system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif}
+  a{color:var(--link);text-decoration:none}a:hover{text-decoration:underline}.wrap{max-width:var(--content-max);margin:0 auto;padding:24px}
+  .brandbar{background:#000;color:#fff}.brandwrap{max-width:var(--content-max);margin:0 auto;padding:14px 24px;display:flex;align-items:center;justify-content:space-between;gap:12px}
+  .brandtitle{font-size:18px;font-weight:600}.btnrow{display:flex;gap:8px;flex-wrap:wrap}
+  .header-btn{appearance:none;border:1px solid rgba(255,255,255,.25);background:transparent;color:#fff;border-radius:8px;padding:8px 12px;cursor:pointer;font-size:13px}.header-btn:hover{border-color:#fff}
+  .row{display:flex;gap:20px;flex-wrap:wrap}.col{flex:1 1 360px}.card{background:#fff;border:1px solid var(--border);border-radius:10px;padding:16px;margin:18px 0}
+  h2{margin:0 0 10px;font-size:18px}h3{margin:0 0 10px;font-size:16px}h4{margin:0 0 6px;font-size:13px}.muted{color:var(--muted)}
+  .pill{display:inline-block;font-size:12px;border-radius:999px;padding:2px 8px;border:1px solid var(--border);background:#f9fafb}
+  .btn{padding:8px 12px;border:1px solid var(--border);border-radius:8px;background:#f9fafb;cursor:pointer;font-size:13px}.btn.primary{background:#0f5eff;color:#fff;border-color:#0f5eff}
+  input[type=file]{border:1px solid var(--border);border-radius:8px;padding:6px 8px;width:100%}
+  table{border-collapse:collapse;width:100%}thead th{background:#fafafa}th,td{border-bottom:1px solid var(--border);padding:6px 8px;text-align:left;font-size:13px;vertical-align:top}
+  .scroller{max-height:520px;overflow:auto}.tiles{display:flex;gap:12px;flex-wrap:wrap}
+  .tile{flex:1 1 160px;border:1px solid var(--border);border-radius:10px;padding:12px;background:#fff}
+  .tile h4{margin:0 0 6px;font-size:12px;color:#6b7280;text-transform:uppercase;letter-spacing:.3px}.tile .big{font-size:22px;font-weight:700}
+  .tile .big.savings{color:var(--excellent)}
+  tbody tr[data-filter]{cursor:pointer}tbody tr[data-filter]:hover{background:#f5f7fb}
+  .filterbar{display:flex;gap:8px;align-items:center;margin-bottom:8px;flex-wrap:wrap}
+  .key{font-size:12px;color:#374151;padding:4px 8px;border:1px solid var(--border);border-radius:8px;background:#f9fafb}
+  .tag{display:inline-block;padding:2px 8px;border-radius:999px;font-size:12px;color:#fff;white-space:nowrap}
+  .tag.high,.tag.critical{background:var(--critical)}.tag.medium,.tag.warning{background:var(--moderate)}.tag.low,.tag.good{background:var(--excellent)}.tag.info{background:#3b82f6}
+  .hidden{display:none!important}.status{color:#fff;opacity:.95;margin-bottom:12px}.pagetitle{color:#fff;font-weight:700;font-size:16px;margin-bottom:4px}
+  .util-bar{background:#e5e7eb;border-radius:999px;height:6px;overflow:hidden;width:60px;display:inline-block;vertical-align:middle;margin-left:6px}
+  .util-fill{height:100%;border-radius:999px}.util-fill.good{background:var(--excellent)}.util-fill.warning{background:var(--moderate)}.util-fill.critical{background:var(--critical)}
+</style>
+<script>(function(){var t=["https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js","https://unpkg.com/xlsx@0.18.5/dist/xlsx.full.min.js","https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"];function l(i){if(window.XLSX||i>=t.length)return;var s=document.createElement("script");s.src=t[i];s.async=true;s.onerror=function(){l(i+1)};document.head.appendChild(s)}l(0)})();</script>
+</head>
+<body>
+  <div class="brandbar"><div class="brandwrap"><div class="brandtitle">TIEVA — Reservation & Savings Analyzer</div><div class="btnrow"><button id="btnExportHTML" class="header-btn">Export HTML</button><button id="btnDownloadDetail" class="header-btn">Download Detail CSV</button></div></div></div>
+  <div class="wrap">
+    <div class="pagetitle">Azure Reservation and Savings Plan optimization overview</div>
+    <div class="status">Upload your <strong>Reservation_Audit.xlsx</strong> to analyze reservation utilization, savings plans, and purchase recommendations.</div>
+    <div class="card"><div class="row"><div class="col"><h3>Reservation Audit (.xlsx)</h3><input id="auditXlsx" type="file" accept=".xlsx" /><div class="muted" style="font-size:12px;margin-top:4px">Expected sheets: <code>Reservations</code>, <code>Utilization</code>, <code>Expiring_Soon</code>, <code>Savings_Plans</code>, <code>Recommendations</code>, <code>Findings</code></div></div><div class="col" style="display:flex;align-items:flex-end;gap:8px"><div class="btn primary" id="go">Generate report</div><div class="btn" id="clearFilter">Clear filter</div><span id="status" class="muted" style="align-self:center"></span></div></div></div>
+    <div id="kpiSec" class="row hidden"><div class="col card"><h2>At a glance</h2><div class="tiles"><div class="tile"><h4>Reservations</h4><div class="big" id="kpiReservations">0</div></div><div class="tile"><h4>Savings Plans</h4><div class="big" id="kpiSavingsPlans">0</div></div><div class="tile"><h4>Low Utilization</h4><div class="big" id="kpiLowUtil">0</div></div><div class="tile"><h4>Expiring Soon</h4><div class="big" id="kpiExpiring">0</div></div><div class="tile"><h4>Recommendations</h4><div class="big" id="kpiRecs">0</div></div><div class="tile"><h4>Potential Annual Savings</h4><div class="big savings" id="kpiSavings">£0</div></div></div></div></div>
+    <div id="summarySec" class="row hidden"><div class="col card"><h2>Summary</h2><div class="row"><div class="col"><h3>Low Utilization Reservations</h3><div id="tblLowUtil" class="scroller"></div></div><div class="col"><h3>Expiring Reservations</h3><div id="tblExpiring" class="scroller"></div></div><div class="col"><h3>Purchase Recommendations</h3><div id="tblRecommendations" class="scroller"></div></div></div><div class="row"><div class="col"><h3>Savings Plans</h3><div id="tblSavingsPlans" class="scroller"></div></div><div class="col"><h3>All Reservations</h3><div id="tblAllReservations" class="scroller"></div></div></div></div></div>
+    <div id="findingsSec" class="row hidden"><div class="col card"><div class="filterbar"><h2 style="margin:0">Findings & Recommendations</h2><span class="pill" id="activeFilter" style="display:none"></span></div><div id="tblFindings" class="scroller"></div></div></div>
+  </div>
+<script>
+let DATA={reservations:[],utilization:[],expiring:[],savingsPlans:[],recommendations:[],findings:[]};
+let FILTER={active:false,key:null,value:null};
+const $=id=>document.getElementById(id);
+const escapeHtml=s=>String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+const formatCurrency=v=>'£'+(parseFloat(v)||0).toLocaleString('en-GB',{minimumFractionDigits:0,maximumFractionDigits:0});
+function status(t){$('status').textContent=t||'';}
+function readSheet(wb,name){if(!wb.SheetNames.includes(name))return[];return XLSX.utils.sheet_to_json(wb.Sheets[name],{defval:''});}
+function applyFilter(key,value){FILTER={active:true,key,value};$('activeFilter').style.display='';$('activeFilter').textContent='Filter: '+key+' = '+value;renderAll();}
+function clearFilter(){FILTER={active:false,key:null,value:null};$('activeFilter').style.display='none';renderAll();}
+function filterData(data){if(!FILTER.active)return data;return data.filter(item=>String(item[FILTER.key]||'').toLowerCase()===String(FILTER.value).toLowerCase());}
+function renderTable(el,columns,rows,clickKey){let html='<table><thead><tr>';columns.forEach(c=>html+='<th>'+c.header+'</th>');html+='</tr></thead><tbody>';rows.forEach(r=>{const attr=clickKey&&r[clickKey]!=null?' data-filter="'+clickKey+'" data-value="'+escapeHtml(r[clickKey])+'"':'';html+='<tr'+attr+'>';columns.forEach(c=>html+='<td>'+(c.render?c.render(r):escapeHtml(r[c.key]||''))+'</td>');html+='</tr>';});html+='</tbody></table>';el.innerHTML=html;if(clickKey){el.querySelectorAll('tbody tr[data-filter]').forEach(tr=>{tr.addEventListener('click',()=>applyFilter(tr.getAttribute('data-filter'),tr.getAttribute('data-value')));});}}
+function severityPill(sev){const s=String(sev||'').toLowerCase();if(s==='high')return'<span class="tag high">HIGH</span>';if(s==='medium')return'<span class="tag medium">MEDIUM</span>';if(s==='low')return'<span class="tag low">LOW</span>';return'<span class="tag">'+escapeHtml(sev)+'</span>';}
+function utilPill(status){const s=String(status||'').toLowerCase();if(s==='critical')return'<span class="tag critical">CRITICAL</span>';if(s==='warning')return'<span class="tag warning">WARNING</span>';if(s==='good')return'<span class="tag good">GOOD</span>';return'<span class="tag">'+escapeHtml(status)+'</span>';}
+function expiryPill(status){const s=String(status||'').toLowerCase();if(s==='critical'||s==='expired')return'<span class="tag critical">'+escapeHtml(status).toUpperCase()+'</span>';if(s==='warning')return'<span class="tag warning">WARNING</span>';if(s==='ok')return'<span class="tag good">OK</span>';return'<span class="tag">'+escapeHtml(status)+'</span>';}
+function utilBar(pct){const p=Math.min(100,Math.max(0,pct||0));const c=p>=80?'good':p>=50?'warning':'critical';return p+'%<div class="util-bar"><div class="util-fill '+c+'" style="width:'+p+'%"></div></div>';}
+function yesNoPill(val){const v=String(val||'').toLowerCase();if(v==='true'||v==='yes')return'<span class="tag good">Yes</span>';if(v==='false'||v==='no')return'<span class="tag warning">No</span>';return escapeHtml(val);}
+function renderAll(){const reservations=filterData(DATA.reservations);const utilization=filterData(DATA.utilization);const expiring=filterData(DATA.expiring);const savingsPlans=filterData(DATA.savingsPlans);const recommendations=filterData(DATA.recommendations);const findings=filterData(DATA.findings);
+$('kpiReservations').textContent=reservations.length;$('kpiSavingsPlans').textContent=savingsPlans.length;
+const lowUtil=utilization.filter(u=>u.UtilizationStatus!=='Good');$('kpiLowUtil').textContent=lowUtil.length;
+$('kpiExpiring').textContent=expiring.length;$('kpiRecs').textContent=recommendations.length;
+const totalSavings=recommendations.reduce((s,r)=>s+(r.AnnualSavings||0),0);$('kpiSavings').textContent=formatCurrency(totalSavings);
+renderTable($('tblLowUtil'),[{key:'DisplayName',header:'Reservation'},{key:'ReservedResourceType',header:'Type'},{key:'SkuName',header:'SKU'},{key:'AvgUtilization',header:'Utilization',render:r=>utilBar(r.AvgUtilization)},{key:'UtilizationStatus',header:'Status',render:r=>utilPill(r.UtilizationStatus)}],lowUtil,'ReservedResourceType');
+renderTable($('tblExpiring'),[{key:'DisplayName',header:'Reservation'},{key:'ReservedResourceType',header:'Type'},{key:'ExpiryDate',header:'Expiry'},{key:'DaysToExpiry',header:'Days Left'},{key:'ExpiryStatus',header:'Status',render:r=>expiryPill(r.ExpiryStatus)},{key:'Renew',header:'Auto-Renew',render:r=>yesNoPill(r.Renew)}],expiring,'ReservedResourceType');
+const sortedRecs=[...recommendations].sort((a,b)=>(b.AnnualSavings||0)-(a.AnnualSavings||0));
+renderTable($('tblRecommendations'),[{key:'SubscriptionName',header:'Subscription'},{key:'ResourceType',header:'Type'},{key:'SKU',header:'SKU'},{key:'Location',header:'Location'},{key:'Term',header:'Term'},{key:'RecommendedQuantity',header:'Qty'},{key:'AnnualSavings',header:'Annual Savings',render:r=>'<strong>'+formatCurrency(r.AnnualSavings)+'</strong>'}],sortedRecs.slice(0,30),'SubscriptionName');
+renderTable($('tblSavingsPlans'),[{key:'DisplayName',header:'Savings Plan'},{key:'Term',header:'Term'},{key:'Commitment',header:'Commitment'},{key:'AppliedScopeType',header:'Scope'},{key:'ExpiryDateTime',header:'Expiry'},{key:'ExpiryStatus',header:'Status',render:r=>expiryPill(r.ExpiryStatus)}],savingsPlans,'Term');
+renderTable($('tblAllReservations'),[{key:'DisplayName',header:'Name'},{key:'ReservedResourceType',header:'Type'},{key:'SkuName',header:'SKU'},{key:'Quantity',header:'Qty'},{key:'Term',header:'Term'},{key:'ExpiryDate',header:'Expiry'},{key:'AvgUtilization',header:'Utilization',render:r=>r.AvgUtilization!=null?utilBar(r.AvgUtilization):'N/A'},{key:'Renew',header:'Renew',render:r=>yesNoPill(r.Renew)}],reservations.slice(0,100),'ReservedResourceType');
+renderTable($('tblFindings'),[{key:'Category',header:'Category'},{key:'Severity',header:'Severity',render:r=>severityPill(r.Severity)},{key:'ResourceType',header:'Type'},{key:'ResourceName',header:'Resource'},{key:'Detail',header:'Finding'},{key:'Recommendation',header:'Recommendation'},{key:'PotentialSavings',header:'Savings',render:r=>r.PotentialSavings?formatCurrency(r.PotentialSavings):'—'}],findings,'Category');
+const show=DATA.reservations.length>0||DATA.findings.length>0;['kpiSec','summarySec','findingsSec'].forEach(id=>{$(id).classList.toggle('hidden',!show);});}
+function cleanCell(v){if(!v)return'';let s=String(v).trim();s=s.replace(/^[=+\-@]+/,'');s=s.replace(/^-\s*/,'');return s;}
+async function handleGenerate(){try{status('');const file=$('auditXlsx').files[0];if(!file){status('Choose the Reservation audit workbook.');return;}if(typeof XLSX==='undefined'){status('XLSX library loading...');return;}const btn=$('go');btn.textContent='Generating…';btn.style.opacity='.7';const buf=await file.arrayBuffer();const wb=XLSX.read(buf,{type:'array'});DATA.reservations=readSheet(wb,'Reservations');DATA.utilization=readSheet(wb,'Utilization');DATA.expiring=readSheet(wb,'Expiring_Soon');DATA.savingsPlans=readSheet(wb,'Savings_Plans');DATA.recommendations=readSheet(wb,'Recommendations');DATA.findings=readSheet(wb,'Findings');FILTER={active:false,key:null,value:null};$('activeFilter').style.display='none';renderAll();const totalSavings=DATA.recommendations.reduce((s,r)=>s+(r.AnnualSavings||0),0);status('Report generated — '+formatCurrency(totalSavings)+' potential annual savings.');}catch(err){console.error(err);status('Error: '+(err?.message||err));}finally{$('go').textContent='Generate report';$('go').style.opacity='';}}
+document.addEventListener('DOMContentLoaded',()=>{$('go').addEventListener('click',handleGenerate);$('clearFilter').addEventListener('click',clearFilter);
+$('btnDownloadDetail').addEventListener('click',()=>{const data=FILTER.active?filterData(DATA.findings):DATA.findings;if(!data.length){alert('Generate report first.');return;}const today=new Date().toISOString().slice(0,10);const rows=data.map(d=>({"Date Identified":today,"Ticket Number":"","Issue Description":cleanCell(d.Detail),"Impact":cleanCell(d.Severity),"Affected Resource(s)":cleanCell([d.ResourceType,d.ResourceName].filter(Boolean).join(" / ")),"Azure Service / Category":cleanCell(d.Category),"Root Cause":cleanCell(d.Detail),"Recommendation":cleanCell(d.Recommendation),"Justification / Benefit":d.PotentialSavings?'Potential savings: '+formatCurrency(d.PotentialSavings):cleanCell(d.Recommendation),"Priority":cleanCell(d.Severity),"Status":"Open","Owner / Engineer":"","Target Resolution Date":"","Date Resolved":"","Customer Feedback / Notes":"","Follow-up Actions":"","Validation Date":"","Comments":""}));const headers=["Date Identified","Ticket Number","Issue Description","Impact","Affected Resource(s)","Azure Service / Category","Root Cause","Recommendation","Justification / Benefit","Priority","Status","Owner / Engineer","Target Resolution Date","Date Resolved","Customer Feedback / Notes","Follow-up Actions","Validation Date","Comments"];let csv=headers.join(",")+"\n";rows.forEach(r=>{const vals=headers.map(h=>{const v=cleanCell(r[h]||"");return/[",\n]/.test(v)?'"'+v.replace(/"/g,'""')+'"':v;});csv+=vals.join(",")+"\n";});const blob=new Blob([csv],{type:"text/csv"});const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download="reservation_savings_findings.csv";a.click();});
+$('btnExportHTML').addEventListener('click',()=>{const html='<!doctype html>'+document.documentElement.outerHTML;const blob=new Blob([html],{type:'text/html'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='TIEVA — Reservation & Savings Analyzer.html';a.click();});});
+</script>
+</body>
+</html>

@@ -1,0 +1,549 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>TIEVA — Resource Analyzer</title>
+<style>
+:root{--tieva-teal:#2DA58E;--tieva-navy:#1B365D;--critical:#ef4444;--warning:#f59e0b;--success:#10b981;--fg:#111827;--muted:#6b7280;--border:#e5e7eb;--canvas:var(--tieva-teal);--content-max:1440px}
+*{box-sizing:border-box;margin:0;padding:0}body{background:var(--canvas);color:var(--fg);font:14px/1.5 'Segoe UI',system-ui,sans-serif}
+.wrap{max-width:var(--content-max);margin:0 auto;padding:24px}
+.brandbar{background:var(--tieva-navy);color:#fff;box-shadow:0 2px 8px rgba(0,0,0,0.15)}
+.brandwrap{max-width:var(--content-max);margin:0 auto;padding:16px 24px;display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap}
+.brandtitle{font-size:20px;font-weight:700}.brandsubtitle{font-size:12px;opacity:0.85;margin-top:2px}
+.btnrow{display:flex;gap:8px;flex-wrap:wrap}
+.header-btn{border:1px solid rgba(255,255,255,.35);background:rgba(255,255,255,.1);color:#fff;border-radius:6px;padding:8px 14px;cursor:pointer;font-size:13px;font-weight:500;transition:all 0.2s}
+.header-btn:hover{background:rgba(255,255,255,.25)}.header-btn:disabled{opacity:0.5;cursor:not-allowed}
+.pagetitle{font-size:26px;font-weight:700;color:#fff;margin-bottom:8px}.pagedesc{font-size:14px;color:rgba(255,255,255,0.9);margin-bottom:20px}
+.row{display:flex;gap:20px;flex-wrap:wrap}.col{flex:1 1 360px}
+.card{background:#fff;border:1px solid var(--border);border-radius:12px;padding:20px;margin-bottom:20px;box-shadow:0 1px 3px rgba(0,0,0,0.05)}
+h2{margin:0 0 14px;font-size:18px;color:var(--tieva-navy)}h3{margin:0 0 12px;font-size:16px;color:var(--tieva-navy)}.muted{color:var(--muted)}
+.btn{padding:10px 16px;border:1px solid var(--border);border-radius:8px;background:#f9fafb;cursor:pointer;font-size:13px;font-weight:500}
+.btn.primary{background:var(--tieva-teal);color:#fff;border-color:var(--tieva-teal)}
+input[type=file]{border:2px dashed var(--border);border-radius:8px;padding:12px;background:#f9fafb;cursor:pointer;width:100%}
+input[type=file]:hover{border-color:var(--tieva-teal);background:#f0fdf4}
+input[type=text]{border:1px solid var(--border);border-radius:8px;padding:10px 14px;font-size:14px;width:100%}
+input[type=text]:focus{outline:none;border-color:var(--tieva-teal)}
+label{font-weight:600;font-size:13px;display:block;margin-bottom:6px}.hint{font-size:12px;color:var(--muted);margin-top:4px}
+.score-container{display:flex;align-items:center;gap:24px;padding:24px;background:linear-gradient(135deg,#f8fafc,#f1f5f9);border-radius:12px;margin-bottom:20px}
+.score-ring{position:relative;width:140px;height:140px;flex-shrink:0}
+.score-ring svg{transform:rotate(-90deg);width:140px;height:140px}
+.score-ring circle{fill:none;stroke-width:12}.score-ring .bg{stroke:#e5e7eb}.score-ring .progress{stroke-linecap:round;transition:stroke-dashoffset 0.8s ease}
+.score-value{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);text-align:center}
+.score-value .number{font-size:36px;font-weight:700;color:var(--tieva-navy)}.score-value .label{font-size:11px;color:var(--muted);text-transform:uppercase}
+.score-details{flex:1}.score-details h3{margin:0 0 8px;font-size:20px}.score-details p{margin:0 0 12px;color:var(--muted);font-size:14px}
+.score-badge{display:inline-block;padding:6px 14px;border-radius:999px;font-size:13px;font-weight:600}
+.score-badge.critical{background:#fee2e2;color:#dc2626}.score-badge.warning{background:#fef3c7;color:#d97706}
+.score-badge.good{background:#d1fae5;color:#059669}.score-badge.excellent{background:#dbeafe;color:#1d4ed8}
+.report-header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:24px;padding:20px;background:#fff;border-radius:12px;border-left:4px solid var(--tieva-teal)}
+.report-header .customer-name{font-size:24px;font-weight:700;color:var(--tieva-navy)}.report-header .report-type{font-size:14px;color:var(--muted);margin-top:4px}
+.report-header .report-meta{text-align:right;font-size:13px;color:var(--muted)}.report-header .report-meta div{margin-bottom:6px}.report-header .report-meta strong{color:var(--fg)}
+.tiles{display:flex;gap:14px;flex-wrap:wrap}.tile{flex:1 1 150px;border:1px solid var(--border);border-radius:10px;padding:16px;background:#fff}
+.tile h4{margin:0 0 8px;font-size:11px;color:var(--muted);text-transform:uppercase;font-weight:600}.tile .big{font-size:28px;font-weight:700;color:var(--tieva-navy)}
+table{border-collapse:collapse;width:100%}thead{background:var(--tieva-teal);color:#fff}
+th{text-align:left;padding:10px 12px;font-weight:600;font-size:12px;text-transform:uppercase}
+td{padding:10px 12px;border-bottom:1px solid var(--border);font-size:13px;vertical-align:top}
+tbody tr:hover{background:#f9fafb}tbody tr[data-filter]{cursor:pointer}tbody tr[data-filter]:hover{background:#f0fdf4}
+.scroller{max-height:480px;overflow:auto}
+.tag{display:inline-block;padding:3px 10px;border-radius:999px;font-size:11px;font-weight:600;color:#fff}
+.tag.high{background:var(--critical)}.tag.medium{background:var(--warning)}.tag.low{background:var(--success)}
+.pill{display:inline-block;font-size:12px;border-radius:999px;padding:4px 10px;border:1px solid var(--border);background:#f9fafb}
+.pill-yes{background:#d1fae5;color:#059669;border-color:#a7f3d0}.pill-no{background:#fee2e2;color:#dc2626;border-color:#fecaca}
+.filterbar{display:flex;gap:10px;align-items:center;margin-bottom:12px;flex-wrap:wrap}
+.progress-bar{background:#e5e7eb;border-radius:999px;height:8px;overflow:hidden;width:100px}
+.progress-fill{height:100%;border-radius:999px}.progress-fill.good{background:var(--success)}.progress-fill.warning{background:var(--warning)}.progress-fill.critical{background:var(--critical)}
+.section{display:none}.section.visible{display:block}
+.loading-overlay{display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(255,255,255,0.95);z-index:9999;justify-content:center;align-items:center;flex-direction:column;gap:20px}
+.loading-overlay.active{display:flex}
+.spinner{width:56px;height:56px;border:5px solid var(--border);border-top-color:var(--tieva-teal);border-radius:50%;animation:spin 1s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.loading-text{font-size:18px;color:var(--tieva-navy);font-weight:600}
+.toast-container{position:fixed;top:24px;right:24px;z-index:10000;display:flex;flex-direction:column;gap:12px}
+.toast{background:#fff;border-radius:10px;padding:16px 20px;box-shadow:0 8px 24px rgba(0,0,0,0.15);animation:slideIn 0.3s ease;max-width:420px}
+.toast.success{border-left:4px solid var(--success)}.toast.error{border-left:4px solid var(--critical)}.toast.info{border-left:4px solid var(--tieva-teal)}
+@keyframes slideIn{from{transform:translateX(120%)}to{transform:translateX(0)}}
+.roadmap-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-top:16px}
+.wave-card{border:2px solid var(--border);border-radius:12px;padding:16px;background:#fff}.wave-card.priority-1{border-left:4px solid var(--critical)}
+.wave-card.priority-2{border-left:4px solid var(--warning)}.wave-card.priority-3{border-left:4px solid var(--success)}
+.wave-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px}
+.wave-title{font-weight:700;font-size:15px;color:var(--tieva-navy)}
+.wave-badge{font-size:11px;padding:4px 10px;border-radius:999px;font-weight:600}
+.wave-badge.quick{background:#fee2e2;color:#dc2626}.wave-badge.standard{background:#fef3c7;color:#d97706}.wave-badge.complex{background:#d1fae5;color:#059669}
+.wave-stats{display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:13px}
+.wave-stat{padding:8px;background:#f9fafb;border-radius:6px}.wave-stat-label{color:var(--muted);font-size:11px}.wave-stat-value{font-weight:700;color:var(--tieva-navy)}
+.compliance-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:16px}
+.compliance-card{border:1px solid var(--border);border-radius:12px;padding:20px;background:#fff}
+.compliance-header{display:flex;align-items:center;gap:12px;margin-bottom:16px}
+.compliance-icon{width:48px;height:48px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:20px}
+.compliance-icon.caf{background:#dbeafe;color:#1d4ed8}.compliance-icon.waf{background:#e0e7ff;color:#4f46e5}.compliance-icon.finops{background:#fef3c7;color:#d97706}.compliance-icon.iso{background:#d1fae5;color:#059669}
+.compliance-title{font-weight:700;font-size:16px;color:var(--tieva-navy)}.compliance-subtitle{font-size:12px;color:var(--muted)}
+.compliance-bar{height:8px;background:#e5e7eb;border-radius:999px;overflow:hidden;margin:12px 0}
+.compliance-fill{height:100%;border-radius:999px;transition:width 0.6s ease}
+.compliance-stats{display:flex;justify-content:space-between;font-size:13px;color:var(--muted)}
+.exec-summary{background:#fff;border-radius:12px;padding:24px;margin-bottom:20px}
+.exec-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:20px;margin-top:20px}
+.exec-metric{text-align:center;padding:20px;background:#f8fafc;border-radius:10px}
+.exec-metric .value{font-size:36px;font-weight:700;color:var(--tieva-navy)}.exec-metric .label{font-size:12px;color:var(--muted);text-transform:uppercase;margin-top:4px}
+.exec-highlights{margin-top:20px}
+.exec-highlight{display:flex;align-items:center;gap:12px;padding:12px;border-left:3px solid var(--tieva-teal);background:#f8fafc;margin-bottom:8px;border-radius:0 8px 8px 0}
+.top-actions{margin-top:20px}
+.top-action{display:flex;align-items:center;gap:12px;padding:12px 16px;background:#fff;border:1px solid var(--border);border-radius:8px;margin-bottom:8px}
+.top-action-num{width:28px;height:28px;background:var(--tieva-navy);color:#fff;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:13px}
+.top-action-text{flex:1;font-size:14px}.top-action-sev{font-weight:600}
+@media print{.brandbar,.header-btn,.btn,input,.loading-overlay,.toast-container,#uploadCard{display:none!important}.wrap{padding:0}.card{box-shadow:none;page-break-inside:avoid}.section.visible{display:block!important}body{background:#fff}}
+</style>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+</head>
+<body>
+<div class="loading-overlay" id="loadingOverlay"><div class="spinner"></div><div class="loading-text" id="loadingText">Generating report...</div></div>
+<div class="toast-container" id="toastContainer"></div>
+<div class="brandbar"><div class="brandwrap">
+<div><div class="brandtitle">TIEVA — Resource Analyzer</div><div class="brandsubtitle">Azure Resource Inventory & Utilization Explorer</div></div>
+<div class="btnrow">
+<button id="btnExecPDF" class="header-btn" disabled>Executive Summary</button>
+<button id="btnRoadmap" class="header-btn" disabled>Export Roadmap</button>
+<button id="btnCSV" class="header-btn" disabled>Customer Review</button>
+<button id="btnPDF" class="header-btn" disabled>Full Report PDF</button>
+</div>
+</div></div>
+<div class="wrap" id="mainContent">
+<div class="pagetitle">Resource Inventory & Utilization Overview</div>
+<div class="pagedesc">Upload your Resource_Audit.xlsx to analyze resource inventory, utilization, orphaned resources, and optimization opportunities.</div>
+<div class="card" id="uploadCard">
+<div class="row"><div class="col"><label for="customerName">Customer Name</label><input type="text" id="customerName" placeholder="Enter customer name for report header"/></div></div>
+<div class="row" style="margin-top:16px">
+<div class="col"><label>Resource Audit (XLSX)</label><input id="auditFile" type="file" accept=".xlsx"/><div class="hint">Sheets: Subscription_Summary, Resource_Inventory, VM_Details, Orphaned_Resources, Tag_Compliance, Findings</div></div>
+<div class="col" style="display:flex;align-items:flex-end"><div style="display:flex;gap:10px"><button id="btnGo" class="btn primary">Generate Report</button><button id="btnClear" class="btn">Clear Filter</button></div></div>
+</div>
+</div>
+<div id="reportHeaderSec" class="section"><div class="report-header">
+<div><div class="customer-name" id="rptCustomer">Customer Report</div><div class="report-type">Resource Inventory & Utilization Analysis</div></div>
+<div class="report-meta"><div><strong>Generated:</strong> <span id="rptTime"></span></div><div><strong>Subscriptions:</strong> <span id="rptSubs">0</span></div><div><strong>Report ID:</strong> <span id="rptId"></span></div></div>
+</div></div>
+<div id="execSec" class="section"><div class="exec-summary">
+<h2>📊 Executive Summary</h2>
+<div class="exec-grid">
+<div class="exec-metric"><div class="value" id="execScore">0</div><div class="label">Resource Health Score</div></div>
+<div class="exec-metric"><div class="value" id="execResources">0</div><div class="label">Total Resources</div></div>
+<div class="exec-metric"><div class="value" id="execItems">0</div><div class="label">Findings</div></div>
+</div>
+<div class="exec-highlights">
+<div class="exec-highlight"><span>🎯</span><span id="execHighlight1">-</span></div>
+<div class="exec-highlight"><span>⚠️</span><span id="execHighlight2">-</span></div>
+<div class="exec-highlight"><span>✅</span><span id="execHighlight3">-</span></div>
+</div>
+<div class="top-actions"><h3 style="margin-bottom:12px">Top Priority Findings</h3><div id="topActions"></div></div>
+</div></div>
+<div id="scoreSec" class="section"><div class="score-container">
+<div class="score-ring"><svg viewBox="0 0 140 140"><circle class="bg" cx="70" cy="70" r="58"/><circle class="progress" id="scoreCircle" cx="70" cy="70" r="58" stroke-dasharray="364" stroke-dashoffset="364" stroke="#e5e7eb"/></svg>
+<div class="score-value"><div class="number" id="scoreNum">0</div><div class="label">Score</div></div></div>
+<div class="score-details"><h3>Resource Health Score</h3><p id="scoreDesc">Upload data to calculate your resource health score.</p><span class="score-badge" id="scoreBadge">Pending</span></div>
+</div></div>
+<div id="kpiSec" class="section"><div class="card"><h2>At a Glance</h2>
+<div class="tiles">
+<div class="tile"><h4>Subscriptions</h4><div class="big" id="kpiSubs">0</div></div>
+<div class="tile"><h4>Total Resources</h4><div class="big" id="kpiResources">0</div></div>
+<div class="tile"><h4>Virtual Machines</h4><div class="big" id="kpiVMs">0</div></div>
+<div class="tile"><h4>Tag Coverage</h4><div class="big" id="kpiTags">0%</div></div>
+<div class="tile"><h4>Orphaned Resources</h4><div class="big" id="kpiOrphaned">0</div></div>
+<div class="tile"><h4>High Findings</h4><div class="big" id="kpiHigh">0</div></div>
+</div>
+</div></div>
+<div id="roadmapSec" class="section"><div class="card"><h2>Remediation Roadmap</h2>
+<div class="roadmap-grid" id="roadmapGrid"></div>
+</div></div>
+<div id="complianceSec" class="section"><div class="card"><h2>Framework Alignment</h2>
+<div class="compliance-grid" id="complianceGrid"></div>
+</div></div>
+<div id="summarySec" class="section"><div class="card"><h2>Summary Tables</h2>
+<div class="row">
+<div class="col"><h3>By Category</h3><div id="tblCategory" class="scroller"></div></div>
+<div class="col"><h3>By Subscription</h3><div id="tblSub" class="scroller"></div></div>
+<div class="col"><h3>By Severity</h3><div id="tblSeverity" class="scroller"></div></div>
+</div>
+</div></div>
+<div id="vmSec" class="section"><div class="card"><h2>Virtual Machine Utilization & Right-Sizing Assessment</h2>
+<p class="muted" style="margin-bottom:16px">Comprehensive metrics collected over the audit period. <strong>Assessment</strong> indicates right-sizing opportunities based on CPU, Memory, Disk and Network utilization. <strong>Confidence</strong> reflects data quality - High confidence requires memory metrics (Azure Monitor Agent) and sufficient data points.</p>
+<div id="tblVMs" class="scroller"></div>
+</div></div>
+<div id="orphanSec" class="section"><div class="card"><h2>Orphaned Resources</h2>
+<div id="tblOrphaned" class="scroller"></div>
+</div></div>
+<div id="tagSec" class="section"><div class="card"><h2>Tag Compliance</h2>
+<div id="tblTags" class="scroller"></div>
+</div></div>
+<div id="detailSec" class="section"><div class="card">
+<div class="filterbar"><h2 style="margin:0">All Findings</h2><span class="pill" id="activeFilter" style="display:none"></span></div>
+<div id="tblDetail" class="scroller"></div>
+</div></div>
+</div>
+<script>
+const el=id=>document.getElementById(id);
+const fmt=n=>isFinite(n)?Math.round(n*10)/10:0;
+const esc=s=>String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+const pct=(n,d)=>d?Math.round((n/d)*100):0;
+const groupBy=(arr,k)=>{const m={};arr.forEach(x=>{const v=x[k]||'(blank)';(m[v]??=[]).push(x)});return m};
+const sum=(arr,fn)=>arr.reduce((s,x)=>s+(fn(x)||0),0);
+
+let DATA={subs:[],resources:[],vms:[],orphaned:[],tags:[],findings:[],hyb:[]};
+let FILTER=null;
+
+function showLoading(msg){el('loadingText').textContent=msg||'Processing...';el('loadingOverlay').classList.add('active')}
+function hideLoading(){el('loadingOverlay').classList.remove('active')}
+function toast(msg,type='info'){const t=document.createElement('div');t.className='toast '+type;t.textContent=msg;el('toastContainer').appendChild(t);setTimeout(()=>t.remove(),4000)}
+
+function readSheet(wb,name){if(!wb.SheetNames.includes(name))return[];return XLSX.utils.sheet_to_json(wb.Sheets[name],{defval:''})}
+
+function calcScore(){
+  const subs=DATA.subs,findings=DATA.findings,tags=DATA.tags;
+  if(!subs.length)return{score:0,label:'No Data',cls:'critical'};
+  const tagAvg=tags.length?tags.reduce((s,t)=>s+(parseFloat(t.TagCoveragePercent)||0),0)/tags.length:0;
+  const orphaned=DATA.orphaned.length;
+  const hi=findings.filter(f=>String(f.Severity||'').toLowerCase()==='high').length;
+  const med=findings.filter(f=>String(f.Severity||'').toLowerCase()==='medium').length;
+  const total=findings.length||1;
+  const hiPct=(hi/total)*100,medPct=(med/total)*100;
+  let s=(tagAvg*0.4)+(100-hiPct*0.4-medPct*0.2)*0.4;
+  if(orphaned>0)s-=Math.min(20,orphaned*2);
+  s=Math.max(0,Math.min(100,Math.round(s)));
+  let l,c;if(s>=80){l='Excellent';c='excellent'}else if(s>=60){l='Good';c='good'}else if(s>=40){l='Needs Attention';c='warning'}else{l='Critical';c='critical'}
+  return{score:s,label:l,cls:c}
+}
+
+function updateScore(sc){
+  const circ=364,off=circ-(sc.score/100)*circ;
+  const circle=el('scoreCircle'),num=el('scoreNum');
+  if(circle){circle.style.strokeDashoffset=String(off);circle.style.stroke=sc.score>=80?'#10b981':sc.score>=60?'#3b82f6':sc.score>=40?'#f59e0b':'#ef4444'}
+  if(num)num.textContent=String(sc.score);
+  el('scoreBadge').textContent=sc.label;el('scoreBadge').className='score-badge '+sc.cls;
+  const desc={excellent:'Excellent resource health.',good:'Good resource management.',warning:'Resource gaps need attention.',critical:'Critical resource issues.'};
+  el('scoreDesc').textContent=desc[sc.cls]
+}
+
+function renderTable(container,cols,rows,clickKey){
+  let h='<table><thead><tr>'+cols.map(c=>`<th>${c.header}</th>`).join('')+'</tr></thead><tbody>';
+  rows.forEach(r=>{
+    const attr=clickKey?` data-filter="${clickKey}" data-value="${esc(r[clickKey]||'')}"`:'';
+    h+=`<tr${attr}>`+cols.map(c=>`<td>${c.render?c.render(r):esc(r[c.key]||'')}</td>`).join('')+'</tr>';
+  });
+  h+='</tbody></table>';container.innerHTML=h;
+  if(clickKey)container.querySelectorAll('tr[data-filter]').forEach(tr=>tr.onclick=()=>applyFilter(clickKey,tr.dataset.value))
+}
+
+function sevTag(s){const v=String(s||'').toLowerCase();if(v.startsWith('h'))return'<span class="tag high">High</span>';if(v.startsWith('m'))return'<span class="tag medium">Medium</span>';return'<span class="tag low">Low</span>'}
+function yesNo(v){const s=String(v||'').toLowerCase();if(s==='true'||s==='yes')return'<span class="pill pill-yes">Yes</span>';if(s==='false'||s==='no')return'<span class="pill pill-no">No</span>';return esc(v)}
+function progBar(p){const n=parseFloat(p)||0;const c=n>=80?'good':n>=50?'warning':'critical';return`<div style="display:flex;align-items:center;gap:8px"><div class="progress-bar"><div class="progress-fill ${c}" style="width:${n}%"></div></div><span>${n}%</span></div>`}
+
+function applyFilter(key,val){FILTER={key,val};el('activeFilter').style.display='';el('activeFilter').textContent=`${key}: ${val}`;renderAll()}
+el('btnClear').onclick=()=>{FILTER=null;el('activeFilter').style.display='none';renderAll()};
+
+function renderAll(){
+  const findings=FILTER?DATA.findings.filter(f=>(f[FILTER.key]||'')==FILTER.val):DATA.findings;
+  const subs=DATA.subs,vms=DATA.vms,orphaned=DATA.orphaned,tags=DATA.tags,resources=DATA.resources;
+  
+  const hi=findings.filter(f=>String(f.Severity||'').toLowerCase()==='high').length;
+  const med=findings.filter(f=>String(f.Severity||'').toLowerCase()==='medium').length;
+  const low=findings.filter(f=>String(f.Severity||'').toLowerCase()==='low').length;
+  const tagAvg=tags.length?Math.round(tags.reduce((s,t)=>s+(parseFloat(t.TagCoveragePercent)||0),0)/tags.length):0;
+  
+  el('kpiSubs').textContent=subs.length;
+  el('kpiResources').textContent=resources.length;
+  el('kpiVMs').textContent=vms.length;
+  el('kpiTags').textContent=tagAvg+'%';
+  el('kpiOrphaned').textContent=orphaned.length;
+  el('kpiHigh').textContent=hi;
+  
+  const sc=calcScore();updateScore(sc);setTimeout(()=>updateScore(sc),50);
+  
+  el('execScore').textContent=sc.score;
+  el('execResources').textContent=resources.length;
+  el('execItems').textContent=findings.length;
+  el('execHighlight1').textContent=`${subs.length} subscription(s) audited with ${resources.length} total resources`;
+  el('execHighlight2').textContent=orphaned.length?`${orphaned.length} orphaned resource(s) identified for cleanup`:'No orphaned resources found';
+  el('execHighlight3').textContent=`Tag compliance at ${tagAvg}% across all subscriptions`;
+  
+  let topHtml='';
+  findings.filter(f=>String(f.Severity||'').toLowerCase()==='high').slice(0,5).forEach((f,i)=>{
+    topHtml+=`<div class="top-action"><div class="top-action-num">${i+1}</div><div class="top-action-text"><span class="top-action-sev">${esc(f.Category||'')}</span> — ${esc(f.Detail||f.ResourceName||'')}</div></div>`;
+  });
+  el('topActions').innerHTML=topHtml||'<div class="muted">No high-severity findings</div>';
+  
+  // Roadmap waves
+  const waves=[
+    {title:'Wave 1: Quick Wins',badge:'quick',desc:'Low effort, immediate impact',filter:f=>String(f.Severity||'').toLowerCase()==='low'},
+    {title:'Wave 2: Core Remediation',badge:'standard',desc:'Medium complexity fixes',filter:f=>String(f.Severity||'').toLowerCase()==='medium'},
+    {title:'Wave 3: Strategic',badge:'complex',desc:'High effort improvements',filter:f=>String(f.Severity||'').toLowerCase()==='high'}
+  ];
+  let roadmapHtml='';
+  waves.forEach((w,i)=>{
+    const items=findings.filter(w.filter);
+    roadmapHtml+=`<div class="wave-card priority-${i+1}"><div class="wave-header"><div class="wave-title">${w.title}</div><div class="wave-badge ${w.badge}">${items.length} items</div></div><div class="wave-stats"><div class="wave-stat"><div class="wave-stat-label">Findings</div><div class="wave-stat-value">${items.length}</div></div><div class="wave-stat"><div class="wave-stat-label">Focus</div><div class="wave-stat-value">${w.desc}</div></div></div></div>`;
+  });
+  el('roadmapGrid').innerHTML=roadmapHtml;
+  
+  // Compliance frameworks
+  const frameworks=[
+    {id:'caf',name:'Cloud Adoption Framework',sub:'Azure CAF Governance',icon:'caf',controls:['Tagging','Naming','RBAC','Cost Management'],metric:tagAvg},
+    {id:'waf',name:'Well-Architected Framework',sub:'Operational Excellence',icon:'waf',controls:['Resource Health','Monitoring','Automation','Documentation'],metric:Math.max(0,100-hi*5-med*2)},
+    {id:'finops',name:'FinOps Framework',sub:'Cost Optimization',icon:'finops',controls:['Right-sizing','Orphaned Resources','Hybrid Benefit','Reserved Instances'],metric:orphaned.length?Math.max(0,100-orphaned.length*5):100},
+    {id:'iso',name:'ISO 27001',sub:'Asset Management',icon:'iso',controls:['Asset Inventory','Classification','Lifecycle','Documentation'],metric:Math.round(sc.score*0.9)}
+  ];
+  let compHtml='';
+  frameworks.forEach(fw=>{
+    const color=fw.metric>=80?'#10b981':fw.metric>=60?'#3b82f6':fw.metric>=40?'#f59e0b':'#ef4444';
+    compHtml+=`<div class="compliance-card"><div class="compliance-header"><div class="compliance-icon ${fw.icon}">${fw.icon==='caf'?'📋':fw.icon==='waf'?'🏗️':fw.icon==='finops'?'💰':'🔒'}</div><div><div class="compliance-title">${fw.name}</div><div class="compliance-subtitle">${fw.sub}</div></div></div><div class="compliance-bar"><div class="compliance-fill" style="width:${fw.metric}%;background:${color}"></div></div><div class="compliance-stats"><span>${fw.metric}% aligned</span><span>${fw.controls.length} controls</span></div></div>`;
+  });
+  el('complianceGrid').innerHTML=compHtml;
+  
+  // Summary tables
+  const byCat=Object.entries(groupBy(findings,'Category')).map(([k,arr])=>({Category:k,Count:arr.length,High:arr.filter(f=>/^h/i.test(f.Severity)).length})).sort((a,b)=>b.Count-a.Count);
+  renderTable(el('tblCategory'),[{key:'Category',header:'Category'},{key:'Count',header:'Count'},{key:'High',header:'High'}],byCat,'Category');
+  
+  const bySub=Object.entries(groupBy(findings,'SubscriptionName')).map(([k,arr])=>({SubscriptionName:k,Count:arr.length,High:arr.filter(f=>/^h/i.test(f.Severity)).length})).sort((a,b)=>b.Count-a.Count);
+  renderTable(el('tblSub'),[{key:'SubscriptionName',header:'Subscription'},{key:'Count',header:'Count'},{key:'High',header:'High'}],bySub,'SubscriptionName');
+  
+  const bySev=[{Severity:'High',Count:hi},{Severity:'Medium',Count:med},{Severity:'Low',Count:low}];
+  renderTable(el('tblSeverity'),[{key:'Severity',header:'Severity',render:r=>sevTag(r.Severity)},{key:'Count',header:'Count'}],bySev,'Severity');
+  
+  // VM details - comprehensive utilization
+  if(vms.length){
+    const metricRender=(v,unit='%',low=20,high=80)=>{
+      if(v===null||v===''||v===undefined)return'<span class="muted">-</span>';
+      const n=parseFloat(v);if(isNaN(n))return'<span class="muted">-</span>';
+      const c=n<low?'critical':n>high?'critical':'good';
+      return`<span style="color:var(--${c})">${n}${unit}</span>`;
+    };
+    const cpuRender=(v)=>{
+      if(v===null||v===''||v===undefined)return'<span class="muted">-</span>';
+      const n=parseFloat(v);if(isNaN(n))return'<span class="muted">-</span>';
+      const c=n<20?'warning':n>80?'critical':'good';
+      return`<span style="color:var(--${c});font-weight:600">${n}%</span>`;
+    };
+    const memRender=(v)=>{
+      if(v===null||v===''||v===undefined)return'<span class="muted">-</span>';
+      const n=parseFloat(v);if(isNaN(n))return'<span class="muted">-</span>';
+      const c=n<30?'warning':n>85?'critical':'good';
+      return`<span style="color:var(--${c});font-weight:600">${n}%</span>`;
+    };
+    const assessRender=(v)=>{
+      if(!v||v==='Metrics Not Collected')return'<span class="muted">Not collected</span>';
+      if(v.includes('Strong Downsize'))return'<span class="tag high">'+esc(v)+'</span>';
+      if(v.includes('Moderate')||v.includes('Possible')||v.includes('Likely'))return'<span class="tag medium">'+esc(v)+'</span>';
+      if(v.includes('Upsize'))return'<span class="tag medium">'+esc(v)+'</span>';
+      if(v.includes('OK'))return'<span class="pill pill-yes">OK</span>';
+      if(v.includes('Insufficient')||v.includes('Incomplete'))return'<span class="muted">'+esc(v)+'</span>';
+      return esc(v);
+    };
+    const confRender=(v)=>{
+      if(!v||v==='None')return'<span class="muted">-</span>';
+      if(v==='High')return'<span class="pill pill-yes">High</span>';
+      if(v==='Medium')return'<span style="color:var(--warning)">Medium</span>';
+      return'<span class="muted">'+esc(v)+'</span>';
+    };
+    renderTable(el('tblVMs'),[
+      {key:'SubscriptionName',header:'Subscription'},
+      {key:'VMName',header:'VM Name'},
+      {key:'VMSize',header:'Size'},
+      {key:'OSType',header:'OS'},
+      {key:'PowerState',header:'State',render:r=>{const s=String(r.PowerState||'').toLowerCase();return s.includes('running')?'<span class="pill pill-yes">Running</span>':s.includes('deallocated')?'<span class="pill pill-no">Deallocated</span>':esc(r.PowerState||'-')}},
+      {key:'AHUBEnabled',header:'AHUB',render:r=>{const v=r.AHUBEnabled;if(v===true||String(v).toLowerCase()==='true')return'<span class="pill pill-yes">Yes</span>';if(v===false||String(v).toLowerCase()==='false')return'<span class="pill pill-no">No</span>';return'-'}},
+      {key:'CpuAvgPercent',header:'CPU Avg',render:r=>cpuRender(r.CpuAvgPercent)},
+      {key:'CpuMaxPercent',header:'CPU Max',render:r=>cpuRender(r.CpuMaxPercent)},
+      {key:'CpuP95Percent',header:'CPU P95',render:r=>cpuRender(r.CpuP95Percent)},
+      {key:'MemAvgPercent',header:'Mem Avg',render:r=>memRender(r.MemAvgPercent)},
+      {key:'MemMaxPercent',header:'Mem Max',render:r=>memRender(r.MemMaxPercent)},
+      {key:'DiskTotalIOPS',header:'Disk IOPS',render:r=>{const v=r.DiskTotalIOPS;return v?v:'<span class="muted">-</span>'}},
+      {key:'DataQuality',header:'Data Quality',render:r=>{const v=r.DataQuality;if(v==='High')return'<span class="pill pill-yes">High</span>';if(v==='Medium')return'<span style="color:var(--warning)">Medium</span>';if(v==='Low')return'<span style="color:var(--critical)">Low</span>';return'<span class="muted">'+esc(v||'-')+'</span>'}},
+      {key:'AssessmentConfidence',header:'Confidence',render:r=>confRender(r.AssessmentConfidence)},
+      {key:'Assessment',header:'Assessment',render:r=>assessRender(r.Assessment)}
+    ],vms,'VMName');
+  }
+  
+  // Orphaned resources
+  if(orphaned.length){
+    renderTable(el('tblOrphaned'),[
+      {key:'SubscriptionName',header:'Subscription'},
+      {key:'ResourceName',header:'Resource'},
+      {key:'ResourceType',header:'Type'},
+      {key:'SizeGB',header:'Size (GB)'},
+      {key:'EstimatedCost',header:'Est. Cost'},
+      {key:'Recommendation',header:'Action'}
+    ],orphaned,'ResourceType');
+  }
+  
+  // Tag compliance
+  if(tags.length){
+    renderTable(el('tblTags'),[
+      {key:'SubscriptionName',header:'Subscription'},
+      {key:'TotalResources',header:'Resources'},
+      {key:'ResourcesWithTags',header:'Tagged'},
+      {key:'TagCoveragePercent',header:'Coverage',render:r=>progBar(r.TagCoveragePercent)},
+      {key:'EnvironmentTag',header:'Environment'},
+      {key:'OwnerTag',header:'Owner'},
+      {key:'CostCenterTag',header:'CostCenter'}
+    ],tags,'SubscriptionName');
+  }
+  
+  // All findings
+  renderTable(el('tblDetail'),[
+    {key:'SubscriptionName',header:'Subscription'},
+    {key:'Severity',header:'Severity',render:r=>sevTag(r.Severity)},
+    {key:'Category',header:'Category'},
+    {key:'ResourceType',header:'Type'},
+    {key:'ResourceName',header:'Resource'},
+    {key:'Detail',header:'Finding'},
+    {key:'Recommendation',header:'Action'}
+  ],findings,'Category');
+  
+  // Report header
+  const cust=el('customerName').value||'Customer';
+  el('rptCustomer').textContent=cust;
+  el('rptTime').textContent=new Date().toLocaleString();
+  el('rptSubs').textContent=subs.length;
+  el('rptId').textContent='RES-'+Date.now().toString(36).toUpperCase();
+  
+  // Show sections
+  ['reportHeaderSec','execSec','scoreSec','kpiSec','roadmapSec','complianceSec','summarySec','detailSec'].forEach(id=>el(id).classList.add('visible'));
+  if(vms.length)el('vmSec').classList.add('visible');
+  if(orphaned.length)el('orphanSec').classList.add('visible');
+  if(tags.length)el('tagSec').classList.add('visible');
+  
+  // Enable buttons
+  ['btnExecPDF','btnRoadmap','btnCSV','btnPDF'].forEach(id=>el(id).disabled=false);
+}
+
+el('btnGo').onclick=async()=>{
+  const file=el('auditFile').files[0];
+  if(!file){toast('Please select a Resource_Audit.xlsx file','error');return}
+  showLoading('Reading audit data...');
+  try{
+    const buf=await file.arrayBuffer();
+    const wb=XLSX.read(buf,{type:'array'});
+    DATA.subs=readSheet(wb,'Subscription_Summary');
+    DATA.resources=readSheet(wb,'Resource_Inventory');
+    DATA.vms=readSheet(wb,'VM_Details');
+    DATA.orphaned=readSheet(wb,'Orphaned_Resources');
+    DATA.tags=readSheet(wb,'Tag_Compliance');
+    DATA.findings=readSheet(wb,'Findings');
+    DATA.hyb=readSheet(wb,'Hybrid_Benefit');
+    FILTER=null;el('activeFilter').style.display='none';
+    renderAll();
+    toast('Report generated successfully','success');
+  }catch(e){console.error(e);toast('Error reading file: '+e.message,'error')}
+  finally{hideLoading()}
+};
+
+// Executive Summary PDF
+el('btnExecPDF').onclick=async()=>{
+  showLoading('Generating Executive Summary...');
+  await new Promise(r=>setTimeout(r,100));
+  const content=document.createElement('div');
+  content.innerHTML=`<div style="padding:20px;font-family:Segoe UI,sans-serif">
+    <div style="border-bottom:3px solid #2DA58E;padding-bottom:16px;margin-bottom:24px">
+      <h1 style="color:#1B365D;margin:0;font-size:28px">${esc(el('customerName').value||'Customer')}</h1>
+      <div style="color:#6b7280;margin-top:4px">Resource Inventory & Utilization Analysis — ${new Date().toLocaleDateString()}</div>
+    </div>
+    <div style="display:flex;gap:24px;margin-bottom:24px">
+      <div style="flex:1;text-align:center;padding:24px;background:#f8fafc;border-radius:12px">
+        <div style="font-size:48px;font-weight:700;color:#1B365D">${el('execScore').textContent}</div>
+        <div style="color:#6b7280;font-size:12px;text-transform:uppercase">Resource Health Score</div>
+      </div>
+      <div style="flex:1;text-align:center;padding:24px;background:#f8fafc;border-radius:12px">
+        <div style="font-size:48px;font-weight:700;color:#1B365D">${DATA.resources.length}</div>
+        <div style="color:#6b7280;font-size:12px;text-transform:uppercase">Total Resources</div>
+      </div>
+      <div style="flex:1;text-align:center;padding:24px;background:#f8fafc;border-radius:12px">
+        <div style="font-size:48px;font-weight:700;color:#1B365D">${DATA.findings.length}</div>
+        <div style="color:#6b7280;font-size:12px;text-transform:uppercase">Findings</div>
+      </div>
+    </div>
+    <h2 style="color:#1B365D;font-size:18px;margin-bottom:12px">Key Highlights</h2>
+    <div style="background:#f8fafc;padding:12px 16px;border-left:3px solid #2DA58E;margin-bottom:8px;border-radius:0 8px 8px 0">${el('execHighlight1').textContent}</div>
+    <div style="background:#f8fafc;padding:12px 16px;border-left:3px solid #f59e0b;margin-bottom:8px;border-radius:0 8px 8px 0">${el('execHighlight2').textContent}</div>
+    <div style="background:#f8fafc;padding:12px 16px;border-left:3px solid #10b981;margin-bottom:8px;border-radius:0 8px 8px 0">${el('execHighlight3').textContent}</div>
+    <h2 style="color:#1B365D;font-size:18px;margin:24px 0 12px">Top Priority Actions</h2>
+    ${el('topActions').innerHTML}
+    <div style="margin-top:32px;padding-top:16px;border-top:1px solid #e5e7eb;color:#6b7280;font-size:11px;display:flex;justify-content:space-between">
+      <span>Generated by TIEVA Resource Analyzer</span><span>Report ID: ${el('rptId').textContent}</span>
+    </div>
+  </div>`;
+  try{
+    await html2pdf().set({margin:10,filename:`${el('customerName').value||'Customer'}_Resource_Executive_Summary.pdf`,image:{type:'jpeg',quality:0.98},html2canvas:{scale:2},jsPDF:{unit:'mm',format:'a4',orientation:'portrait'}}).from(content).save();
+    toast('Executive Summary PDF downloaded','success');
+  }catch(e){toast('PDF generation failed','error');console.error(e)}
+  hideLoading();
+};
+
+// Full Report PDF
+el('btnPDF').onclick=async()=>{
+  showLoading('Generating Full Report PDF...');
+  await new Promise(r=>setTimeout(r,100));
+  try{
+    await html2pdf().set({margin:10,filename:`${el('customerName').value||'Customer'}_Resource_Full_Report.pdf`,image:{type:'jpeg',quality:0.95},html2canvas:{scale:1.5,scrollY:0},jsPDF:{unit:'mm',format:'a4',orientation:'landscape'},pagebreak:{mode:['avoid-all','css','legacy']}}).from(el('mainContent')).save();
+    toast('Full Report PDF downloaded','success');
+  }catch(e){toast('PDF generation failed','error');console.error(e)}
+  hideLoading();
+};
+
+// Roadmap XLSX export
+el('btnRoadmap').onclick=()=>{
+  showLoading('Generating Roadmap...');
+  try{
+    const wb=XLSX.utils.book_new();
+    const findings=DATA.findings;
+    
+    // Summary sheet
+    const summary=[
+      {Metric:'Report Date',Value:new Date().toLocaleDateString()},
+      {Metric:'Customer',Value:el('customerName').value||'Customer'},
+      {Metric:'Total Resources',Value:DATA.resources.length},
+      {Metric:'Total Findings',Value:findings.length},
+      {Metric:'High Severity',Value:findings.filter(f=>/^h/i.test(f.Severity)).length},
+      {Metric:'Medium Severity',Value:findings.filter(f=>/^m/i.test(f.Severity)).length},
+      {Metric:'Low Severity',Value:findings.filter(f=>/^l/i.test(f.Severity)).length}
+    ];
+    XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(summary),'Summary');
+    
+    // Wave sheets
+    const waves=[
+      {name:'Wave 1 - Quick Wins',filter:f=>/^l/i.test(f.Severity)},
+      {name:'Wave 2 - Core',filter:f=>/^m/i.test(f.Severity)},
+      {name:'Wave 3 - Strategic',filter:f=>/^h/i.test(f.Severity)}
+    ];
+    waves.forEach(w=>{
+      const items=findings.filter(w.filter).map(f=>({
+        Subscription:f.SubscriptionName,Severity:f.Severity,Category:f.Category,
+        Resource:f.ResourceName,Finding:f.Detail,Action:f.Recommendation,
+        Savings:f.PotentialSavings||''
+      }));
+      if(items.length)XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(items),w.name.slice(0,31));
+    });
+    
+    XLSX.writeFile(wb,`${el('customerName').value||'Customer'}_Resource_Roadmap.xlsx`);
+    toast('Roadmap exported','success');
+  }catch(e){toast('Export failed','error');console.error(e)}
+  hideLoading();
+};
+
+// Customer Review CSV
+el('btnCSV').onclick=()=>{
+  const findings=DATA.findings;
+  if(!findings.length){toast('No findings to export','error');return}
+  const today=new Date().toISOString().slice(0,10);
+  const headers=['Date Identified','Subscription','Severity','Category','Resource Type','Resource Name','Finding','Recommendation','Potential Savings','Status','Owner','Target Date','Notes'];
+  let csv=headers.join(',')+'\n';
+  findings.forEach(f=>{
+    const row=[today,f.SubscriptionName||'',f.Severity||'',f.Category||'',f.ResourceType||'',f.ResourceName||'',f.Detail||'',f.Recommendation||'',f.PotentialSavings||'','Open','','',''].map(v=>{
+      const s=String(v).replace(/"/g,'""');return/[",\n]/.test(s)?`"${s}"`:s;
+    });
+    csv+=row.join(',')+'\n';
+  });
+  const blob=new Blob([csv],{type:'text/csv'});
+  const a=document.createElement('a');a.href=URL.createObjectURL(blob);
+  a.download=`${el('customerName').value||'Customer'}_Resource_Review.csv`;a.click();
+  toast('Customer Review CSV downloaded','success');
+};
+</script>
+</body>
+</html>

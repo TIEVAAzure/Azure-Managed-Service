@@ -1,0 +1,784 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>TIEVA Hub — Azure Assessment Toolkit</title>
+<style>
+  :root{
+    --brand-green:#2DA58E; --critical:#ef4444; --moderate:#f59e0b; --excellent:#10b981;
+    --fg:#111827; --muted:#6b7280; --border:#e5e7eb; --canvas: var(--brand-green);
+    --link:#0f5eff; --content-max: 1200px;
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{
+    margin:0;
+    background:var(--canvas);
+    color:var(--fg);
+    font:14px/1.45 system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;
+    min-height:100vh;
+  }
+  .brandbar{background:#000;color:#fff}
+  .brandwrap{
+    max-width:var(--content-max);
+    margin:0 auto;
+    padding:14px 24px;
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:12px;
+  }
+  .brandtitle{font-size:20px;font-weight:700;letter-spacing:-0.02em}
+  .brandsubtitle{font-size:12px;opacity:0.7;margin-top:2px}
+  .btnrow{display:flex;gap:8px;flex-wrap:wrap}
+  .header-btn{
+    appearance:none;
+    border:1px solid rgba(255,255,255,.25);
+    background:transparent;
+    color:#fff;
+    border-radius:8px;
+    padding:8px 12px;
+    cursor:pointer;
+    font-size:13px;
+  }
+  .header-btn:hover{border-color:#fff}
+  .wrap{max-width:var(--content-max);margin:0 auto;padding:24px}
+  .hero{text-align:center;padding:40px 20px 30px;color:#fff}
+  .hero h1{font-size:32px;font-weight:700;margin:0 0 8px}
+  .hero p{font-size:16px;opacity:0.9;margin:0}
+  
+  .section-title{
+    color:#fff;
+    font-size:14px;
+    font-weight:600;
+    text-transform:uppercase;
+    letter-spacing:0.05em;
+    margin:30px 0 16px;
+    padding-bottom:8px;
+    border-bottom:2px solid rgba(255,255,255,0.2);
+  }
+  
+  .tools-grid{
+    display:grid;
+    grid-template-columns:repeat(auto-fill, minmax(280px, 1fr));
+    gap:16px;
+  }
+  
+  .tool-card{
+    background:#fff;
+    border:1px solid var(--border);
+    border-radius:12px;
+    padding:20px;
+    cursor:pointer;
+    transition:all 0.2s;
+    text-decoration:none;
+    color:inherit;
+    display:block;
+  }
+  .tool-card:hover{
+    transform:translateY(-2px);
+    box-shadow:0 8px 24px rgba(0,0,0,0.15);
+    border-color:var(--brand-green);
+  }
+  .tool-card.disabled{
+    opacity:0.5;
+    cursor:not-allowed;
+    pointer-events:none;
+  }
+  
+  .tool-icon{
+    width:48px;
+    height:48px;
+    border-radius:10px;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    font-size:24px;
+    margin-bottom:12px;
+  }
+  .tool-icon.network{background:#dbeafe;color:#1d4ed8}
+  .tool-icon.identity{background:#fce7f3;color:#be185d}
+  .tool-icon.policy{background:#d1fae5;color:#047857}
+  .tool-icon.reservation{background:#fef3c7;color:#b45309}
+  .tool-icon.backup{background:#e0e7ff;color:#4338ca}
+  .tool-icon.cost{background:#ccfbf1;color:#0f766e}
+  .tool-icon.advisor{background:#f3e8ff;color:#7c3aed}
+  .tool-icon.resource{background:#fee2e2;color:#dc2626}
+  .tool-icon.custom{background:#f1f5f9;color:#475569}
+  
+  .tool-name{font-size:16px;font-weight:600;margin-bottom:4px}
+  .tool-desc{font-size:13px;color:var(--muted);line-height:1.4}
+  .tool-meta{
+    display:flex;
+    gap:8px;
+    margin-top:12px;
+    flex-wrap:wrap;
+  }
+  .tool-tag{
+    font-size:11px;
+    padding:2px 8px;
+    border-radius:999px;
+    background:#f1f5f9;
+    color:#475569;
+  }
+  .tool-tag.ps{background:#e0f2fe;color:#0369a1}
+  .tool-tag.html{background:#dcfce7;color:#166534}
+  
+  .upload-section{
+    background:#fff;
+    border:1px solid var(--border);
+    border-radius:12px;
+    padding:24px;
+    margin-top:30px;
+  }
+  .upload-section h3{margin:0 0 16px;font-size:16px}
+  .upload-area{
+    border:2px dashed var(--border);
+    border-radius:8px;
+    padding:30px;
+    text-align:center;
+    cursor:pointer;
+    transition:all 0.2s;
+  }
+  .upload-area:hover{
+    border-color:var(--brand-green);
+    background:#f0fdf4;
+  }
+  .upload-area.dragover{
+    border-color:var(--brand-green);
+    background:#dcfce7;
+  }
+  .upload-icon{font-size:32px;margin-bottom:8px}
+  .upload-text{font-size:14px;color:var(--muted)}
+  .upload-hint{font-size:12px;color:var(--muted);margin-top:4px}
+  
+  .registered-tools{
+    margin-top:16px;
+    padding-top:16px;
+    border-top:1px solid var(--border);
+  }
+  .registered-tools h4{font-size:13px;margin:0 0 8px;color:var(--muted)}
+  .registered-list{
+    display:flex;
+    flex-wrap:wrap;
+    gap:8px;
+  }
+  .registered-item{
+    display:flex;
+    align-items:center;
+    gap:6px;
+    padding:6px 10px;
+    background:#f9fafb;
+    border:1px solid var(--border);
+    border-radius:6px;
+    font-size:12px;
+  }
+  .registered-item .remove{
+    cursor:pointer;
+    color:#dc2626;
+    font-weight:bold;
+  }
+  
+  .quick-links{
+    display:flex;
+    gap:12px;
+    flex-wrap:wrap;
+    margin-top:20px;
+    justify-content:center;
+  }
+  .quick-link{
+    color:#fff;
+    text-decoration:none;
+    padding:8px 16px;
+    border:1px solid rgba(255,255,255,0.3);
+    border-radius:8px;
+    font-size:13px;
+    transition:all 0.2s;
+  }
+  .quick-link:hover{
+    background:rgba(255,255,255,0.1);
+    border-color:#fff;
+    text-decoration:none;
+  }
+  
+  .footer{
+    text-align:center;
+    padding:40px 20px;
+    color:rgba(255,255,255,0.7);
+    font-size:12px;
+  }
+  
+  /* Modal */
+  .modal-overlay{
+    position:fixed;
+    top:0;left:0;right:0;bottom:0;
+    background:rgba(0,0,0,0.5);
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    z-index:1000;
+    opacity:0;
+    pointer-events:none;
+    transition:opacity 0.2s;
+  }
+  .modal-overlay.active{
+    opacity:1;
+    pointer-events:auto;
+  }
+  .modal{
+    background:#fff;
+    border-radius:12px;
+    padding:24px;
+    max-width:500px;
+    width:90%;
+    max-height:80vh;
+    overflow:auto;
+  }
+  .modal h3{margin:0 0 16px}
+  .modal-close{
+    float:right;
+    cursor:pointer;
+    font-size:20px;
+    color:var(--muted);
+  }
+  .form-group{margin-bottom:16px}
+  .form-group label{display:block;font-size:13px;font-weight:500;margin-bottom:4px}
+  .form-group input,.form-group select{
+    width:100%;
+    padding:8px 12px;
+    border:1px solid var(--border);
+    border-radius:6px;
+    font-size:14px;
+  }
+  .form-actions{display:flex;gap:8px;justify-content:flex-end;margin-top:20px}
+  .btn{
+    padding:8px 16px;
+    border:1px solid var(--border);
+    border-radius:6px;
+    cursor:pointer;
+    font-size:13px;
+    background:#f9fafb;
+  }
+  .btn.primary{background:#0f5eff;color:#fff;border-color:#0f5eff}
+  
+  .hidden{display:none!important}
+</style>
+</head>
+<body>
+  <div class="brandbar">
+    <div class="brandwrap">
+      <div>
+        <div class="brandtitle">TIEVA Hub</div>
+        <div class="brandsubtitle">Azure Assessment Toolkit</div>
+      </div>
+      <div class="btnrow">
+        <button id="btnAddTool" class="header-btn">+ Add Custom Tool</button>
+        <button id="btnExportConfig" class="header-btn">Export Config</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="hero">
+    <h1>🛡️ Azure Assessment Toolkit</h1>
+    <p>Comprehensive auditing and analysis tools for Azure Managed Services</p>
+    <div class="quick-links">
+      <a href="#analyzers" class="quick-link">📊 Analyzers</a>
+      <a href="#collectors" class="quick-link">📥 Data Collectors</a>
+      <a href="#custom" class="quick-link">🔧 Custom Tools</a>
+    </div>
+  </div>
+
+  <div class="wrap">
+    <!-- Analyzers Section -->
+    <div class="section-title" id="analyzers">📊 Analysis & Visualization Tools</div>
+    <div class="tools-grid" id="analyzerGrid"></div>
+
+    <!-- Collectors Section -->
+    <div class="section-title" id="collectors">📥 PowerShell Data Collectors</div>
+    <div class="tools-grid" id="collectorGrid"></div>
+
+    <!-- Custom Tools Section -->
+    <div class="section-title" id="custom">🔧 Custom Tools</div>
+    <div class="tools-grid" id="customGrid"></div>
+    <div id="noCustomTools" class="upload-section">
+      <h3>Add Custom Tools</h3>
+      <div class="upload-area" id="uploadArea">
+        <div class="upload-icon">📁</div>
+        <div class="upload-text">Drag & drop HTML analyzer files here</div>
+        <div class="upload-hint">or click to browse</div>
+      </div>
+      <input type="file" id="fileInput" accept=".html" multiple style="display:none" />
+      <div class="registered-tools" id="registeredTools" style="display:none">
+        <h4>Registered Custom Tools</h4>
+        <div class="registered-list" id="registeredList"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="footer">
+    TIEVA Azure Assessment Toolkit • Built for AMS Customer Engagements
+  </div>
+
+  <!-- Add Tool Modal -->
+  <div class="modal-overlay" id="addToolModal">
+    <div class="modal">
+      <span class="modal-close" onclick="closeModal()">&times;</span>
+      <h3>Add Custom Tool</h3>
+      <div class="form-group">
+        <label>Tool Name</label>
+        <input type="text" id="toolName" placeholder="e.g., Security Analyzer" />
+      </div>
+      <div class="form-group">
+        <label>Description</label>
+        <input type="text" id="toolDesc" placeholder="e.g., Analyzes security configurations" />
+      </div>
+      <div class="form-group">
+        <label>Category</label>
+        <select id="toolCategory">
+          <option value="analyzer">Analyzer (HTML)</option>
+          <option value="collector">Collector (PowerShell)</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Icon</label>
+        <select id="toolIcon">
+          <option value="custom">🔧 Custom</option>
+          <option value="network">🌐 Network</option>
+          <option value="identity">👤 Identity</option>
+          <option value="policy">📋 Policy</option>
+          <option value="backup">💾 Backup</option>
+          <option value="cost">💰 Cost</option>
+          <option value="resource">📦 Resource</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>File (HTML or PS1)</label>
+        <input type="file" id="toolFile" accept=".html,.ps1" />
+      </div>
+      <div class="form-actions">
+        <button class="btn" onclick="closeModal()">Cancel</button>
+        <button class="btn primary" onclick="saveTool()">Add Tool</button>
+      </div>
+    </div>
+  </div>
+
+<script>
+// Built-in tools registry
+const BUILTIN_TOOLS = {
+  analyzers: [
+    {
+      id: 'network',
+      name: 'Network Topology Analyzer',
+      desc: 'Analyze VNets, subnets, NSG rules, public IPs, and network security findings',
+      icon: 'network',
+      tags: ['HTML', 'Network_Audit.xlsx'],
+      filename: 'TIEVA_Network_Topology_Analyzer.html'
+    },
+    {
+      id: 'identity',
+      name: 'Identity & Access Analyzer',
+      desc: 'Review RBAC assignments, privileged access, service principals, and guest users',
+      icon: 'identity',
+      tags: ['HTML', 'Identity_Audit.xlsx'],
+      filename: 'TIEVA_Identity_Access_Analyzer.html'
+    },
+    {
+      id: 'policy',
+      name: 'Policy & Compliance Analyzer',
+      desc: 'Examine policy assignments, compliance state, exemptions, and remediation tasks',
+      icon: 'policy',
+      tags: ['HTML', 'Policy_Audit.xlsx'],
+      filename: 'TIEVA_Policy_Compliance_Analyzer.html'
+    },
+    {
+      id: 'reservation',
+      name: 'Reservation & Savings Analyzer',
+      desc: 'Track reservation utilization, savings plans, and purchase recommendations',
+      icon: 'reservation',
+      tags: ['HTML', 'Reservation_Audit.xlsx'],
+      filename: 'TIEVA_Reservation_Savings_Analyzer.html'
+    },
+    {
+      id: 'backup',
+      name: 'Backup Posture Analyzer',
+      desc: 'Analyze backup vault configurations, VM/DB coverage, and RPO compliance',
+      icon: 'backup',
+      tags: ['HTML', 'Backup_Audit.xlsx'],
+      filename: 'TIEVA_Backup_Posture_Analyzer.html'
+    },
+    {
+      id: 'cost',
+      name: 'Cost Management Analyzer',
+      desc: 'Review budgets, alerts, cost allocation tags, and spend tracking',
+      icon: 'cost',
+      tags: ['HTML', 'Cost_Management_Audit.xlsx'],
+      filename: 'TIEVA_Cost_Management_Analyzer.html'
+    },
+    {
+      id: 'advisor',
+      name: 'Advisor Effort Estimator',
+      desc: 'Map Azure Advisor recommendations to remediation effort and roadmaps',
+      icon: 'advisor',
+      tags: ['HTML', 'Advisor CSV + Mapping'],
+      filename: 'TIEVA_Advisor_Effort_Estimator.html'
+    },
+    {
+      id: 'resource',
+      name: 'Resource Analyzer',
+      desc: 'Analyze resource inventory, utilization metrics, and optimization opportunities',
+      icon: 'resource',
+      tags: ['HTML', 'Resource_Audit.xlsx'],
+      filename: 'TIEVA_Resource_Analyzer.html'
+    }
+  ],
+  collectors: [
+    {
+      id: 'network-ps',
+      name: 'NetworkAudit.ps1',
+      desc: 'Collect VNets, subnets, NSGs, public IPs, peerings, gateways, and DNS zones',
+      icon: 'network',
+      tags: ['PowerShell', 'Network_Audit.xlsx'],
+      filename: 'NetworkAudit.ps1'
+    },
+    {
+      id: 'identity-ps',
+      name: 'IdentityAudit.ps1',
+      desc: 'Collect RBAC assignments, service principals, guest users, and custom roles',
+      icon: 'identity',
+      tags: ['PowerShell', 'Identity_Audit.xlsx'],
+      filename: 'IdentityAudit.ps1'
+    },
+    {
+      id: 'policy-ps',
+      name: 'PolicyAudit.ps1',
+      desc: 'Collect policy assignments, compliance data, exemptions, and remediations',
+      icon: 'policy',
+      tags: ['PowerShell', 'Policy_Audit.xlsx'],
+      filename: 'PolicyAudit.ps1'
+    },
+    {
+      id: 'reservation-ps',
+      name: 'ReservationAudit.ps1',
+      desc: 'Collect reservations, utilization data, savings plans, and recommendations',
+      icon: 'reservation',
+      tags: ['PowerShell', 'Reservation_Audit.xlsx'],
+      filename: 'ReservationAudit.ps1'
+    },
+    {
+      id: 'backup-ps',
+      name: 'BackupAudit.ps1',
+      desc: 'Collect RSV/Backup vault posture, VM/DB coverage, and RPO metrics',
+      icon: 'backup',
+      tags: ['PowerShell', 'Backup_Audit.xlsx'],
+      filename: 'BackupAudit.ps1'
+    },
+    {
+      id: 'cost-ps',
+      name: 'CostManagementAudit.ps1',
+      desc: 'Collect budgets, alerts, action groups, and tagging coverage',
+      icon: 'cost',
+      tags: ['PowerShell', 'Cost_Management_Audit.xlsx'],
+      filename: 'CostManagementAudit.ps1'
+    },
+    {
+      id: 'resource-ps',
+      name: 'ResourceAudit.ps1',
+      desc: 'Collect resource inventory with optional utilization metrics',
+      icon: 'resource',
+      tags: ['PowerShell', 'Resource_Audit.xlsx'],
+      filename: 'ResourceAudit.ps1'
+    }
+  ]
+};
+
+// Custom tools storage
+let customTools = [];
+
+// Load custom tools from localStorage
+function loadCustomTools() {
+  try {
+    const saved = localStorage.getItem('tieva_custom_tools');
+    if (saved) {
+      customTools = JSON.parse(saved);
+    }
+  } catch (e) {
+    console.error('Failed to load custom tools:', e);
+  }
+}
+
+// Save custom tools to localStorage
+function saveCustomTools() {
+  try {
+    localStorage.setItem('tieva_custom_tools', JSON.stringify(customTools));
+  } catch (e) {
+    console.error('Failed to save custom tools:', e);
+  }
+}
+
+// Render tool card
+function renderToolCard(tool, isCustom = false) {
+  const iconClass = tool.icon || 'custom';
+  const iconEmoji = {
+    network: '🌐',
+    identity: '👤',
+    policy: '📋',
+    reservation: '💰',
+    backup: '💾',
+    cost: '💵',
+    advisor: '📊',
+    resource: '📦',
+    custom: '🔧'
+  }[iconClass] || '🔧';
+
+  const tags = (tool.tags || []).map(t => {
+    const tagClass = t.toLowerCase().includes('powershell') ? 'ps' : 
+                     t.toLowerCase().includes('html') ? 'html' : '';
+    return `<span class="tool-tag ${tagClass}">${t}</span>`;
+  }).join('');
+
+  const card = document.createElement('div');
+  card.className = 'tool-card';
+  card.innerHTML = `
+    <div class="tool-icon ${iconClass}">${iconEmoji}</div>
+    <div class="tool-name">${tool.name}</div>
+    <div class="tool-desc">${tool.desc}</div>
+    <div class="tool-meta">${tags}</div>
+    ${isCustom ? '<div style="margin-top:8px"><span class="tool-tag" style="background:#fee;color:#dc2626;cursor:pointer" onclick="event.stopPropagation();removeTool(\'' + tool.id + '\')">Remove</span></div>' : ''}
+  `;
+
+  // Handle click - open tool or download
+  card.addEventListener('click', () => {
+    if (tool.content) {
+      // Custom tool with stored content - open in new tab
+      const blob = new Blob([tool.content], { type: 'text/html' });
+      const url = URL.createObjectURL(blob);
+      window.open(url, '_blank');
+    } else if (tool.filename) {
+      // Built-in tool - try to open relative file
+      if (tool.filename.endsWith('.ps1')) {
+        // PowerShell - offer download info
+        alert(`PowerShell Script: ${tool.filename}\n\nRun this script in Azure CloudShell or local PowerShell to collect data.\n\nOutput: ${tool.tags.find(t => t.includes('.xlsx')) || 'Excel workbook'}`);
+      } else {
+        // HTML - open in same folder
+        window.open(tool.filename, '_blank');
+      }
+    }
+  });
+
+  return card;
+}
+
+// Render all tools
+function renderTools() {
+  const analyzerGrid = document.getElementById('analyzerGrid');
+  const collectorGrid = document.getElementById('collectorGrid');
+  const customGrid = document.getElementById('customGrid');
+
+  // Clear grids
+  analyzerGrid.innerHTML = '';
+  collectorGrid.innerHTML = '';
+  customGrid.innerHTML = '';
+
+  // Render built-in analyzers
+  BUILTIN_TOOLS.analyzers.forEach(tool => {
+    analyzerGrid.appendChild(renderToolCard(tool));
+  });
+
+  // Render built-in collectors
+  BUILTIN_TOOLS.collectors.forEach(tool => {
+    collectorGrid.appendChild(renderToolCard(tool));
+  });
+
+  // Render custom tools
+  if (customTools.length > 0) {
+    document.getElementById('noCustomTools').style.display = 'none';
+    customTools.forEach(tool => {
+      customGrid.appendChild(renderToolCard(tool, true));
+    });
+  } else {
+    document.getElementById('noCustomTools').style.display = 'block';
+  }
+
+  // Update registered tools list
+  updateRegisteredList();
+}
+
+// Update registered tools list
+function updateRegisteredList() {
+  const container = document.getElementById('registeredTools');
+  const list = document.getElementById('registeredList');
+  
+  if (customTools.length === 0) {
+    container.style.display = 'none';
+    return;
+  }
+
+  container.style.display = 'block';
+  list.innerHTML = customTools.map(t => `
+    <div class="registered-item">
+      <span>${t.name}</span>
+      <span class="remove" onclick="removeTool('${t.id}')">&times;</span>
+    </div>
+  `).join('');
+}
+
+// Remove custom tool
+function removeTool(id) {
+  if (confirm('Remove this custom tool?')) {
+    customTools = customTools.filter(t => t.id !== id);
+    saveCustomTools();
+    renderTools();
+  }
+}
+
+// Modal handling
+function openModal() {
+  document.getElementById('addToolModal').classList.add('active');
+}
+
+function closeModal() {
+  document.getElementById('addToolModal').classList.remove('active');
+  // Reset form
+  document.getElementById('toolName').value = '';
+  document.getElementById('toolDesc').value = '';
+  document.getElementById('toolFile').value = '';
+}
+
+// Save tool from modal
+function saveTool() {
+  const name = document.getElementById('toolName').value.trim();
+  const desc = document.getElementById('toolDesc').value.trim();
+  const category = document.getElementById('toolCategory').value;
+  const icon = document.getElementById('toolIcon').value;
+  const fileInput = document.getElementById('toolFile');
+
+  if (!name) {
+    alert('Please enter a tool name');
+    return;
+  }
+
+  if (!fileInput.files.length) {
+    alert('Please select a file');
+    return;
+  }
+
+  const file = fileInput.files[0];
+  const reader = new FileReader();
+
+  reader.onload = (e) => {
+    const tool = {
+      id: 'custom-' + Date.now(),
+      name: name,
+      desc: desc || 'Custom tool',
+      icon: icon,
+      tags: [category === 'analyzer' ? 'HTML' : 'PowerShell', 'Custom'],
+      content: e.target.result,
+      filename: file.name
+    };
+
+    customTools.push(tool);
+    saveCustomTools();
+    renderTools();
+    closeModal();
+  };
+
+  reader.readAsText(file);
+}
+
+// Handle file drop/upload for quick add
+function handleFiles(files) {
+  Array.from(files).forEach(file => {
+    if (!file.name.endsWith('.html')) {
+      alert('Only HTML files can be added via drag & drop. Use "+ Add Custom Tool" for PowerShell scripts.');
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      // Try to extract title from HTML
+      const content = e.target.result;
+      let name = file.name.replace('.html', '');
+      const titleMatch = content.match(/<title>([^<]+)<\/title>/i);
+      if (titleMatch) {
+        name = titleMatch[1].replace('TIEVA', '').replace('—', '').trim();
+      }
+
+      const tool = {
+        id: 'custom-' + Date.now(),
+        name: name || file.name,
+        desc: 'Custom analyzer tool',
+        icon: 'custom',
+        tags: ['HTML', 'Custom'],
+        content: content,
+        filename: file.name
+      };
+
+      customTools.push(tool);
+      saveCustomTools();
+      renderTools();
+    };
+    reader.readAsText(file);
+  });
+}
+
+// Export configuration
+function exportConfig() {
+  const config = {
+    version: '1.0',
+    exportDate: new Date().toISOString(),
+    customTools: customTools.map(t => ({
+      name: t.name,
+      desc: t.desc,
+      icon: t.icon,
+      tags: t.tags,
+      filename: t.filename
+      // Note: content not exported to keep config small
+    }))
+  };
+
+  const blob = new Blob([JSON.stringify(config, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'tieva_hub_config.json';
+  a.click();
+}
+
+// Initialize
+document.addEventListener('DOMContentLoaded', () => {
+  loadCustomTools();
+  renderTools();
+
+  // Wire up buttons
+  document.getElementById('btnAddTool').addEventListener('click', openModal);
+  document.getElementById('btnExportConfig').addEventListener('click', exportConfig);
+
+  // Wire up file upload
+  const uploadArea = document.getElementById('uploadArea');
+  const fileInput = document.getElementById('fileInput');
+
+  uploadArea.addEventListener('click', () => fileInput.click());
+  
+  uploadArea.addEventListener('dragover', (e) => {
+    e.preventDefault();
+    uploadArea.classList.add('dragover');
+  });
+
+  uploadArea.addEventListener('dragleave', () => {
+    uploadArea.classList.remove('dragover');
+  });
+
+  uploadArea.addEventListener('drop', (e) => {
+    e.preventDefault();
+    uploadArea.classList.remove('dragover');
+    handleFiles(e.dataTransfer.files);
+  });
+
+  fileInput.addEventListener('change', (e) => {
+    handleFiles(e.target.files);
+  });
+});
+</script>
+</body>
+</html>
