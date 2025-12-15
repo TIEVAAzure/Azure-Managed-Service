@@ -58,21 +58,26 @@ function Get-SubscriptionList {
   if ($SubscriptionIds -and $SubscriptionIds.Count -gt 0) {
     $subs = @()
     foreach ($id in $SubscriptionIds) {
-      try { $subs += Get-AzSubscription -SubscriptionId $id -ErrorAction Stop } 
+      try { $subs += Get-AzSubscription -SubscriptionId $id -TenantId (Get-AzContext).Tenant.Id -ErrorAction Stop } 
       catch { Write-Warning "Could not access subscription $id : $_" }
     }
     return $subs
   } else {
-    return Get-AzSubscription | Where-Object { $_.State -eq 'Enabled' }
+    return Get-AzSubscription -TenantId (Get-AzContext).Tenant.Id | Where-Object { $_.State -eq 'Enabled' }
   }
 }
 
 function Get-CompliancePercentage {
   param($States)
-  if (-not $States) { return 0 }
+  if (-not $States) { return 100 }
   
-  $compliant = ($States | Where-Object { $_.ComplianceState -eq 'Compliant' } | Measure-Object -Property ResourceCount -Sum).Sum
-  $nonCompliant = ($States | Where-Object { $_.ComplianceState -eq 'NonCompliant' } | Measure-Object -Property ResourceCount -Sum).Sum
+  $compliantSum = ($States | Where-Object { $_.ComplianceState -eq 'Compliant' } | Measure-Object -Property ResourceCount -Sum).Sum
+  $nonCompliantSum = ($States | Where-Object { $_.ComplianceState -eq 'NonCompliant' } | Measure-Object -Property ResourceCount -Sum).Sum
+  
+  # Handle null values from Measure-Object
+  $compliant = if ($null -eq $compliantSum) { 0 } else { $compliantSum }
+  $nonCompliant = if ($null -eq $nonCompliantSum) { 0 } else { $nonCompliantSum }
+  
   $total = $compliant + $nonCompliant
   
   if ($total -eq 0) { return 100 }
@@ -484,8 +489,10 @@ if ($subscriptionSummary.Count -gt 0) {
 }
 
 Write-Host "`n=== Compliance Overview ===" -ForegroundColor Cyan
-$avgCompliance = ($subscriptionSummary | Measure-Object -Property CompliancePercent -Average).Average
-$totalNonCompliant = ($subscriptionSummary | Measure-Object -Property NonCompliantResources -Sum).Sum
+$avgComplianceResult = ($subscriptionSummary | Measure-Object -Property CompliancePercent -Average).Average
+$avgCompliance = if ($null -eq $avgComplianceResult) { 100 } else { $avgComplianceResult }
+$totalNonCompliantResult = ($subscriptionSummary | Measure-Object -Property NonCompliantResources -Sum).Sum
+$totalNonCompliant = if ($null -eq $totalNonCompliantResult) { 0 } else { $totalNonCompliantResult }
 Write-Host "  Average compliance: $([math]::Round($avgCompliance, 1))%" -ForegroundColor $(if ($avgCompliance -ge 90) { 'Green' } elseif ($avgCompliance -ge 70) { 'Yellow' } else { 'Red' })
 Write-Host "  Total non-compliant resources: $totalNonCompliant" -ForegroundColor $(if ($totalNonCompliant -eq 0) { 'Green' } else { 'Yellow' })
 

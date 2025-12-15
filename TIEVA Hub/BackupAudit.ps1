@@ -1,72 +1,96 @@
-<# =======================================================================
-   Azure Backup Posture Auditor (RSV + Backup Vaults) — tenant-agnostic
-   - Enumerates subscriptions (optionally limited via $TargetSubscriptions
-     and/or name/ID regex filters)
-   - Reports vault posture + VM/DB backup coverage
-   - Uses RSV **root GET** (2025-08-01) first, then backupResourceConfig / backupconfig
-   - Handles Backup Vaults returned without ResourceGroupName
-   - REST with retry, pagination for BackupInstances (x-ms-continuation) and
-     RSV backupProtectedItems (nextLink)
-   - VMs: backup cadence (policy → fallback to RP spacing), optional window,
-     last backup time/status, observed RPO, RpoSource, ProtectionState
-   - SQL in VM (workload): full/diff/log cadence + optional window (policy),
-     last backup status/time, observed RPO from RPs (prefers log)
-   - Azure SQL (PaaS): observed RPO from PITR (latest restorable time)
-   - Produces:
-       * Console tables
-       * XLSX with multiple sheets (RSV, BackupVaults, VM/DB coverage,
-         VM & SQL detail, Findings, Subscription_Summary, Summary)
-======================================================================= #>
+<#
+.SYNOPSIS
+  TIEVA Backup Posture Auditor
+  
+.DESCRIPTION
+  Comprehensive Azure backup audit for AMS customer meetings:
+  - Recovery Services Vaults (RSV) posture and configuration
+  - Backup Vaults (Data Protection) inventory
+  - VM backup coverage and RPO analysis
+  - SQL/Database backup coverage (workload + PaaS)
+  - Backup cadence, retention, and policy analysis
+  - Security settings (soft delete, MUA, immutability)
+  
+  Outputs multi-sheet Excel workbook: Backup_Audit.xlsx
+  
+.PARAMETER SubscriptionIds
+  Optional array of subscription IDs to audit. If not specified, audits all accessible subscriptions.
+
+.PARAMETER TenantId
+  Optional tenant ID to target. If not specified, uses the current Azure context tenant.
+  
+.PARAMETER OutPath
+  Output directory for the Excel file. Defaults to current user's Downloads folder.
+  
+.PARAMETER SubIncludeNameRegex
+  Optional regex filter to include subscriptions by name (e.g. 'Prod|Contoso')
+  
+.PARAMETER SubIncludeIdRegex
+  Optional regex filter to include subscriptions by ID
+  
+.PARAMETER Diagnostics
+  Enable verbose diagnostic warnings. Default: true
+  
+.EXAMPLE
+  .\BackupAudit.ps1
+  Audits all accessible subscriptions in the current tenant
+  
+.EXAMPLE
+  .\BackupAudit.ps1 -SubscriptionIds @("sub-id-1","sub-id-2") -TenantId "tenant-guid"
+  Audits specific subscriptions in a specific tenant
+  
+.EXAMPLE
+  .\BackupAudit.ps1 -SubIncludeNameRegex 'Prod|UAT'
+  Audits subscriptions matching the name pattern
+  
+.NOTES
+  Requires: Az.Accounts, Az.Resources, Az.RecoveryServices, Az.DataProtection, Az.Compute, Az.Sql, Az.PostgreSql modules
+  Permissions: Backup Reader, Reader on subscriptions
+#>
+
+[CmdletBinding()]
+param(
+  [Parameter(HelpMessage = "Subscription IDs to audit (optional - defaults to all accessible)")]
+  [string[]]$SubscriptionIds,
+  
+  [Parameter(HelpMessage = "Target tenant ID (optional - defaults to current context)")]
+  [string]$TenantId,
+  
+  [Parameter(HelpMessage = "Output directory for the Excel file")]
+  [string]$OutPath = "$HOME\Downloads",
+  
+  [Parameter(HelpMessage = "Regex filter for subscription names")]
+  [string]$SubIncludeNameRegex = '',
+  
+  [Parameter(HelpMessage = "Regex filter for subscription IDs")]
+  [string]$SubIncludeIdRegex = '',
+  
+  [Parameter(HelpMessage = "Enable diagnostic warnings")]
+  [bool]$Diagnostics = $true
+)
 
 $ErrorActionPreference = 'Stop'
 
-# --- Control which subscriptions to include ---
-$TargetSubscriptions = @(
-  '5961d092-dde6-40e2-90e5-2b6dab00b739',
-'03127f90-4f1f-4f83-b9a7-a23b39ecc91e',
-'fcaca3a0-0f22-4db3-9f41-248ba1e9be20',
-'c9400257-0d1b-4a59-b227-36b3aea73b0a',
-'961271eb-fe4d-455e-9f53-5b0a5a931bcb',
-'00f0e475-b85a-4f4e-a4df-84a44d547d95',
-'6ee22078-9979-48d2-996d-2c14734618dc',
-'5eac3012-879c-4bd6-81a7-e5cc0a531901',
-'1e08993c-9844-43ed-bdbc-ef2587524458',
-'68d0c954-0825-43ce-ac75-a906c966bd25',
-'0bfd305f-a119-4e90-b50d-1f9e89d0218e',
-'03c21c87-03df-4269-8afd-02ca992ac41a',
-'355305cb-774b-46a0-8f0b-71a9e5142b54',
-'38d0c9ac-0831-4f1c-894d-39366b733986',
-'f1aaf818-695c-4ef4-b33d-36c4ad28e9cd',
-'f2270be2-080c-49f0-8185-c3b4abb8c363',
-'5427645e-29fb-4ef3-9c2a-4f2f16a7f857',
-'e23df4c5-d3ac-4e8c-85bd-9eb34302b840',
-'05a2b24b-81bb-4e91-adac-d8e1953e73d9',
-'439d7cb9-6337-4538-9fd5-3f02004aeea0',
-'b4aace36-0bab-405a-87a1-9618cee47152',
-'5f938282-6c79-4d89-8ed5-6c8a50fc5a99',
-'c817d346-4bcc-4d26-8adf-85923187d757',
-'2a9d8c25-c84c-4de3-82fe-aa7cc2746559',
-'a5925d87-1398-410e-b127-c34d02f4672c',
-'354118f8-195a-4a00-b8c8-915b82bf58c5',
-'d93d85d7-6a3c-4b03-a510-7d5e3d1d621c',
-'0cb811e8-b6c5-441c-92d9-be021a8fd5b4',
-'17553ace-0f3b-47f6-96c9-9b9e2812b1fb'
-)
+# ============================================================================
+# BANNER
+# ============================================================================
 
-# ---------------- Settings ----------------
-$ExportCsv   = $false                  # reserved if you later want CSV
-$OutPath     = "$HOME\Downloads"
-$Diagnostics = $true                   # set $false to silence warnings
+Write-Host "`n==========================================" -ForegroundColor Cyan
+Write-Host "TIEVA Backup Posture Auditor" -ForegroundColor Cyan
+Write-Host "==========================================" -ForegroundColor Cyan
+Write-Host "Started: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')" -ForegroundColor Gray
+Write-Host ""
 
-# Optional subscription include filters (regex). Leave blank to include all.
-$SubIncludeNameRegex = ''              # e.g. 'Prod|Contoso'
-$SubIncludeIdRegex   = ''              # e.g. '^[0-9a-f-]{36}$'
+# Resolve tenant ID (parameter or current context)
+$targetTenantId = if ($TenantId) { $TenantId } else { (Get-AzContext).Tenant.Id }
+Write-Host "Target Tenant: $targetTenantId" -ForegroundColor Gray
 
 # RPO thresholds (hours)
 $VmRpoWarningHours    = 26
 $VmRpoCriticalHours   = 50
 $SqlRpoWarningHours   = 26
 $SqlRpoCriticalHours  = 50
+
 
 # Centralized API versions
 $Api = @{
@@ -92,11 +116,11 @@ $required = @(
 )
 $missing = $required | Where-Object { -not (Get-Module -ListAvailable -Name $_) }
 if ($missing) {
-  Write-Warning "Missing modules: $($missing -join ', '). Install with: Install-Module Az -Scope CurrentUser"
+  Write-Host "WARNING: Missing modules: $($missing -join ', '). Install with: Install-Module Az -Scope CurrentUser" -ForegroundColor Yellow
 }
 
 # ---------------- Helpers ----------------
-function Derive-SecurityLevel {
+function Get-SecurityLevel {
   param(
     [string]$EnhancedSecurityState,
     [bool]$IsMUAEnabled,
@@ -111,13 +135,13 @@ function Derive-SecurityLevel {
   }
 }
 
-function To-AlwaysOnBool {
+function ConvertTo-AlwaysOnBool {
   param([string]$A,[string]$B)
   (($A -eq 'AlwaysON') -or ($B -eq 'AlwaysON'))
 }
 
-# Normalize "On/Off" → "Enabled/Disabled"
-function Normalize-SD {
+# Normalize "On/Off" -> "Enabled/Disabled"
+function ConvertTo-SoftDeleteState {
   param([string]$Value)
   if ([string]::IsNullOrWhiteSpace($Value)) { return $null }
   if ($Value -match '^(?i)on$')  { return 'Enabled' }
@@ -125,7 +149,7 @@ function Normalize-SD {
   return $Value
 }
 
-function Normalize-Redundancy {
+function ConvertTo-RedundancyCode {
   param([string]$Value)
   if (-not $Value) { return $null }
   $map = @{
@@ -257,7 +281,7 @@ function Get-AllBackupInstances {
 }
 
 # ---------- Formatting / parsing ----------
-function Parse-Iso8601Duration {
+function ConvertFrom-Iso8601Duration {
   param([string]$s)
   if ([string]::IsNullOrWhiteSpace($s)) { return $null }
   $m = [regex]::Match($s, '^P(?:(?<d>\d+)D)?(?:T(?:(?<h>\d+)H)?(?:(?<m>\d+)M)?(?:(?<s>\d+)S)?)?$')
@@ -269,7 +293,7 @@ function Parse-Iso8601Duration {
   New-TimeSpan -Days $days -Hours $hrs -Minutes $mins -Seconds $secs
 }
 
-# Snap cadence to nice values (avoid 3.76h; allow ±20m tolerance)
+# Snap cadence to nice values (avoid 3.76h; allow +/-20m tolerance)
 function Format-TimeSpanText {
   param($ts)
   if ($null -eq $ts) { return $null }
@@ -341,7 +365,7 @@ function Get-PolicyScheduleInfo {
         $arr = $bs.$n
         if ($arr -and $arr.Count -gt 0) {
           $m = [regex]::Match([string]$arr[0], '(P(?:\d+D)?(?:T(?:\d+H)?(?:\d+M)?(?:\d+S)?)?)$')
-          if ($m.Success) { $cadTs = Parse-Iso8601Duration $m.Groups[1].Value }
+          if ($m.Success) { $cadTs = ConvertFrom-Iso8601Duration $m.Groups[1].Value }
         }
       }
     }
@@ -349,7 +373,7 @@ function Get-PolicyScheduleInfo {
     $winTs = $null
     foreach ($n in 'scheduleWindowDuration','ScheduleWindowDuration','duration','Duration') {
       if ($bs.PSObject.Properties.Name -contains $n) {
-        $winTs = Parse-Iso8601Duration $bs.$n
+        $winTs = ConvertFrom-Iso8601Duration $bs.$n
         if ($winTs) { break }
       }
     }
@@ -396,14 +420,14 @@ function Get-PolicyScheduleInfo {
       $arr = $sp.$propName
       if ($arr -and $arr.Count -gt 0) {
         $iso = _pick_iso ([string]$arr[0])
-        if ($iso) { $cadTs = Parse-Iso8601Duration $iso; break }
+        if ($iso) { $cadTs = ConvertFrom-Iso8601Duration $iso; break }
       }
     }
   }
   if (-not $cadTs) {
     foreach ($propName in 'RepeatingTimeInterval','repeatingTimeInterval','RepetitionInterval','ScheduleInterval') {
       if ($sp.PSObject.Properties.Name -contains $propName) {
-        $cadTs = Parse-Iso8601Duration $sp.$propName
+        $cadTs = ConvertFrom-Iso8601Duration $sp.$propName
         if ($cadTs) { break }
       }
     }
@@ -470,7 +494,7 @@ function Get-PolicyScheduleInfo {
   $winTs = $null
   foreach ($propName in 'scheduleWindowDuration','ScheduleWindowDuration','duration','Duration') {
     if ($sp.PSObject.Properties.Name -contains $propName) {
-      $winTs = Parse-Iso8601Duration $sp.$propName
+      $winTs = ConvertFrom-Iso8601Duration $sp.$propName
       if ($winTs) { break }
     }
   }
@@ -569,13 +593,13 @@ function Get-SqlVmPolicyScheduleInfo {
         $v = $node.$n
         if ($v -and $v.Count -gt 0) {
           $m = [regex]::Match([string]$v[0], '(P(?:\d+D)?(?:T(?:\d+H)?(?:\d+M)?(?:\d+S)?)?)$')
-          if ($m.Success) { return (Parse-Iso8601Duration $m.Groups[1].Value) }
+          if ($m.Success) { return (ConvertFrom-Iso8601Duration $m.Groups[1].Value) }
         }
       }
     }
     foreach ($n in 'RepetitionInterval','ScheduleInterval','repeatingTimeInterval','RepeatingTimeInterval') {
       if ($node.PSObject.Properties.Name -contains $n) {
-        $ts = Parse-Iso8601Duration $node.$n
+        $ts = ConvertFrom-Iso8601Duration $node.$n
         if ($ts) { return $ts }
       }
     }
@@ -598,7 +622,7 @@ function Get-SqlVmPolicyScheduleInfo {
     if (-not $node) { return $null }
     foreach ($n in 'scheduleWindowDuration','ScheduleWindowDuration','duration','Duration') {
       if ($node.PSObject.Properties.Name -contains $n) {
-        $ts = Parse-Iso8601Duration $node.$n
+        $ts = ConvertFrom-Iso8601Duration $node.$n
         if ($ts) { return $ts }
       }
     }
@@ -727,7 +751,7 @@ function Get-RsvVmItems {
     if ($items) { $all += $items; $pathCounts.direct = ($items | Measure-Object).Count }
   } catch {}
 
-  # Path 2: Containers → items
+  # Path 2: Containers -> items
   if (($all | Measure-Object).Count -eq 0) {
     foreach ($ctype in 'AzureVM','AzureVMAppContainer') {
       try {
@@ -742,7 +766,7 @@ function Get-RsvVmItems {
     }
   }
 
-  # Path 3: REST fallback — use known vault resourceId
+  # Path 3: REST fallback - use known vault resourceId
   if (($all | Measure-Object).Count -eq 0 -and $VaultResourceId) {
     foreach ($vApi in @($Api.RSV_ProtectedItems, '2023-08-01', '2021-12-01') | Select-Object -Unique) {
       foreach ($uri0 in @(
@@ -813,7 +837,7 @@ function Get-RsvVmItems {
   }
 
   if ($VerboseDiag) {
-    Write-Host ("[Diag] VM discovery paths ⇒ direct={0} containers={1} rest={2}" -f `
+    Write-Host ("[Diag] VM discovery paths => direct={0} containers={1} rest={2}" -f `
       $pathCounts.direct, $pathCounts.containers, $pathCounts.rest) -ForegroundColor DarkCyan
   }
 
@@ -856,7 +880,7 @@ function Get-RsvPosture {
     if ($sec) {
       $sds = $sec.softDeleteSettings
       if ($sds) {
-        $cloudState  = Normalize-SD ($sds.softDeleteState)
+        $cloudState  = ConvertTo-SoftDeleteState ($sds.softDeleteState)
         if (-not $retention)   { $retention   = $sds.softDeleteRetentionPeriodInDays }
         if (-not $hybridState) { $hybridState = $sds.enhancedSecurityState }
       }
@@ -867,7 +891,7 @@ function Get-RsvPosture {
 
     $red = $p.redundancySettings
     if ($red -and $red.standardTierStorageRedundancy) {
-      $redundancy = Normalize-Redundancy $red.standardTierStorageRedundancy
+      $redundancy = ConvertTo-RedundancyCode $red.standardTierStorageRedundancy
     }
     if ($red -and $red.crossRegionRestore) {
       $crossRegion = $red.crossRegionRestore
@@ -884,7 +908,7 @@ function Get-RsvPosture {
     $peB         = $p.privateEndpointStateForBackup
     $peSR        = $p.privateEndpointStateForSiteRecovery
     if (-not $redundancy -and $p.storageModelType) {
-      $redundancy = Normalize-Redundancy $p.storageModelType
+      $redundancy = ConvertTo-RedundancyCode $p.storageModelType
     }
   }
 
@@ -892,7 +916,7 @@ function Get-RsvPosture {
     $rc = Invoke-ArmGetById -ResourceId $VaultId -SuffixPath '/backupResourceConfig' -ApiVersion $Api.RSV_BackupResourceCfg
     if ($rc -and $rc.properties) {
       $q = $rc.properties
-      $cloudState  = Normalize-SD ($q.softDeleteFeatureState ?? $q.softDeleteState)
+      $cloudState  = ConvertTo-SoftDeleteState ($q.softDeleteFeatureState ?? $q.softDeleteState)
       $hybridState = $q.enhancedSecurityState
       $retention   = $q.softDeleteRetentionPeriodInDays
       if ($q.isMUAEnabled -ne $null) { $mua = [bool]$q.isMUAEnabled }
@@ -906,22 +930,22 @@ function Get-RsvPosture {
 
     $br = Invoke-ArmGetById -ResourceId $VaultId -SuffixPath '/backupconfig' -ApiVersion $vApi
     if ($br -and $br.properties) {
-      if (-not $cloudState) { $cloudState = Normalize-SD ($br.properties.softDeleteFeatureState ?? $br.properties.softDeleteState) }
+      if (-not $cloudState) { $cloudState = ConvertTo-SoftDeleteState ($br.properties.softDeleteFeatureState ?? $br.properties.softDeleteState) }
       if (-not $retention)  { $retention  = $br.properties.softDeleteRetentionPeriodInDays }
       if (-not $csr -and $br.properties.crossSubscriptionRestoreState) { $csr = $br.properties.crossSubscriptionRestoreState }
-      if (-not $redundancy -and $br.properties.storageModelType) { $redundancy = Normalize-Redundancy $br.properties.storageModelType }
+      if (-not $redundancy -and $br.properties.storageModelType) { $redundancy = ConvertTo-RedundancyCode $br.properties.storageModelType }
     }
   }
 
   if (-not $immutable) { $immutable = 'NotApplicable' }
   $softDeleteStateForLevel = if ($cloudState) { $cloudState } else { $softDelCompat }
-  $alwaysOn = To-AlwaysOnBool $cloudState $hybridState
+  $alwaysOn = ConvertTo-AlwaysOnBool $cloudState $hybridState
   $enhState = if ($hybridState) {
     $hybridState
   } else {
     if ($mua -eq $true -or $softDeleteStateForLevel -in @('Enabled','AlwaysON')) { 'Enabled' } else { 'Disabled' }
   }
-  $secLevel = Derive-SecurityLevel -EnhancedSecurityState $enhState -IsMUAEnabled:([bool]$mua) -SoftDeleteState $softDeleteStateForLevel
+  $secLevel = Get-SecurityLevel -EnhancedSecurityState $enhState -IsMUAEnabled:([bool]$mua) -SoftDeleteState $softDeleteStateForLevel
 
   [pscustomobject]@{
     SubscriptionId          = $SubscriptionId
@@ -948,27 +972,36 @@ function Get-RsvPosture {
 }
 
 # ---------------- Iterate subscriptions ----------------
-$useExplicitTargets = $TargetSubscriptions -and $TargetSubscriptions.Count -gt 0
+$useExplicitTargets = $SubscriptionIds -and $SubscriptionIds.Count -gt 0
 
-$subs = Get-AzSubscription | Where-Object {
-  # If explicit targets are defined, only include subs whose Id OR Name is in $TargetSubscriptions
-  (-not $useExplicitTargets -or ($TargetSubscriptions -contains $_.Id -or $TargetSubscriptions -contains $_.Name)) -and
+# Suppress warnings only during subscription enumeration (cross-tenant auth noise)
+$originalWarningPref = $WarningPreference
+$WarningPreference = 'SilentlyContinue'
+$subs = Get-AzSubscription -TenantId $targetTenantId | Where-Object {
+  # If explicit targets are defined, only include subs whose Id is in $SubscriptionIds
+  (-not $useExplicitTargets -or ($SubscriptionIds -contains $_.Id)) -and
   (-not $SubIncludeNameRegex -or $_.Name -match $SubIncludeNameRegex) -and
   (-not $SubIncludeIdRegex   -or $_.Id   -match $SubIncludeIdRegex)
 } | Sort-Object Name
+$WarningPreference = $originalWarningPref
 
+if (-not $subs -or $subs.Count -eq 0) {
+  Write-Error "No accessible subscriptions found matching the specified criteria."
+  exit 1
+}
+
+Write-Host "`nFound $($subs.Count) subscription(s) to audit`n" -ForegroundColor Green
+
+$subIndex = 0
 foreach ($sub in $subs) {
-  Set-AzContext -SubscriptionId $sub.Id | Out-Null
-
-  # Ensure providers registered (idempotent)
-  foreach ($ns in 'Microsoft.RecoveryServices','Microsoft.DataProtection','Microsoft.DBforPostgreSQL') {
-    try {
-      $reg = Get-AzResourceProvider -ProviderNamespace $ns -ErrorAction SilentlyContinue
-      if ($reg.RegistrationState -ne 'Registered') {
-        Register-AzResourceProvider -ProviderNamespace $ns | Out-Null
-      }
-    } catch {}
-  }
+  $subIndex++
+  $pct = [math]::Round(100 * $subIndex / $subs.Count, 0)
+  Write-Host "[$subIndex/$($subs.Count)] ($pct%) Processing: $($sub.Name)" -ForegroundColor Yellow
+  
+  # Suppress warnings during context switch
+  $WarningPreference = 'SilentlyContinue'
+  Set-AzContext -SubscriptionId $sub.Id -TenantId $targetTenantId | Out-Null
+  $WarningPreference = $originalWarningPref
 
   # =========================
   # Recovery Services Vaults
@@ -1069,7 +1102,7 @@ foreach ($sub in $subs) {
       $vmName  = if ($ridInfo) { $ridInfo.VMName } else { $it.Properties.FriendlyName }
       $vmRG    = if ($ridInfo) { $ridInfo.ResourceGroup } else { $null }
 
-      # Policy lookup (cmdlet cache → REST by policyId)
+      # Policy lookup (cmdlet cache -> REST by policyId)
       $policyName = $it.Properties.PolicyName
       $policyObj  = $null
 
@@ -1088,7 +1121,7 @@ foreach ($sub in $subs) {
         }
       }
 
-      # Configured cadence/window (policy) — fallback to recovery points
+      # Configured cadence/window (policy) - fallback to recovery points
       $sched = Get-PolicyScheduleInfo -Policy $policyObj
       $cadenceTs   = $sched.CadenceTS
       $cadenceText = $sched.CadenceText
@@ -1162,7 +1195,7 @@ foreach ($sub in $subs) {
       })
     }
 
-    # --- SQL in VM (workload) — detailed cadence + RPO (per database) ---
+    # --- SQL in VM (workload) - detailed cadence + RPO (per database) ---
     try {
       $awContainers = Get-AzRecoveryServicesBackupContainer -ContainerType AzureWorkload -Status Registered -ErrorAction SilentlyContinue
       foreach ($aw in $awContainers) {
@@ -1170,7 +1203,7 @@ foreach ($sub in $subs) {
         foreach ($it in ($sqlItems | Where-Object { $_ })) {
           $p = $it.Properties ?? $it.properties
 
-          # Policy lookup (name → cmdlet; else policyId via REST)
+          # Policy lookup (name -> cmdlet; else policyId via REST)
           $polObj  = $null
           $polName = $p.PolicyName ?? $p.policyName
 
@@ -1195,7 +1228,7 @@ foreach ($sub in $subs) {
             }
           }
 
-          # Configured cadence/window (policy) — tenant-agnostic
+          # Configured cadence/window (policy) - tenant-agnostic
           $sched   = Get-SqlVmPolicyScheduleInfo -Policy $polObj
           $fullCad = $sched.FullCadenceText
           $diffCad = $sched.DiffCadenceText
@@ -1305,7 +1338,7 @@ foreach ($sub in $subs) {
     if ([string]::IsNullOrWhiteSpace($rgName)) {
       $rgName = Get-ResourceGroupFromId -ResourceId $bv.Id
       if ($Diagnostics -and [string]::IsNullOrWhiteSpace($rgName)) {
-        Write-Warning "Skipping Backup Vault '$($bv.Name)' (could not determine Resource Group from Id '$($bv.Id)')"
+        Write-Host "WARNING: Skipping Backup Vault '$($bv.Name)' (could not determine Resource Group)" -ForegroundColor Yellow
         continue
       }
     }
@@ -1324,7 +1357,7 @@ foreach ($sub in $subs) {
       $stor = $bv.Properties.StorageSettings
     }
 
-    # storageSettings → redundancy
+    # storageSettings -> redundancy
     $redundancy = $null
     if ($stor) {
       if ($stor -is [System.Collections.IEnumerable] -and -not ($stor -is [string])) {
@@ -1343,7 +1376,7 @@ foreach ($sub in $subs) {
         elseif ($stor.ReplicationSetting)     { $redundancy = $stor.ReplicationSetting }
       }
     }
-    $redundancy = Normalize-Redundancy -Value $redundancy
+    $redundancy = ConvertTo-RedundancyCode -Value $redundancy
 
     # securitySettings (nested + legacy shapes)
     $cloudState  = $null
@@ -1408,13 +1441,13 @@ foreach ($sub in $subs) {
       }
     }
 
-    $alwaysOn = To-AlwaysOnBool $cloudState $hybridState
+    $alwaysOn = ConvertTo-AlwaysOnBool $cloudState $hybridState
     $enhState = if ($hybridState -in @('Enabled','AlwaysON') -or $mua -eq $true -or $cloudState -in @('Enabled','AlwaysON')) {
       'Enabled'
     } else {
       'Disabled'
     }
-    $secLevel = Derive-SecurityLevel -EnhancedSecurityState $enhState -IsMUAEnabled:([bool]$mua) -SoftDeleteState $cloudState
+    $secLevel = Get-SecurityLevel -EnhancedSecurityState $enhState -IsMUAEnabled:([bool]$mua) -SoftDeleteState $cloudState
 
     $bvReport.Add([pscustomobject]@{
       SubscriptionName        = $sub.Name
@@ -1558,7 +1591,7 @@ foreach ($sub in $subs) {
   }
 
   # ==================================================
-  # Azure SQL DB (PaaS) — observed RPO from PITR
+  # Azure SQL DB (PaaS) - observed RPO from PITR
   # ==================================================
   $sqlServers = @()
   try {
@@ -1715,7 +1748,7 @@ foreach ($sub in $subs) {
 # ===========================
 # FINAL OUTPUT (all at bottom)
 # ===========================
-function Print-Section($title, $data, $columns, $sortBy) {
+function Write-AuditSection($title, $data, $columns, $sortBy) {
   Write-Host "`n=== $title ===" -ForegroundColor Cyan
   if ($data.Count -gt 0) {
     $data | Sort-Object $sortBy | Format-Table $columns -AutoSize
@@ -1724,31 +1757,31 @@ function Print-Section($title, $data, $columns, $sortBy) {
   }
 }
 
-Print-Section "Recovery Services Vaults" $rsvReport @(
+Write-AuditSection "Recovery Services Vaults" $rsvReport @(
   'SubscriptionName','VaultName','ResourceGroup','Location',
   'StorageRedundancy','CrossRegionRestore','CrossSubRestore',
   'CloudSoftDeleteState','HybridSecurityState','SoftDeleteRetentionDays','AlwaysOnSoftDelete',
   'SecurityLevel','BcdrSecurityLevel','SecureScore','PublicNetworkAccess','MUAEnabled','Immutable'
 ) @('SubscriptionName','ResourceGroup','VaultName')
 
-Print-Section "Backup Vaults" $bvReport @(
+Write-AuditSection "Backup Vaults" $bvReport @(
   'SubscriptionName','VaultName','ResourceGroup','Location',
   'StorageRedundancy','CrossSubRestore',
   'CloudSoftDeleteState','HybridSecurityState','SoftDeleteRetentionDays','AlwaysOnSoftDelete',
   'SecurityLevel','MUAEnabled','Immutable'
 ) @('SubscriptionName','ResourceGroup','VaultName')
 
-Print-Section "Virtual Machines – Backup Coverage" $vmReport @(
+Write-AuditSection "Virtual Machines - Backup Coverage" $vmReport @(
   'SubscriptionName','VMName','ResourceGroup','Location','PowerState','IsBackedUp','Method'
 ) @('SubscriptionName','ResourceGroup','VMName')
 
-Print-Section "Backed-up VMs — Cadence & RPO" $vmDetailReport @(
+Write-AuditSection "Backed-up VMs - Cadence & RPO" $vmDetailReport @(
   'SubscriptionName','VaultName','VMName','VMResourceGroup','PolicyName',
   'ConfiguredCadence','ConfiguredWindow','LastBackupTime','LastBackupStatus',
   'ObservedRPOHours','RpoSource','ProtectionState'
 ) @('SubscriptionName','VaultName','VMResourceGroup','VMName')
 
-Print-Section "SQL — Cadence & RPO" $sqlDetailReport @(
+Write-AuditSection "SQL - Cadence & RPO" $sqlDetailReport @(
   'SubscriptionName','VaultName','Workload','ServerOrInstance','DatabaseName','PolicyName','PolicyPattern',
   'ConfiguredCadenceFull','ConfiguredCadenceDiff','ConfiguredCadenceLog','ConfiguredWindow',
   'LastBackupTime','LastBackupStatus','ObservedRPOHours','RpoSource','RpoStatus','ProtectionState'
@@ -1775,9 +1808,9 @@ $enhancedVaults = @($rsvReport + $bvReport) | Where-Object { $_.SecurityLevel -e
 "{0,-30} {1}" -f "Vaults with Always-On SD:", ($alwaysOnVaults | Measure-Object | Select-Object -ExpandProperty Count)
 "{0,-30} {1}" -f "Vaults with Enhanced Sec:", ($enhancedVaults | Measure-Object | Select-Object -ExpandProperty Count)
 "{0,-30} {1}" -f "VMs (total):", $vmTotal
-"{0,-30} {1}" -f "VMs protected:", "$vmProtected ($vmPct`%)"
+"{0,-30} {1}" -f "VMs protected:", "$vmProtected ($vmPct%)"
 "{0,-30} {1}" -f "Databases/Services (total):", $dbTotal
-"{0,-30} {1}" -f "Databases protected:", "$dbProtected ($dbPct`%)"
+"{0,-30} {1}" -f "Databases protected:", "$dbProtected ($dbPct%)"
 
 # ------------ Multi-sheet Excel export ------------
 $ExportXlsx = $true
@@ -1793,7 +1826,7 @@ if ($ExportXlsx) {
       Set-PSRepository -Name PSGallery -InstallationPolicy Trusted -ErrorAction SilentlyContinue | Out-Null
       Install-Module ImportExcel -Scope CurrentUser -Force -ErrorAction Stop
     } catch {
-      Write-Warning "Could not install ImportExcel automatically. Please run: Set-PSRepository PSGallery -InstallationPolicy Trusted; Install-Module ImportExcel -Scope CurrentUser"
+      Write-Host "WARNING: Could not install ImportExcel. Please run: Install-Module ImportExcel -Scope CurrentUser" -ForegroundColor Yellow
       throw
     }
   }
@@ -1953,12 +1986,12 @@ if ($ExportXlsx) {
     [pscustomobject]@{ Metric = 'Vaults with Always-On SD';   Value = ($alwaysOnVaults | Measure-Object | Select-Object -ExpandProperty Count) }
     [pscustomobject]@{ Metric = 'Vaults with Enhanced Sec';   Value = ($enhancedVaults | Measure-Object | Select-Object -ExpandProperty Count) }
     [pscustomobject]@{ Metric = 'VMs (total)';                Value = $vmTotal }
-    [pscustomobject]@{ Metric = 'VMs protected';              Value = "$vmProtected ($vmPct`%)" }
+    [pscustomobject]@{ Metric = 'VMs protected';              Value = "$vmProtected ($vmPct%)" }
     [pscustomobject]@{ Metric = 'Databases/Services (total)'; Value = $dbTotal }
-    [pscustomobject]@{ Metric = 'Databases protected';        Value = "$dbProtected ($dbPct`%)" }
+    [pscustomobject]@{ Metric = 'Databases protected';        Value = "$dbProtected ($dbPct%)" }
   )
 
   Export-Sheet -Data $summary -WorksheetName 'Summary' -TableName 'Summary' -Columns @('Metric','Value')
 
-  Write-Host "`nExcel export complete → $XlsxPath" -ForegroundColor Green
+  Write-Host "`nExcel export complete -> $XlsxPath" -ForegroundColor Green
 }

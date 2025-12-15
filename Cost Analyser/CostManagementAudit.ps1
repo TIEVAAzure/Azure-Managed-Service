@@ -51,11 +51,14 @@ Write-Host "======================================`n" -ForegroundColor Cyan
 # ============================================================================
 
 function Get-SubscriptionList {
+  # Get current tenant to avoid cross-tenant warnings
+  $tenantId = (Get-AzContext).Tenant.Id
+  
   if ($SubscriptionIds) {
     $subs = @()
     foreach ($id in $SubscriptionIds) {
       try {
-        $sub = Get-AzSubscription -SubscriptionId $id -ErrorAction Stop
+        $sub = Get-AzSubscription -SubscriptionId $id -TenantId $tenantId -ErrorAction Stop
         $subs += $sub
       } catch {
         Write-Warning "Could not access subscription $id : $_"
@@ -63,7 +66,7 @@ function Get-SubscriptionList {
     }
     return $subs
   } else {
-    return Get-AzSubscription | Where-Object { $_.State -eq 'Enabled' }
+    return Get-AzSubscription -TenantId $tenantId | Where-Object { $_.State -eq 'Enabled' }
   }
 }
 
@@ -115,7 +118,7 @@ foreach ($sub in $subscriptions) {
   # -----------------------------------------------------------
   # 1. BUDGETS
   # -----------------------------------------------------------
-  Write-Host "  → Checking budgets..." -NoNewline
+  Write-Host "  â†’ Checking budgets..." -NoNewline
   
   $budgets = @()
   try {
@@ -259,7 +262,7 @@ foreach ($sub in $subscriptions) {
   # -----------------------------------------------------------
   # 2. COST ALERTS (Action Groups)
   # -----------------------------------------------------------
-  Write-Host "  → Checking alert configurations..." -NoNewline
+  Write-Host "  â†’ Checking alert configurations..." -NoNewline
   
   $actionGroups = @()
   try {
@@ -311,7 +314,7 @@ foreach ($sub in $subscriptions) {
   # -----------------------------------------------------------
   # 3. COST ALLOCATION TAGS
   # -----------------------------------------------------------
-  Write-Host "  → Analyzing cost allocation tags..." -NoNewline
+  Write-Host "  â†’ Analyzing cost allocation tags..." -NoNewline
   
   $resources = @()
   try {
@@ -393,7 +396,7 @@ foreach ($sub in $subscriptions) {
   # 4. HISTORICAL SPEND DATA (if requested)
   # -----------------------------------------------------------
   if ($IncludeSpendHistory) {
-    Write-Host "  → Retrieving spend history..." -NoNewline
+    Write-Host "  â†’ Retrieving spend history..." -NoNewline
     
     for ($i = 2; $i -ge 0; $i--) {
       $period = Get-MonthStartEnd -MonthsAgo $i
@@ -540,7 +543,7 @@ if ($ExportXlsx) {
       $Data | Export-Excel @exportParams
     }
     
-    Write-Host "  ✓ $WorksheetName" -ForegroundColor Green
+    Write-Host "  âœ“ $WorksheetName" -ForegroundColor Green
   }
   
   # Export all sheets
@@ -571,10 +574,10 @@ if ($ExportXlsx) {
   
   Export-Sheet -Data $overallSummary -WorksheetName 'Summary' -TableName 'Summary'
   
-  Write-Host "`nExcel export complete → $XlsxPath" -ForegroundColor Green
+  Write-Host "`nExcel export complete â†’ $XlsxPath" -ForegroundColor Green
 }
 
-Write-Host "`n✓ Audit complete!" -ForegroundColor Green
+Write-Host "`nâœ“ Audit complete!" -ForegroundColor Green
 Write-Host "Next steps:" -ForegroundColor Cyan
 Write-Host "  1. Review findings in the Findings sheet" -ForegroundColor White
 Write-Host "  2. Upload Cost_Management_Audit.xlsx to the HTML analyzer" -ForegroundColor White
