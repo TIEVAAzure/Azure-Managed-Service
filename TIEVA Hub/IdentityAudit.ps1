@@ -13,6 +13,9 @@
   - PIM status (if available)
   - Subscription-level permissions
   
+  Automatically connects to Microsoft Graph for accurate principal name resolution.
+  Graph modules are auto-installed if not present.
+  
   Outputs multi-sheet Excel workbook: Identity_Audit.xlsx
   
 .PARAMETER SubscriptionIds
@@ -23,23 +26,33 @@
   
 .PARAMETER IncludePIM
   Attempt to collect PIM eligible assignments (requires PIM license and permissions)
+
+.PARAMETER SkipGraph
+  Skip Microsoft Graph connection. Use this in environments where Graph is not available.
+  Note: Some group/user names may not resolve without Graph.
   
 .EXAMPLE
   .\IdentityAudit.ps1
   
 .EXAMPLE
   .\IdentityAudit.ps1 -SubscriptionIds @("sub-id-1","sub-id-2") -IncludePIM
+
+.EXAMPLE
+  .\IdentityAudit.ps1 -SkipGraph
   
 .NOTES
-  Requires: Az.Accounts, Az.Resources, Microsoft.Graph modules (optional for enhanced Entra ID data)
+  Requires: Az.Accounts, Az.Resources
+  Auto-installs: Microsoft.Graph.Authentication, Microsoft.Graph.Users, Microsoft.Graph.Groups, Microsoft.Graph.Applications
   Permissions: Reader + User Access Administrator (or equivalent) on subscriptions
+               User.Read.All, Group.Read.All, Application.Read.All on Entra ID (for Graph)
 #>
 
 [CmdletBinding()]
 param(
   [string[]]$SubscriptionIds,
   [string]$OutPath = "$HOME\Downloads",
-  [switch]$IncludePIM
+  [switch]$IncludePIM,
+  [switch]$SkipGraph
 )
 
 $ErrorActionPreference = 'Continue'
@@ -132,6 +145,152 @@ function Get-ScopeName {
   return $parts[-1]
 }
 
+function Resolve-PrincipalName {
+  param(
+    [string]$ObjectId,
+    [string]$DisplayName,
+    [string]$ObjectType
+  )
+  
+  # Return DisplayName if already populated
+  if (-not [string]::IsNullOrWhiteSpace($DisplayName)) {
+    return $DisplayName
+  }
+  
+  # Check cache first
+  if ($principalCache.ContainsKey($ObjectId)) {
+    return $principalCache[$ObjectId]
+  }
+  
+  $resolvedName = $null
+  
+  # Try to resolve using Microsoft Graph (most reliable)
+  if ($graphAvailable -and $ObjectId) {
+    try {
+      switch -Wildcard ($ObjectType) {
+        '*Group*' {
+          $group = Get-MgGroup -GroupId $ObjectId -Property DisplayName -ErrorAction Stop
+          if ($group) { $resolvedName = $group.DisplayName }
+        }
+        '*User*' {
+          $user = Get-MgUser -UserId $ObjectId -Property DisplayName -ErrorAction Stop
+          if ($user) { $resolvedName = $user.DisplayName }
+        }
+        '*ServicePrincipal*' {
+          $sp = Get-MgServicePrincipal -ServicePrincipalId $ObjectId -Property DisplayName -ErrorAction Stop
+          if ($sp) { $resolvedName = $sp.DisplayName }
+        }
+        '*Application*' {
+          $sp = Get-MgServicePrincipal -ServicePrincipalId $ObjectId -Property DisplayName -ErrorAction Stop
+          if ($sp) { $resolvedName = $sp.DisplayName }
+        }
+      }
+    } catch {
+      # Graph lookup failed - will try Az AD fallback
+    }
+  }
+  
+  # Fallback: Try Az AD cmdlets
+  if (-not $resolvedName -and $ObjectId) {
+    try {
+      switch -Wildcard ($ObjectType) {
+        '*Group*' {
+          $adObj = Get-AzADGroup -ObjectId $ObjectId -ErrorAction Stop
+          if ($adObj) { $resolvedName = $adObj.DisplayName }
+        }
+        '*User*' {
+          $adObj = Get-AzADUser -ObjectId $ObjectId -ErrorAction Stop
+          if ($adObj) { $resolvedName = $adObj.DisplayName }
+        }
+        '*ServicePrincipal*' {
+          $adObj = Get-AzADServicePrincipal -ObjectId $ObjectId -ErrorAction Stop
+          if ($adObj) { $resolvedName = $adObj.DisplayName }
+        }
+        '*Application*' {
+          $adObj = Get-AzADServicePrincipal -ObjectId $ObjectId -ErrorAction Stop
+          if ($adObj) { $resolvedName = $adObj.DisplayName }
+        }
+      }
+    } catch {
+      # Az AD lookup failed too
+    }
+  }
+  
+  # Final fallback: return truncated ObjectId
+  if (-not $resolvedName) {
+    $resolvedName = "(ObjectId: $($ObjectId.Substring(0,8))...)"
+  }
+  
+  # Cache the result
+  $principalCache[$ObjectId] = $resolvedName
+  return $resolvedName
+}
+
+# Pre-load all groups for efficient lookups (avoids per-item API calls)
+function Initialize-PrincipalCache {
+  Write-Host "  -> Pre-loading Entra ID principals for name resolution..." -NoNewline
+  $loadedCount = 0
+  
+  # Try Graph first
+  if ($graphAvailable) {
+    try {
+      # Load all groups
+      $allGroups = Get-MgGroup -All -Property Id,DisplayName -ErrorAction Stop
+      foreach ($g in $allGroups) {
+        if ($g.Id -and $g.DisplayName) {
+          $principalCache[$g.Id] = $g.DisplayName
+          $loadedCount++
+        }
+      }
+      
+      # Load service principals too
+      $allSPs = Get-MgServicePrincipal -All -Property Id,DisplayName -ErrorAction SilentlyContinue
+      foreach ($sp in $allSPs) {
+        if ($sp.Id -and $sp.DisplayName -and -not $principalCache.ContainsKey($sp.Id)) {
+          $principalCache[$sp.Id] = $sp.DisplayName
+          $loadedCount++
+        }
+      }
+    } catch {
+      Write-Host "" # newline
+      Write-Warning "    Could not pre-load from Graph: $_"
+    }
+  }
+  
+  # Fallback to Az AD if Graph didn't load anything
+  if ($loadedCount -eq 0) {
+    try {
+      # Load groups
+      $allGroups = Get-AzADGroup -First 1000 -ErrorAction Stop
+      foreach ($g in $allGroups) {
+        if ($g.Id -and $g.DisplayName) {
+          $principalCache[$g.Id] = $g.DisplayName
+          $loadedCount++
+        }
+      }
+      
+      # Load service principals
+      $allSPs = Get-AzADServicePrincipal -First 1000 -ErrorAction SilentlyContinue
+      foreach ($sp in $allSPs) {
+        if ($sp.Id -and $sp.DisplayName -and -not $principalCache.ContainsKey($sp.Id)) {
+          $principalCache[$sp.Id] = $sp.DisplayName
+          $loadedCount++
+        }
+      }
+    } catch {
+      Write-Host "" # newline
+      Write-Warning "    Could not pre-load from Az AD: $_"
+    }
+  }
+  
+  if ($loadedCount -gt 0) {
+    Write-Host " $loadedCount principals cached" -ForegroundColor Cyan
+  } else {
+    Write-Host " (failed - will show ObjectIds)" -ForegroundColor Yellow
+    Write-Host "    Hint: Ensure you have Group.Read.All permission in Entra ID" -ForegroundColor Gray
+  }
+}
+
 # ============================================================================
 # DATA COLLECTIONS
 # ============================================================================
@@ -149,6 +308,130 @@ $findings = [System.Collections.Generic.List[object]]::new()
 # Cache for principal lookups
 $principalCache = @{}
 
+# Cache for guest user lookup (ObjectId -> IsGuest boolean)
+$guestCache = @{}
+$graphAvailable = $false
+
+# ============================================================================
+# MICROSOFT GRAPH AUTO-CONNECTION
+# ============================================================================
+
+if ($SkipGraph) {
+  Write-Host "Skipping Microsoft Graph connection (-SkipGraph specified)" -ForegroundColor Gray
+  Write-Host "  Some group/user names may not resolve properly" -ForegroundColor Gray
+  Write-Host ""
+} else {
+  Write-Host "Checking Microsoft Graph connection..." -ForegroundColor Cyan
+  
+  # Required Graph modules
+  $requiredGraphModules = @(
+    'Microsoft.Graph.Authentication',
+    'Microsoft.Graph.Users',
+    'Microsoft.Graph.Groups',
+    'Microsoft.Graph.Applications'
+  )
+  
+  # Install missing Graph modules
+  $missingModules = $requiredGraphModules | Where-Object { -not (Get-Module -ListAvailable -Name $_) }
+  if ($missingModules.Count -gt 0) {
+    Write-Host "  Installing Microsoft Graph modules: $($missingModules -join ', ')..." -ForegroundColor Yellow
+    try {
+      Set-PSRepository -Name PSGallery -InstallationPolicy Trusted -ErrorAction SilentlyContinue | Out-Null
+      foreach ($mod in $missingModules) {
+        Install-Module $mod -Scope CurrentUser -Force -AllowClobber -ErrorAction Stop
+      }
+      Write-Host "  Graph modules installed successfully" -ForegroundColor Green
+    } catch {
+      Write-Warning "  Could not install Graph modules: $_"
+      Write-Host "  Continuing without Graph (some group names may not resolve)" -ForegroundColor Gray
+    }
+  }
+  
+  # Import Graph modules
+  try {
+    foreach ($mod in $requiredGraphModules) {
+      Import-Module $mod -ErrorAction Stop
+    }
+  } catch {
+    Write-Warning "  Could not import Graph modules: $_"
+  }
+  
+  # Connect to Microsoft Graph if not already connected
+  try {
+    $graphContext = Get-MgContext -ErrorAction SilentlyContinue
+    
+    if (-not $graphContext) {
+      Write-Host "  Connecting to Microsoft Graph..." -ForegroundColor Yellow
+      
+      # Get tenant ID from current Az context for consistency
+      $azContext = Get-AzContext -ErrorAction SilentlyContinue
+      $tenantId = $azContext.Tenant.Id
+      
+      # Required scopes for identity audit
+      $graphScopes = @(
+        'User.Read.All',
+        'Group.Read.All', 
+        'Application.Read.All',
+        'Directory.Read.All'
+      )
+      
+      if ($tenantId) {
+        Connect-MgGraph -Scopes $graphScopes -TenantId $tenantId -NoWelcome -ErrorAction Stop
+      } else {
+        Connect-MgGraph -Scopes $graphScopes -NoWelcome -ErrorAction Stop
+      }
+      
+      $graphContext = Get-MgContext -ErrorAction SilentlyContinue
+    }
+    
+    if ($graphContext) {
+      $graphAvailable = $true
+      Write-Host "  Microsoft Graph connected as: $($graphContext.Account)" -ForegroundColor Green
+      Write-Host "  Tenant: $($graphContext.TenantId)" -ForegroundColor Gray
+    }
+  } catch {
+    Write-Warning "  Could not connect to Microsoft Graph: $_"
+    Write-Host "  Continuing without Graph - some principal names may not resolve" -ForegroundColor Gray
+    Write-Host "  To fix: Run 'Connect-MgGraph -Scopes User.Read.All,Group.Read.All' manually" -ForegroundColor Gray
+  }
+  
+  Write-Host ""
+}
+
+function Test-IsGuestUser {
+  param([string]$ObjectId, [string]$SignInName)
+  
+  # Check cache first
+  if ($guestCache.ContainsKey($ObjectId)) {
+    return $guestCache[$ObjectId]
+  }
+  
+  $isGuest = $false
+  
+  # Try Microsoft Graph first (most accurate)
+  if ($graphAvailable -and $ObjectId) {
+    try {
+      $user = Get-MgUser -UserId $ObjectId -Property UserType -ErrorAction SilentlyContinue
+      if ($user -and $user.UserType -eq 'Guest') {
+        $isGuest = $true
+      }
+      $guestCache[$ObjectId] = $isGuest
+      return $isGuest
+    } catch {}
+  }
+  
+  # Fallback to pattern matching
+  if ($SignInName) {
+    # Pattern 1: #EXT# marker
+    if ($SignInName -match '#EXT#') { $isGuest = $true }
+    # Pattern 2: underscore format for B2B guests
+    elseif ($SignInName -match '^[^@]+_[^@]+@.*\.onmicrosoft\.com$') { $isGuest = $true }
+  }
+  
+  $guestCache[$ObjectId] = $isGuest
+  return $isGuest
+}
+
 # ============================================================================
 # MAIN AUDIT LOOP
 # ============================================================================
@@ -156,7 +439,12 @@ $principalCache = @{}
 $subscriptions = Get-SubscriptionList
 if (-not $subscriptions) { Write-Error "No accessible subscriptions found."; exit 1 }
 
-Write-Host "Found $($subscriptions.Count) subscription(s) to audit`n" -ForegroundColor Green
+Write-Host "Found $($subscriptions.Count) subscription(s) to audit" -ForegroundColor Green
+
+# Pre-load principal names for efficient lookups
+Initialize-PrincipalCache
+
+Write-Host ""
 
 foreach ($sub in $subscriptions) {
   Write-Host "Processing: $($sub.Name)" -ForegroundColor Yellow
@@ -187,13 +475,16 @@ foreach ($sub in $subscriptions) {
     $isPrivileged = Test-IsPrivilegedRole -RoleName $ra.RoleDefinitionName
     $isHighlyPrivileged = Test-IsHighlyPrivilegedRole -RoleName $ra.RoleDefinitionName
     
+    # Resolve DisplayName if blank (common for Groups with inherited permissions)
+    $displayName = Resolve-PrincipalName -ObjectId $ra.ObjectId -DisplayName $ra.DisplayName -ObjectType $ra.ObjectType
+    
     # Check if inherited
     $isInherited = -not ($ra.Scope -match "^/subscriptions/$($sub.Id)(/|$)")
     
     $roleAssignmentReport.Add([PSCustomObject]@{
       SubscriptionName   = $sub.Name
       SubscriptionId     = $sub.Id
-      DisplayName        = $ra.DisplayName
+      DisplayName        = $displayName
       SignInName         = $ra.SignInName
       ObjectId           = $ra.ObjectId
       ObjectType         = $principalType
@@ -216,7 +507,7 @@ foreach ($sub in $subscriptions) {
       $privilegedAccessReport.Add([PSCustomObject]@{
         SubscriptionName   = $sub.Name
         SubscriptionId     = $sub.Id
-        DisplayName        = $ra.DisplayName
+        DisplayName        = $displayName
         SignInName         = $ra.SignInName
         ObjectType         = $principalType
         Role               = $ra.RoleDefinitionName
@@ -239,7 +530,7 @@ foreach ($sub in $subscriptions) {
         Severity         = 'High'
         Category         = 'Privileged Access'
         ResourceType     = 'Role Assignment'
-        ResourceName     = "$($ra.DisplayName) - $($ra.RoleDefinitionName)"
+        ResourceName     = "$displayName - $($ra.RoleDefinitionName)"
         ResourceGroup    = 'N/A'
         Detail           = "User has $($ra.RoleDefinitionName) role at subscription scope"
         Recommendation   = 'Use PIM for just-in-time access, or scope down to resource group level'
@@ -254,7 +545,7 @@ foreach ($sub in $subscriptions) {
         Severity         = 'High'
         Category         = 'Service Principal Security'
         ResourceType     = 'Role Assignment'
-        ResourceName     = "$($ra.DisplayName) - $($ra.RoleDefinitionName)"
+        ResourceName     = "$displayName - $($ra.RoleDefinitionName)"
         ResourceGroup    = 'N/A'
         Detail           = "Service Principal has $($ra.RoleDefinitionName) role"
         Recommendation   = 'Apply least privilege - use more specific roles'
@@ -269,10 +560,11 @@ foreach ($sub in $subscriptions) {
   }
   
   foreach ($admin in $subAdmins) {
+    $adminDisplayName = Resolve-PrincipalName -ObjectId $admin.ObjectId -DisplayName $admin.DisplayName -ObjectType $admin.ObjectType
     $subscriptionAdminReport.Add([PSCustomObject]@{
       SubscriptionName = $sub.Name
       SubscriptionId   = $sub.Id
-      DisplayName      = $admin.DisplayName
+      DisplayName      = $adminDisplayName
       SignInName       = $admin.SignInName
       ObjectType       = Get-PrincipalType -ObjectType $admin.ObjectType
       Role             = $admin.RoleDefinitionName
@@ -296,10 +588,12 @@ foreach ($sub in $subscriptions) {
     $scopeList = ($spRoles.Scope | Select-Object -Unique) -join '; '
     $hasPrivileged = ($spRoles | Where-Object { Test-IsPrivilegedRole -RoleName $_.RoleDefinitionName }).Count -gt 0
     
+    $spDisplayName = Resolve-PrincipalName -ObjectId $sp.ObjectId -DisplayName $sp.DisplayName -ObjectType 'ServicePrincipal'
+    
     $servicePrincipalReport.Add([PSCustomObject]@{
       SubscriptionName     = $sub.Name
       SubscriptionId       = $sub.Id
-      DisplayName          = $sp.DisplayName
+      DisplayName          = $spDisplayName
       ObjectId             = $sp.ObjectId
       RoleCount            = $spRoles.Count
       Roles                = $roleList
@@ -315,7 +609,7 @@ foreach ($sub in $subscriptions) {
         Severity         = 'Medium'
         Category         = 'Service Principal Security'
         ResourceType     = 'Service Principal'
-        ResourceName     = $sp.DisplayName
+        ResourceName     = $spDisplayName
         ResourceGroup    = 'N/A'
         Detail           = "Service Principal has $($spRoles.Count) role assignments"
         Recommendation   = 'Review if all roles are necessary - consolidate or reduce'
@@ -413,8 +707,43 @@ foreach ($sub in $subscriptions) {
   # -----------------------------------------------------------
   Write-Host "  -> Identifying guest users..." -NoNewline
   
-  $guestAssignments = $assignments | Where-Object { 
-    $_.SignInName -match '#EXT#' -or $_.SignInName -match '_.*@'
+  # Get tenant default domain for comparison (used in pattern matching fallback)
+  $tenantDomain = $null
+  try {
+    $context = Get-AzContext
+    if ($context.Account.Type -eq 'User') {
+      $tenantDomain = ($context.Account.Id -split '@')[1]
+    }
+  } catch {}
+  
+  # Filter to user-type assignments and check each for guest status
+  $userAssignments = $assignments | Where-Object { $_.ObjectType -match 'User' }
+  $guestAssignments = @()
+  
+  foreach ($ua in $userAssignments) {
+    $isGuest = Test-IsGuestUser -ObjectId $ua.ObjectId -SignInName $ua.SignInName
+    
+    # Additional pattern checks if helper didn't confirm
+    if (-not $isGuest -and $ua.SignInName -and $tenantDomain) {
+      # Check if SignInName domain differs from tenant domain
+      if ($ua.SignInName -match '@(.+)$') {
+        $userDomain = $Matches[1]
+        if ($userDomain -ne $tenantDomain -and 
+            $userDomain -notmatch '\.onmicrosoft\.com$' -and
+            $userDomain -notmatch "^$([regex]::Escape($tenantDomain.Split('.')[0]))") {
+          $isGuest = $true
+        }
+      }
+    }
+    
+    # ObjectType check (some APIs include Guest indicator)
+    if (-not $isGuest -and $ua.ObjectType -match 'Guest') {
+      $isGuest = $true
+    }
+    
+    if ($isGuest) {
+      $guestAssignments += $ua
+    }
   }
   
   Write-Host " $($guestAssignments.Count) guest assignments" -ForegroundColor Cyan
@@ -426,10 +755,12 @@ foreach ($sub in $subscriptions) {
     $roles = ($guest.Group.RoleDefinitionName | Select-Object -Unique) -join ', '
     $hasPrivileged = ($guest.Group | Where-Object { Test-IsPrivilegedRole -RoleName $_.RoleDefinitionName }).Count -gt 0
     
+    $guestDisplayName = Resolve-PrincipalName -ObjectId $guestInfo.ObjectId -DisplayName $guestInfo.DisplayName -ObjectType 'User'
+    
     $guestUserReport.Add([PSCustomObject]@{
       SubscriptionName   = $sub.Name
       SubscriptionId     = $sub.Id
-      DisplayName        = $guestInfo.DisplayName
+      DisplayName        = $guestDisplayName
       SignInName         = $guestInfo.SignInName
       ObjectId           = $guestInfo.ObjectId
       RoleCount          = $guest.Group.Count
@@ -445,7 +776,7 @@ foreach ($sub in $subscriptions) {
         Severity         = 'High'
         Category         = 'Guest Access'
         ResourceType     = 'Guest User'
-        ResourceName     = $guestInfo.DisplayName
+        ResourceName     = $guestDisplayName
         ResourceGroup    = 'N/A'
         Detail           = "Guest user has privileged role(s): $roles"
         Recommendation   = 'Review guest access - consider using dedicated accounts or reducing privileges'
