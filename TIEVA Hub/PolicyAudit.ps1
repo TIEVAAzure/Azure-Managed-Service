@@ -1,15 +1,14 @@
 <#
 .SYNOPSIS
-  TIEVA Policy & Compliance Auditor
+  TIEVA Policy & Compliance Auditor v2
   
 .DESCRIPTION
-  Comprehensive Azure Policy and compliance audit for AMS customer meetings:
-  - Policy assignment inventory
-  - Compliance state by policy/initiative
+  Comprehensive Azure Policy and compliance audit matching Azure Portal view:
+  - Policy/Initiative assignment inventory with per-assignment compliance
+  - Compliance state showing "X% (Y out of Z)" format
+  - All exemptions including those inherited from Management Groups
   - Non-compliant resources detail
-  - Exemption tracking
-  - Built-in vs custom policies
-  - Regulatory compliance coverage
+  - Exemption tracking with expiry analysis
   - Policy remediation status
   
   Outputs multi-sheet Excel workbook: Policy_Audit.xlsx
@@ -24,14 +23,14 @@
   Include detailed list of non-compliant resources (can be large)
   
 .EXAMPLE
-  .\PolicyAudit.ps1
+  .\PolicyAudit_v2.ps1
   
 .EXAMPLE
-  .\PolicyAudit.ps1 -SubscriptionIds @("sub-id-1") -IncludeNonCompliantDetails
+  .\PolicyAudit_v2.ps1 -SubscriptionIds @("sub-id-1") -IncludeNonCompliantDetails
   
 .NOTES
-  Requires: Az.Accounts, Az.Resources, Az.PolicyInsights modules
-  Permissions: Reader + Policy Insights Reader on subscriptions
+  Requires: Az.Accounts, Az.Resources, Az.PolicyInsights, Az.ResourceGraph modules
+  Permissions: Reader + Policy Insights Reader on subscriptions/management groups
 #>
 
 [CmdletBinding()]
@@ -45,7 +44,7 @@ $ErrorActionPreference = 'Continue'
 $WarningPreference = 'SilentlyContinue'
 
 Write-Host "`n==========================================" -ForegroundColor Cyan
-Write-Host "TIEVA Policy & Compliance Auditor" -ForegroundColor Cyan
+Write-Host "TIEVA Policy & Compliance Auditor v2" -ForegroundColor Cyan
 Write-Host "==========================================" -ForegroundColor Cyan
 Write-Host "Started: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')" -ForegroundColor Gray
 Write-Host ""
@@ -67,23 +66,6 @@ function Get-SubscriptionList {
   }
 }
 
-function Get-CompliancePercentage {
-  param($States)
-  if (-not $States) { return 100 }
-  
-  $compliantSum = ($States | Where-Object { $_.ComplianceState -eq 'Compliant' } | Measure-Object -Property ResourceCount -Sum).Sum
-  $nonCompliantSum = ($States | Where-Object { $_.ComplianceState -eq 'NonCompliant' } | Measure-Object -Property ResourceCount -Sum).Sum
-  
-  # Handle null values from Measure-Object
-  $compliant = if ($null -eq $compliantSum) { 0 } else { $compliantSum }
-  $nonCompliant = if ($null -eq $nonCompliantSum) { 0 } else { $nonCompliantSum }
-  
-  $total = $compliant + $nonCompliant
-  
-  if ($total -eq 0) { return 100 }
-  return [math]::Round(($compliant / $total) * 100, 1)
-}
-
 function Get-ScopeLevel {
   param([string]$Scope)
   if ($Scope -match '/managementGroups/') { return 'Management Group' }
@@ -93,22 +75,52 @@ function Get-ScopeLevel {
   return 'Other'
 }
 
+function Get-ScopeName {
+  param([string]$Scope)
+  if ($Scope -match '/managementGroups/([^/]+)') { return $Matches[1] }
+  if ($Scope -match '/subscriptions/([^/]+)') { 
+    $subId = $Matches[1]
+    $sub = Get-AzSubscription -SubscriptionId $subId -ErrorAction SilentlyContinue
+    if ($sub) { return $sub.Name }
+    return $subId
+  }
+  return $Scope
+}
+
+function Format-ComplianceString {
+  param([int]$Compliant, [int]$NonCompliant)
+  $total = $Compliant + $NonCompliant
+  if ($total -eq 0) { return "100% (0 out of 0)" }
+  $pct = [math]::Round(($Compliant / $total) * 100, 0)
+  return "$pct% ($Compliant out of $total)"
+}
+
+function Get-CompliancePercent {
+  param([int]$Compliant, [int]$NonCompliant)
+  $total = $Compliant + $NonCompliant
+  if ($total -eq 0) { return 100 }
+  return [math]::Round(($Compliant / $total) * 100, 1)
+}
+
 # ============================================================================
 # DATA COLLECTIONS
 # ============================================================================
 
-$policyAssignmentReport = [System.Collections.Generic.List[object]]::new()
-$initiativeAssignmentReport = [System.Collections.Generic.List[object]]::new()
 $complianceReport = [System.Collections.Generic.List[object]]::new()
-$nonCompliantReport = [System.Collections.Generic.List[object]]::new()
 $exemptionReport = [System.Collections.Generic.List[object]]::new()
+$assignmentReport = [System.Collections.Generic.List[object]]::new()
+$nonCompliantReport = [System.Collections.Generic.List[object]]::new()
+$subscriptionSummary = [System.Collections.Generic.List[object]]::new()
 $customPolicyReport = [System.Collections.Generic.List[object]]::new()
 $remediationReport = [System.Collections.Generic.List[object]]::new()
-$subscriptionSummary = [System.Collections.Generic.List[object]]::new()
 $findings = [System.Collections.Generic.List[object]]::new()
 
+# Track processed items to avoid duplicates
+$processedAssignments = @{}
+$processedExemptions = @{}
+
 # ============================================================================
-# MAIN AUDIT LOOP
+# MAIN AUDIT LOOP - SUBSCRIPTIONS
 # ============================================================================
 
 $subscriptions = Get-SubscriptionList
@@ -116,22 +128,152 @@ if (-not $subscriptions) { Write-Error "No accessible subscriptions found."; exi
 
 Write-Host "Found $($subscriptions.Count) subscription(s) to audit`n" -ForegroundColor Green
 
+# ============================================================================
+# COLLECT ALL EXEMPTIONS VIA RESOURCE GRAPH (includes MG-level)
+# ============================================================================
+
+Write-Host "Collecting all policy exemptions (including Management Group level)..." -ForegroundColor Yellow
+
+# Check if Az.ResourceGraph is available, install if not
+$useResourceGraph = $false
+if (-not (Get-Module -ListAvailable -Name Az.ResourceGraph)) {
+  Write-Host "  -> Installing Az.ResourceGraph module..." -ForegroundColor Yellow
+  try {
+    Set-PSRepository -Name PSGallery -InstallationPolicy Trusted -ErrorAction SilentlyContinue | Out-Null
+    Install-Module Az.ResourceGraph -Scope CurrentUser -Force -ErrorAction Stop
+  } catch {
+    Write-Warning "Could not install Az.ResourceGraph: $_"
+  }
+}
+
+if (Get-Module -ListAvailable -Name Az.ResourceGraph) {
+  Import-Module Az.ResourceGraph -ErrorAction SilentlyContinue
+  $useResourceGraph = $true
+}
+
+if ($useResourceGraph) {
+  try {
+    # Query all exemptions across all scopes
+    $exemptionQuery = @"
+policyresources
+| where type == 'microsoft.authorization/policyexemptions'
+| extend displayName = properties.displayName
+| extend exemptionCategory = properties.exemptionCategory
+| extend policyAssignmentId = properties.policyAssignmentId
+| extend expiresOn = properties.expiresOn
+| extend createdBy = properties.metadata.createdBy
+| extend resourceSelectors = properties.resourceSelectors
+| extend scope = properties.scope
+| project id, name, displayName, exemptionCategory, policyAssignmentId, expiresOn, createdBy, resourceSelectors, subscriptionId, scope
+"@
+    
+    $subIds = $subscriptions | ForEach-Object { $_.Id }
+    $allExemptions = Search-AzGraph -Query $exemptionQuery -Subscription $subIds -First 1000 -ErrorAction Stop
+    
+    Write-Host "  -> Found $($allExemptions.Count) exemptions via Resource Graph" -ForegroundColor Cyan
+    
+    foreach ($ex in $allExemptions) {
+      $exId = $ex.id
+      if (-not $exId) { continue }
+      if ($processedExemptions.ContainsKey($exId)) { continue }
+      $processedExemptions[$exId] = $true
+      
+      $isExpired = $false
+      $daysToExpiry = $null
+      $expiresOnFormatted = $null
+      
+      if ($ex.expiresOn) {
+        try {
+          $expiryDate = [datetime]$ex.expiresOn
+          $daysToExpiry = ($expiryDate - (Get-Date)).Days
+          $isExpired = $daysToExpiry -lt 0
+          $expiresOnFormatted = $expiryDate.ToString("dd/MM/yyyy, HH:mm:ss")
+        } catch {}
+      }
+      
+      # Determine scope name and type
+      $scopeName = ''
+      $scopeType = 'Unknown'
+      $scopePath = if ($ex.scope) { $ex.scope } else { $ex.id }
+      
+      if ($scopePath -match '/managementGroups/([^/]+)') {
+        $scopeName = $Matches[1]
+        $scopeType = 'Management Group'
+      } elseif ($scopePath -match '/subscriptions/([^/]+)') {
+        $subId = $Matches[1]
+        $scopeType = 'Subscription'
+        $matchedSub = $subscriptions | Where-Object { $_.Id -eq $subId } | Select-Object -First 1
+        $scopeName = if ($matchedSub) { $matchedSub.Name } else { $subId }
+      }
+      
+      # Get assignment display name
+      $assignmentName = ($ex.policyAssignmentId -split '/')[-1]
+      
+      $exemptionReport.Add([PSCustomObject]@{
+        Name              = if ($ex.displayName) { $ex.displayName } else { $ex.name }
+        ExemptionName     = $ex.name
+        Assignments       = $assignmentName
+        Scope             = $scopeName
+        ScopeType         = $scopeType
+        ExemptionCategory = $ex.exemptionCategory
+        CreatedBy         = $ex.createdBy
+        ExpirationDate    = if ($expiresOnFormatted) { $expiresOnFormatted } else { '--' }
+        DaysToExpiry      = $daysToExpiry
+        IsExpired         = $isExpired
+        ResourceSelectors = if ($ex.resourceSelectors) { ($ex.resourceSelectors | ConvertTo-Json -Compress) } else { '--' }
+      })
+      
+      if (-not $ex.expiresOn) {
+        $findings.Add([PSCustomObject]@{
+          SubscriptionName = $scopeName
+          SubscriptionId   = if ($scopeType -eq 'Subscription') { $ex.subscriptionId } else { $scopeType }
+          Severity         = 'Medium'
+          Category         = 'Policy Exemption'
+          ResourceType     = 'Policy Exemption'
+          ResourceName     = if ($ex.displayName) { $ex.displayName } else { $ex.name }
+          ResourceGroup    = 'N/A'
+          Detail           = 'Policy exemption has no expiry date'
+          Recommendation   = 'Set an expiry date or review if exemption is still needed'
+        })
+      }
+      
+      if ($isExpired) {
+        $findings.Add([PSCustomObject]@{
+          SubscriptionName = $scopeName
+          SubscriptionId   = if ($scopeType -eq 'Subscription') { $ex.subscriptionId } else { $scopeType }
+          Severity         = 'Low'
+          Category         = 'Policy Exemption'
+          ResourceType     = 'Policy Exemption'
+          ResourceName     = if ($ex.displayName) { $ex.displayName } else { $ex.name }
+          ResourceGroup    = 'N/A'
+          Detail           = 'Policy exemption has expired but still exists'
+          Recommendation   = 'Remove expired exemption or renew if still needed'
+        })
+      }
+    }
+    
+  } catch {
+    Write-Warning "Resource Graph query failed: $_ - falling back to per-subscription query"
+    $useResourceGraph = $false
+  }
+} else {
+  Write-Host "  -> Az.ResourceGraph not available - will query per subscription (may miss MG-level exemptions)" -ForegroundColor Yellow
+}
+
+Write-Host ""
+
 foreach ($sub in $subscriptions) {
   Write-Host "Processing: $($sub.Name)" -ForegroundColor Yellow
   
   try { Set-AzContext -SubscriptionId $sub.Id -ErrorAction Stop | Out-Null }
   catch { Write-Warning "  Could not set context: $_"; continue }
   
-  $subPolicyCount = 0
-  $subInitiativeCount = 0
-  $subNonCompliantCount = 0
-  $subExemptionCount = 0
-  $overallCompliance = 100
+  $subScope = "/subscriptions/$($sub.Id)"
   
   # -----------------------------------------------------------
-  # 1. POLICY ASSIGNMENTS
+  # 1. POLICY ASSIGNMENTS WITH COMPLIANCE STATE
   # -----------------------------------------------------------
-  Write-Host "  -> Collecting policy assignments..." -NoNewline
+  Write-Host "  -> Collecting policy assignments with compliance..." -NoNewline
   
   $assignments = @()
   try { $assignments = Get-AzPolicyAssignment -ErrorAction SilentlyContinue } catch {}
@@ -139,206 +281,230 @@ foreach ($sub in $subscriptions) {
   Write-Host " $($assignments.Count) assignments" -ForegroundColor Cyan
   
   foreach ($pa in $assignments) {
-    $scopeLevel = Get-ScopeLevel -Scope $pa.Properties.Scope
-    $isInherited = $pa.Properties.Scope -notmatch "^/subscriptions/$($sub.Id)"
+    # Skip if already processed (inherited from MG)
+    $paId = $pa.ResourceId
+    if (-not $paId) { $paId = $pa.Name }
+    if (-not $paId) { continue }
+    if ($processedAssignments.ContainsKey($paId)) { continue }
+    $processedAssignments[$paId] = $true
     
-    $policyDef = $null
-    $isInitiative = $false
-    $isCustom = $false
+    $isInitiative = $pa.Properties.PolicyDefinitionId -match '/policySetDefinitions/'
     $displayName = $pa.Properties.DisplayName
-    $description = $pa.Properties.Description
     
-    if ($pa.Properties.PolicyDefinitionId -match '/policySetDefinitions/') {
-      $isInitiative = $true
+    # Determine scope - use current subscription if scope matches, otherwise resolve
+    $scopeName = $sub.Name
+    $scopeLevel = 'Subscription'
+    if ($pa.Properties.Scope) {
+      if ($pa.Properties.Scope -match '/managementGroups/([^/]+)') {
+        $scopeName = $Matches[1]
+        $scopeLevel = 'Management Group'
+      } elseif ($pa.Properties.Scope -match '/resourceGroups/([^/]+)') {
+        $scopeLevel = 'Resource Group'
+      }
+    }
+    
+    # Get policy/initiative definition for display name if not set
+    if (-not $displayName) {
       try {
-        $policyDef = Get-AzPolicySetDefinition -Id $pa.Properties.PolicyDefinitionId -ErrorAction SilentlyContinue
-        if (-not $displayName) { $displayName = $policyDef.Properties.DisplayName }
-        if (-not $description) { $description = $policyDef.Properties.Description }
-        $isCustom = $policyDef.Properties.PolicyType -eq 'Custom'
+        if ($isInitiative) {
+          $def = Get-AzPolicySetDefinition -Id $pa.Properties.PolicyDefinitionId -ErrorAction SilentlyContinue
+        } else {
+          $def = Get-AzPolicyDefinition -Id $pa.Properties.PolicyDefinitionId -ErrorAction SilentlyContinue
+        }
+        if ($def -and $def.Properties.DisplayName) {
+          $displayName = $def.Properties.DisplayName
+        }
       } catch {}
-      $subInitiativeCount++
-    } else {
-      try {
-        $policyDef = Get-AzPolicyDefinition -Id $pa.Properties.PolicyDefinitionId -ErrorAction SilentlyContinue
-        if (-not $displayName) { $displayName = $policyDef.Properties.DisplayName }
-        if (-not $description) { $description = $policyDef.Properties.Description }
-        $isCustom = $policyDef.Properties.PolicyType -eq 'Custom'
-      } catch {}
-      $subPolicyCount++
     }
     
-    $effect = $null
-    if ($pa.Properties.Parameters -and $pa.Properties.Parameters.effect) {
-      $effect = $pa.Properties.Parameters.effect.value
-    } elseif ($policyDef -and $policyDef.Properties.Parameters -and $policyDef.Properties.Parameters.effect) {
-      $effect = $policyDef.Properties.Parameters.effect.defaultValue
-    }
+    if (-not $displayName) { $displayName = $pa.Name }
     
-    $report = [PSCustomObject]@{
-      SubscriptionName  = $sub.Name
-      SubscriptionId    = $sub.Id
-      AssignmentName    = $pa.Name
-      DisplayName       = $displayName
-      Description       = $description
-      IsInitiative      = $isInitiative
-      IsCustom          = $isCustom
-      Effect            = $effect
-      Scope             = $pa.Properties.Scope
-      ScopeLevel        = $scopeLevel
-      IsInherited       = $isInherited
-      EnforcementMode   = $pa.Properties.EnforcementMode
-      AssignmentId      = $pa.ResourceId
-    }
+    # Get compliance state for this specific assignment
+    $compliantCount = 0
+    $nonCompliantCount = 0
+    $complianceState = 'Unknown'
+    $policyDisplayNameFromState = $null
     
-    if ($isInitiative) {
-      $initiativeAssignmentReport.Add($report)
-    } else {
-      $policyAssignmentReport.Add($report)
-    }
-  }
-  
-  # -----------------------------------------------------------
-  # 2. COMPLIANCE STATE
-  # -----------------------------------------------------------
-  Write-Host "  -> Checking compliance state..." -NoNewline
-  
-  $complianceStates = @()
-  try {
-    $complianceStates = Get-AzPolicyStateSummary -ErrorAction SilentlyContinue
-  } catch {}
-  
-  if ($complianceStates -and $complianceStates.Results) {
-    $overallCompliance = Get-CompliancePercentage -States $complianceStates.Results
-    $nonCompliantResources = ($complianceStates.Results | Where-Object { $_.ComplianceState -eq 'NonCompliant' } | Measure-Object -Property ResourceCount -Sum).Sum
-    $subNonCompliantCount = $nonCompliantResources
-    
-    Write-Host " $overallCompliance% compliant, $nonCompliantResources non-compliant" -ForegroundColor $(if ($overallCompliance -ge 90) { 'Green' } elseif ($overallCompliance -ge 70) { 'Yellow' } else { 'Red' })
-  } else {
-    Write-Host " No compliance data" -ForegroundColor Gray
-  }
-  
-  # Get per-policy compliance
-  $policyStates = @()
-  try {
-    $policyStates = Get-AzPolicyState -Filter "ComplianceState eq 'NonCompliant'" -Top 1000 -ErrorAction SilentlyContinue
-    
-    $byPolicy = $policyStates | Group-Object -Property PolicyDefinitionName
-    
-    foreach ($group in $byPolicy) {
-      $firstItem = $group.Group[0]
+    try {
+      $policyStates = Get-AzPolicyState -PolicyAssignmentName $pa.Name -Filter "ComplianceState eq 'NonCompliant' or ComplianceState eq 'Compliant'" -Top 5000 -ErrorAction SilentlyContinue
       
-      $complianceReport.Add([PSCustomObject]@{
-        SubscriptionName     = $sub.Name
-        SubscriptionId       = $sub.Id
-        PolicyName           = $group.Name
-        PolicyDisplayName    = $firstItem.PolicyDefinitionDisplayName
-        PolicyCategory       = $firstItem.PolicyDefinitionCategory
-        NonCompliantCount    = $group.Count
-        ResourceTypes        = ($group.Group.ResourceType | Select-Object -Unique) -join ', '
-      })
-    }
-  } catch {
-    Write-Verbose "Could not get policy states: $_"
-  }
-  
-  # -----------------------------------------------------------
-  # 3. NON-COMPLIANT RESOURCE DETAILS
-  # -----------------------------------------------------------
-  if ($IncludeNonCompliantDetails -and $policyStates) {
-    Write-Host "  -> Collecting non-compliant resource details..." -NoNewline
-    
-    foreach ($state in ($policyStates | Select-Object -First 500)) {
-      $nonCompliantReport.Add([PSCustomObject]@{
-        SubscriptionName      = $sub.Name
-        SubscriptionId        = $sub.Id
-        ResourceId            = $state.ResourceId
-        ResourceName          = ($state.ResourceId -split '/')[-1]
-        ResourceType          = $state.ResourceType
-        ResourceGroup         = $state.ResourceGroup
-        PolicyName            = $state.PolicyDefinitionName
-        PolicyDisplayName     = $state.PolicyDefinitionDisplayName
-        PolicyCategory        = $state.PolicyDefinitionCategory
-        ComplianceState       = $state.ComplianceState
-        Timestamp             = $state.Timestamp
-      })
+      if ($policyStates) {
+        $compliantCount = ($policyStates | Where-Object { $_.ComplianceState -eq 'Compliant' }).Count
+        $nonCompliantCount = ($policyStates | Where-Object { $_.ComplianceState -eq 'NonCompliant' }).Count
+        $complianceState = if ($nonCompliantCount -gt 0) { 'Non-compliant' } else { 'Compliant' }
+        
+        # Try to get display name from policy state if not already set
+        if (-not $displayName -or $displayName -eq $pa.Name) {
+          $firstState = $policyStates | Select-Object -First 1
+          if ($firstState.PolicyAssignmentDisplayName) {
+            $policyDisplayNameFromState = $firstState.PolicyAssignmentDisplayName
+          } elseif ($firstState.PolicySetDefinitionDisplayName) {
+            $policyDisplayNameFromState = $firstState.PolicySetDefinitionDisplayName
+          } elseif ($firstState.PolicyDefinitionDisplayName) {
+            $policyDisplayNameFromState = $firstState.PolicyDefinitionDisplayName
+          }
+        }
+      }
+    } catch {
+      Write-Verbose "Could not get compliance for $($pa.Name): $_"
     }
     
-    Write-Host " $($nonCompliantReport.Count) details captured" -ForegroundColor Cyan
-  }
-  
-  # -----------------------------------------------------------
-  # 4. POLICY EXEMPTIONS
-  # -----------------------------------------------------------
-  Write-Host "  -> Checking policy exemptions..." -NoNewline
-  
-  $exemptions = @()
-  try { $exemptions = Get-AzPolicyExemption -ErrorAction SilentlyContinue } catch {}
-  
-  Write-Host " $($exemptions.Count) exemptions" -ForegroundColor $(if ($exemptions.Count -gt 0) { 'Yellow' } else { 'Green' })
-  $subExemptionCount = $exemptions.Count
-  
-  foreach ($ex in $exemptions) {
-    $isExpired = $false
-    $daysToExpiry = $null
-    
-    if ($ex.Properties.ExpiresOn) {
-      $expiryDate = [datetime]$ex.Properties.ExpiresOn
-      $daysToExpiry = ($expiryDate - (Get-Date)).Days
-      $isExpired = $daysToExpiry -lt 0
+    # Use the best available display name
+    if ($policyDisplayNameFromState) {
+      $displayName = $policyDisplayNameFromState
     }
     
-    $exemptionReport.Add([PSCustomObject]@{
-      SubscriptionName    = $sub.Name
-      SubscriptionId      = $sub.Id
-      ExemptionName       = $ex.Name
-      DisplayName         = $ex.Properties.DisplayName
-      Description         = $ex.Properties.Description
-      Category            = $ex.Properties.ExemptionCategory
-      PolicyAssignment    = ($ex.Properties.PolicyAssignmentId -split '/')[-1]
-      Scope               = $ex.Properties.Scope
-      ExpiresOn           = $ex.Properties.ExpiresOn
-      DaysToExpiry        = $daysToExpiry
-      IsExpired           = $isExpired
+    # Also count non-compliant policies within initiatives
+    $nonCompliantPolicies = 0
+    if ($isInitiative -and $nonCompliantCount -gt 0) {
+      try {
+        $policyGroups = $policyStates | Where-Object { $_.ComplianceState -eq 'NonCompliant' } | Group-Object PolicyDefinitionName
+        $nonCompliantPolicies = $policyGroups.Count
+      } catch {}
+    } else {
+      $nonCompliantPolicies = if ($nonCompliantCount -gt 0) { 1 } else { 0 }
+    }
+    
+    $complianceReport.Add([PSCustomObject]@{
+      Name                  = $displayName
+      Scope                 = $scopeName
+      ScopeLevel            = $scopeLevel
+      SubscriptionName      = $sub.Name
+      Type                  = if ($isInitiative) { 'Initiative' } else { 'Policy' }
+      ComplianceState       = $complianceState
+      ResourceCompliance    = Format-ComplianceString -Compliant $compliantCount -NonCompliant $nonCompliantCount
+      CompliancePercent     = Get-CompliancePercent -Compliant $compliantCount -NonCompliant $nonCompliantCount
+      NonCompliantResources = $nonCompliantCount
+      NonCompliantPolicies  = $nonCompliantPolicies
+      CompliantResources    = $compliantCount
+      TotalResources        = $compliantCount + $nonCompliantCount
+      AssignmentName        = $pa.Name
+      AssignmentId          = $pa.ResourceId
     })
     
-    if (-not $ex.Properties.ExpiresOn) {
-      $findings.Add([PSCustomObject]@{
-        SubscriptionName = $sub.Name
-        SubscriptionId   = $sub.Id
-        Severity         = 'Medium'
-        Category         = 'Policy Exemption'
-        ResourceType     = 'Policy Exemption'
-        ResourceName     = $ex.Properties.DisplayName
-        ResourceGroup    = 'N/A'
-        Detail           = 'Policy exemption has no expiry date'
-        Recommendation   = 'Set an expiry date or review if exemption is still needed'
-      })
-    }
+    $assignmentReport.Add([PSCustomObject]@{
+      AssignmentName   = $displayName
+      Scope            = $scopeName
+      SubscriptionName = $sub.Name
+      Type             = if ($isInitiative) { 'Initiative' } else { 'Policy' }
+    })
     
-    if ($isExpired) {
-      $findings.Add([PSCustomObject]@{
-        SubscriptionName = $sub.Name
-        SubscriptionId   = $sub.Id
-        Severity         = 'Low'
-        Category         = 'Policy Exemption'
-        ResourceType     = 'Policy Exemption'
-        ResourceName     = $ex.Properties.DisplayName
-        ResourceGroup    = 'N/A'
-        Detail           = 'Policy exemption has expired but still exists'
-        Recommendation   = 'Remove expired exemption or renew if still needed'
-      })
+    # Collect non-compliant resource details if requested
+    if ($IncludeNonCompliantDetails -and $nonCompliantCount -gt 0) {
+      try {
+        $ncStates = Get-AzPolicyState -PolicyAssignmentName $pa.Name -Filter "ComplianceState eq 'NonCompliant'" -Top 500 -ErrorAction SilentlyContinue
+        foreach ($state in $ncStates) {
+          $nonCompliantReport.Add([PSCustomObject]@{
+            SubscriptionName    = $sub.Name
+            SubscriptionId      = $sub.Id
+            ResourceId          = $state.ResourceId
+            ResourceName        = ($state.ResourceId -split '/')[-1]
+            ResourceType        = $state.ResourceType
+            ResourceGroup       = $state.ResourceGroup
+            PolicyName          = $state.PolicyDefinitionName
+            PolicyDisplayName   = $state.PolicyDefinitionDisplayName
+            PolicyCategory      = $state.PolicyDefinitionCategory
+            AssignmentName      = $displayName
+            ComplianceState     = $state.ComplianceState
+            Timestamp           = $state.Timestamp
+          })
+        }
+      } catch {}
     }
   }
   
   # -----------------------------------------------------------
-  # 5. CUSTOM POLICY DEFINITIONS
+  # 2. POLICY EXEMPTIONS (fallback if Resource Graph not used)
+  # -----------------------------------------------------------
+  if (-not $useResourceGraph) {
+    Write-Host "  -> Checking policy exemptions..." -NoNewline
+    
+    $exemptions = @()
+    try { $exemptions = Get-AzPolicyExemption -ErrorAction SilentlyContinue } catch {}
+    
+    Write-Host " $($exemptions.Count) exemptions" -ForegroundColor $(if ($exemptions.Count -gt 0) { 'Yellow' } else { 'Green' })
+    
+    foreach ($ex in $exemptions) {
+      $exId = $ex.ResourceId
+      if (-not $exId) { $exId = $ex.Name }
+      if (-not $exId) { continue }
+      if ($processedExemptions.ContainsKey($exId)) { continue }
+      $processedExemptions[$exId] = $true
+      
+      $isExpired = $false
+      $daysToExpiry = $null
+      $expiresOnFormatted = $null
+      
+      if ($ex.Properties.ExpiresOn) {
+        $expiryDate = [datetime]$ex.Properties.ExpiresOn
+        $daysToExpiry = ($expiryDate - (Get-Date)).Days
+        $isExpired = $daysToExpiry -lt 0
+        $expiresOnFormatted = $expiryDate.ToString("dd/MM/yyyy, HH:mm:ss")
+      }
+      
+      # Get the assignment display name
+      $assignmentDisplayName = ($ex.Properties.PolicyAssignmentId -split '/')[-1]
+      try {
+        $linkedAssignment = Get-AzPolicyAssignment -Id $ex.Properties.PolicyAssignmentId -ErrorAction SilentlyContinue
+        if ($linkedAssignment.Properties.DisplayName) {
+          $assignmentDisplayName = $linkedAssignment.Properties.DisplayName
+        }
+      } catch {}
+      
+      $exemptionReport.Add([PSCustomObject]@{
+        Name              = if ($ex.Properties.DisplayName) { $ex.Properties.DisplayName } else { $ex.Name }
+        ExemptionName     = $ex.Name
+        Assignments       = $assignmentDisplayName
+        Scope             = $sub.Name
+        ScopeType         = 'Subscription'
+        ExemptionCategory = $ex.Properties.ExemptionCategory
+        CreatedBy         = $ex.Properties.Metadata.createdBy
+        ExpirationDate    = if ($expiresOnFormatted) { $expiresOnFormatted } else { '--' }
+        DaysToExpiry      = $daysToExpiry
+        IsExpired         = $isExpired
+        ResourceSelectors = if ($ex.Properties.ResourceSelectors) { ($ex.Properties.ResourceSelectors | ConvertTo-Json -Compress) } else { '--' }
+      })
+      
+      if (-not $ex.Properties.ExpiresOn) {
+        $findings.Add([PSCustomObject]@{
+          SubscriptionName = $sub.Name
+          SubscriptionId   = $sub.Id
+          Severity         = 'Medium'
+          Category         = 'Policy Exemption'
+          ResourceType     = 'Policy Exemption'
+          ResourceName     = $ex.Properties.DisplayName
+          ResourceGroup    = 'N/A'
+          Detail           = 'Policy exemption has no expiry date'
+          Recommendation   = 'Set an expiry date or review if exemption is still needed'
+        })
+      }
+      
+      if ($isExpired) {
+        $findings.Add([PSCustomObject]@{
+          SubscriptionName = $sub.Name
+          SubscriptionId   = $sub.Id
+          Severity         = 'Low'
+          Category         = 'Policy Exemption'
+          ResourceType     = 'Policy Exemption'
+          ResourceName     = $ex.Properties.DisplayName
+          ResourceGroup    = 'N/A'
+          Detail           = 'Policy exemption has expired but still exists'
+          Recommendation   = 'Remove expired exemption or renew if still needed'
+        })
+      }
+    }
+  }
+  
+  # Count exemptions for this subscription (from either method)
+  $subExemptionCount = ($exemptionReport | Where-Object { $_.Scope -eq $sub.Name }).Count
+  
+  # -----------------------------------------------------------
+  # 3. CUSTOM POLICY DEFINITIONS
   # -----------------------------------------------------------
   Write-Host "  -> Collecting custom policies..." -NoNewline
   
   $customPolicies = @()
-  try {
-    $customPolicies = Get-AzPolicyDefinition -Custom -ErrorAction SilentlyContinue
-  } catch {}
+  try { $customPolicies = Get-AzPolicyDefinition -Custom -ErrorAction SilentlyContinue } catch {}
   
   Write-Host " $($customPolicies.Count) custom policies" -ForegroundColor Cyan
   
@@ -356,14 +522,12 @@ foreach ($sub in $subscriptions) {
   }
   
   # -----------------------------------------------------------
-  # 6. REMEDIATION TASKS
+  # 4. REMEDIATION TASKS
   # -----------------------------------------------------------
   Write-Host "  -> Checking remediation tasks..." -NoNewline
   
   $remediations = @()
-  try {
-    $remediations = Get-AzPolicyRemediation -ErrorAction SilentlyContinue
-  } catch {}
+  try { $remediations = Get-AzPolicyRemediation -ErrorAction SilentlyContinue } catch {}
   
   Write-Host " $($remediations.Count) remediation tasks" -ForegroundColor Cyan
   
@@ -399,6 +563,14 @@ foreach ($sub in $subscriptions) {
   # -----------------------------------------------------------
   # SUBSCRIPTION SUMMARY
   # -----------------------------------------------------------
+  $subCompliance = $complianceReport | Where-Object { $_.SubscriptionName -eq $sub.Name }
+  $subNonCompliant = ($subCompliance | Measure-Object -Property NonCompliantResources -Sum).Sum
+  if ($null -eq $subNonCompliant) { $subNonCompliant = 0 }
+  $subCompliant = ($subCompliance | Measure-Object -Property CompliantResources -Sum).Sum
+  if ($null -eq $subCompliant) { $subCompliant = 0 }
+  $subTotal = $subCompliant + $subNonCompliant
+  $subCompliancePercent = if ($subTotal -gt 0) { [math]::Round(($subCompliant / $subTotal) * 100, 1) } else { 100 }
+  
   $highFindings = ($findings | Where-Object { $_.SubscriptionId -eq $sub.Id -and $_.Severity -eq 'High' }).Count
   $medFindings = ($findings | Where-Object { $_.SubscriptionId -eq $sub.Id -and $_.Severity -eq 'Medium' }).Count
   $lowFindings = ($findings | Where-Object { $_.SubscriptionId -eq $sub.Id -and $_.Severity -eq 'Low' }).Count
@@ -406,10 +578,11 @@ foreach ($sub in $subscriptions) {
   $subscriptionSummary.Add([PSCustomObject]@{
     SubscriptionName      = $sub.Name
     SubscriptionId        = $sub.Id
-    PolicyAssignments     = $subPolicyCount
-    InitiativeAssignments = $subInitiativeCount
-    CompliancePercent     = $overallCompliance
-    NonCompliantResources = $subNonCompliantCount
+    PolicyAssignments     = ($subCompliance | Where-Object { $_.Type -eq 'Policy' }).Count
+    InitiativeAssignments = ($subCompliance | Where-Object { $_.Type -eq 'Initiative' }).Count
+    CompliancePercent     = $subCompliancePercent
+    ResourceCompliance    = Format-ComplianceString -Compliant $subCompliant -NonCompliant $subNonCompliant
+    NonCompliantResources = $subNonCompliant
     Exemptions            = $subExemptionCount
     CustomPolicies        = $customPolicies.Count
     HighFindings          = $highFindings
@@ -418,7 +591,8 @@ foreach ($sub in $subscriptions) {
     TotalFindings         = $highFindings + $medFindings + $lowFindings
   })
   
-  if ($overallCompliance -lt 70) {
+  # Add findings for poor compliance
+  if ($subCompliancePercent -lt 70) {
     $findings.Add([PSCustomObject]@{
       SubscriptionName = $sub.Name
       SubscriptionId   = $sub.Id
@@ -427,10 +601,10 @@ foreach ($sub in $subscriptions) {
       ResourceType     = 'Subscription'
       ResourceName     = $sub.Name
       ResourceGroup    = 'N/A'
-      Detail           = "Overall compliance is $overallCompliance% - below 70% threshold"
+      Detail           = "Overall compliance is $subCompliancePercent% - below 70% threshold"
       Recommendation   = 'Review and remediate non-compliant resources'
     })
-  } elseif ($overallCompliance -lt 90) {
+  } elseif ($subCompliancePercent -lt 90) {
     $findings.Add([PSCustomObject]@{
       SubscriptionName = $sub.Name
       SubscriptionId   = $sub.Id
@@ -439,22 +613,8 @@ foreach ($sub in $subscriptions) {
       ResourceType     = 'Subscription'
       ResourceName     = $sub.Name
       ResourceGroup    = 'N/A'
-      Detail           = "Overall compliance is $overallCompliance% - below 90% target"
+      Detail           = "Overall compliance is $subCompliancePercent% - below 90% target"
       Recommendation   = 'Continue remediation efforts to improve compliance'
-    })
-  }
-  
-  if ($subInitiativeCount -eq 0) {
-    $findings.Add([PSCustomObject]@{
-      SubscriptionName = $sub.Name
-      SubscriptionId   = $sub.Id
-      Severity         = 'Medium'
-      Category         = 'Policy Coverage'
-      ResourceType     = 'Subscription'
-      ResourceName     = $sub.Name
-      ResourceGroup    = 'N/A'
-      Detail           = 'No policy initiatives assigned to subscription'
-      Recommendation   = 'Assign Azure Security Benchmark or other relevant initiatives'
     })
   }
   
@@ -485,22 +645,30 @@ Write-Host "==========================================`n" -ForegroundColor Green
 
 Write-Host "=== Subscription Summary ===" -ForegroundColor Cyan
 if ($subscriptionSummary.Count -gt 0) {
-  $subscriptionSummary | Format-Table SubscriptionName, PolicyAssignments, InitiativeAssignments, CompliancePercent, NonCompliantResources, Exemptions, TotalFindings -AutoSize
+  $subscriptionSummary | Format-Table SubscriptionName, CompliancePercent, ResourceCompliance, NonCompliantResources, Exemptions, TotalFindings -AutoSize
 }
 
 Write-Host "`n=== Compliance Overview ===" -ForegroundColor Cyan
-$avgComplianceResult = ($subscriptionSummary | Measure-Object -Property CompliancePercent -Average).Average
-$avgCompliance = if ($null -eq $avgComplianceResult) { 100 } else { $avgComplianceResult }
-$totalNonCompliantResult = ($subscriptionSummary | Measure-Object -Property NonCompliantResources -Sum).Sum
-$totalNonCompliant = if ($null -eq $totalNonCompliantResult) { 0 } else { $totalNonCompliantResult }
-Write-Host "  Average compliance: $([math]::Round($avgCompliance, 1))%" -ForegroundColor $(if ($avgCompliance -ge 90) { 'Green' } elseif ($avgCompliance -ge 70) { 'Yellow' } else { 'Red' })
+$totalCompliant = ($complianceReport | Measure-Object -Property CompliantResources -Sum).Sum
+$totalNonCompliant = ($complianceReport | Measure-Object -Property NonCompliantResources -Sum).Sum
+$totalResources = $totalCompliant + $totalNonCompliant
+$avgCompliance = if ($totalResources -gt 0) { [math]::Round(($totalCompliant / $totalResources) * 100, 1) } else { 100 }
+
+Write-Host "  Overall compliance: $(Format-ComplianceString -Compliant $totalCompliant -NonCompliant $totalNonCompliant)" -ForegroundColor $(if ($avgCompliance -ge 90) { 'Green' } elseif ($avgCompliance -ge 70) { 'Yellow' } else { 'Red' })
 Write-Host "  Total non-compliant resources: $totalNonCompliant" -ForegroundColor $(if ($totalNonCompliant -eq 0) { 'Green' } else { 'Yellow' })
 
-Write-Host "`n=== Top Non-Compliant Policies ===" -ForegroundColor Cyan
-$topNonCompliant = $complianceReport | Sort-Object -Property NonCompliantCount -Descending | Select-Object -First 10
+Write-Host "`n=== Top Non-Compliant Assignments ===" -ForegroundColor Cyan
+$topNonCompliant = $complianceReport | Where-Object { $_.NonCompliantResources -gt 0 } | Sort-Object -Property NonCompliantResources -Descending | Select-Object -First 10
 if ($topNonCompliant) {
-  $topNonCompliant | Format-Table PolicyDisplayName, NonCompliantCount, PolicyCategory -AutoSize
+  $topNonCompliant | Format-Table Name, Scope, ResourceCompliance, NonCompliantResources -AutoSize
 }
+
+Write-Host "`n=== Exemption Summary ===" -ForegroundColor Cyan
+$noExpiry = ($exemptionReport | Where-Object { $_.ExpirationDate -eq '--' }).Count
+$withExpiry = ($exemptionReport | Where-Object { $_.ExpirationDate -ne '--' }).Count
+Write-Host "  Total exemptions: $($exemptionReport.Count)" -ForegroundColor $(if ($exemptionReport.Count -gt 0) { 'Yellow' } else { 'Green' })
+Write-Host "  With expiry date: $withExpiry" -ForegroundColor Green
+Write-Host "  WITHOUT expiry date: $noExpiry" -ForegroundColor $(if ($noExpiry -gt 0) { 'Red' } else { 'Green' })
 
 Write-Host "`n=== Findings Summary ===" -ForegroundColor Cyan
 $totalHigh = ($findings | Where-Object Severity -eq 'High').Count
@@ -538,12 +706,12 @@ function Export-Sheet { param($Data, $WorksheetName, $TableName)
   Write-Host "  + $WorksheetName ($($Data.Count) rows)" -ForegroundColor Green
 }
 
+# Export sheets matching portal format
 Export-Sheet -Data $subscriptionSummary -WorksheetName 'Subscription_Summary' -TableName 'Subscriptions'
-Export-Sheet -Data $initiativeAssignmentReport -WorksheetName 'Initiatives' -TableName 'Initiatives'
-Export-Sheet -Data $policyAssignmentReport -WorksheetName 'Policy_Assignments' -TableName 'PolicyAssignments'
-Export-Sheet -Data $complianceReport -WorksheetName 'Non_Compliant_Policies' -TableName 'NonCompliantPolicies'
-Export-Sheet -Data $nonCompliantReport -WorksheetName 'Non_Compliant_Resources' -TableName 'NonCompliantResources'
+Export-Sheet -Data $complianceReport -WorksheetName 'Compliance' -TableName 'Compliance'
+Export-Sheet -Data $assignmentReport -WorksheetName 'Assignments' -TableName 'Assignments'
 Export-Sheet -Data $exemptionReport -WorksheetName 'Exemptions' -TableName 'Exemptions'
+Export-Sheet -Data $nonCompliantReport -WorksheetName 'Non_Compliant_Resources' -TableName 'NonCompliantResources'
 Export-Sheet -Data $customPolicyReport -WorksheetName 'Custom_Policies' -TableName 'CustomPolicies'
 Export-Sheet -Data $remediationReport -WorksheetName 'Remediations' -TableName 'Remediations'
 Export-Sheet -Data $findings -WorksheetName 'Findings' -TableName 'Findings'
@@ -551,11 +719,14 @@ Export-Sheet -Data $findings -WorksheetName 'Findings' -TableName 'Findings'
 $overallSummary = @(
   [PSCustomObject]@{ Metric='Audit Date';Value=(Get-Date -Format 'yyyy-MM-dd HH:mm') }
   [PSCustomObject]@{ Metric='Subscriptions Audited';Value=$subscriptions.Count }
-  [PSCustomObject]@{ Metric='Average Compliance';Value="$([math]::Round($avgCompliance, 1))%" }
-  [PSCustomObject]@{ Metric='Policy Assignments';Value=$policyAssignmentReport.Count }
-  [PSCustomObject]@{ Metric='Initiative Assignments';Value=$initiativeAssignmentReport.Count }
+  [PSCustomObject]@{ Metric='Overall Compliance';Value="$(Format-ComplianceString -Compliant $totalCompliant -NonCompliant $totalNonCompliant)" }
+  [PSCustomObject]@{ Metric='Compliance Percent';Value="$avgCompliance%" }
+  [PSCustomObject]@{ Metric='Total Assignments';Value=$complianceReport.Count }
+  [PSCustomObject]@{ Metric='Initiative Assignments';Value=($complianceReport | Where-Object { $_.Type -eq 'Initiative' }).Count }
+  [PSCustomObject]@{ Metric='Policy Assignments';Value=($complianceReport | Where-Object { $_.Type -eq 'Policy' }).Count }
   [PSCustomObject]@{ Metric='Total Non-Compliant Resources';Value=$totalNonCompliant }
   [PSCustomObject]@{ Metric='Policy Exemptions';Value=$exemptionReport.Count }
+  [PSCustomObject]@{ Metric='Exemptions Without Expiry';Value=$noExpiry }
   [PSCustomObject]@{ Metric='Custom Policies';Value=$customPolicyReport.Count }
   [PSCustomObject]@{ Metric='Remediation Tasks';Value=$remediationReport.Count }
   [PSCustomObject]@{ Metric='High Findings';Value=$totalHigh }

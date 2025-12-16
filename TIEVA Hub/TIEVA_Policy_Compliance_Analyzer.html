@@ -3,78 +3,530 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>TIEVA — Policy & Compliance Analyzer</title>
+<title>TIEVA - Policy & Compliance Analyzer</title>
 <style>
-  :root{--brand-green:#2DA58E;--critical:#ef4444;--moderate:#f59e0b;--excellent:#10b981;--fg:#111827;--muted:#6b7280;--border:#e5e7eb;--canvas:var(--brand-green);--link:#0f5eff;--content-max:1440px}
-  *{box-sizing:border-box}html{scroll-behavior:smooth}body{margin:0;background:var(--canvas);color:var(--fg);font:14px/1.45 system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif}
-  a{color:var(--link);text-decoration:none}a:hover{text-decoration:underline}.wrap{max-width:var(--content-max);margin:0 auto;padding:24px}
-  .brandbar{background:#000;color:#fff}.brandwrap{max-width:var(--content-max);margin:0 auto;padding:14px 24px;display:flex;align-items:center;justify-content:space-between;gap:12px}
-  .brandtitle{font-size:18px;font-weight:600}.btnrow{display:flex;gap:8px;flex-wrap:wrap}
-  .header-btn{appearance:none;border:1px solid rgba(255,255,255,.25);background:transparent;color:#fff;border-radius:8px;padding:8px 12px;cursor:pointer;font-size:13px}.header-btn:hover{border-color:#fff}
-  .row{display:flex;gap:20px;flex-wrap:wrap}.col{flex:1 1 360px}.card{background:#fff;border:1px solid var(--border);border-radius:10px;padding:16px;margin:18px 0}
-  h2{margin:0 0 10px;font-size:18px}h3{margin:0 0 10px;font-size:16px}h4{margin:0 0 6px;font-size:13px}.muted{color:var(--muted)}
-  .pill{display:inline-block;font-size:12px;border-radius:999px;padding:2px 8px;border:1px solid var(--border);background:#f9fafb}
-  .btn{padding:8px 12px;border:1px solid var(--border);border-radius:8px;background:#f9fafb;cursor:pointer;font-size:13px}.btn.primary{background:#0f5eff;color:#fff;border-color:#0f5eff}
-  input[type=file]{border:1px solid var(--border);border-radius:8px;padding:6px 8px;width:100%}
-  table{border-collapse:collapse;width:100%}thead th{background:#fafafa}th,td{border-bottom:1px solid var(--border);padding:6px 8px;text-align:left;font-size:13px;vertical-align:top}
-  .scroller{max-height:520px;overflow:auto}.tiles{display:flex;gap:12px;flex-wrap:wrap}
-  .tile{flex:1 1 160px;border:1px solid var(--border);border-radius:10px;padding:12px;background:#fff}
-  .tile h4{margin:0 0 6px;font-size:12px;color:#6b7280;text-transform:uppercase;letter-spacing:.3px}.tile .big{font-size:22px;font-weight:700}
-  tbody tr[data-filter]{cursor:pointer}tbody tr[data-filter]:hover{background:#f5f7fb}
-  .filterbar{display:flex;gap:8px;align-items:center;margin-bottom:8px;flex-wrap:wrap}
-  .key{font-size:12px;color:#374151;padding:4px 8px;border:1px solid var(--border);border-radius:8px;background:#f9fafb}
-  .tag{display:inline-block;padding:2px 8px;border-radius:999px;font-size:12px;color:#fff;white-space:nowrap}
-  .tag.high{background:var(--critical)}.tag.medium{background:var(--moderate)}.tag.low{background:var(--excellent)}.tag.info{background:#3b82f6}
-  .hidden{display:none!important}.status{color:#fff;opacity:.95;margin-bottom:12px}.pagetitle{color:#fff;font-weight:700;font-size:16px;margin-bottom:4px}
+  :root{
+    --brand-green:#2DA58E; --critical:#ef4444; --moderate:#f59e0b; --excellent:#10b981;
+    --fg:#111827; --muted:#6b7280; --border:#e5e7eb; --canvas: var(--brand-green);
+    --link:#0f5eff; --content-max: 1440px;
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{
+    margin:0;
+    background:var(--canvas);
+    color:var(--fg);
+    font:14px/1.45 system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;
+  }
+  a{color:var(--link);text-decoration:none}
+  a:hover{text-decoration:underline}
+  .wrap{max-width:var(--content-max);margin:0 auto;padding:24px}
+  .brandbar{background:#000;color:#fff}
+  .brandwrap{
+    max-width:var(--content-max);
+    margin:0 auto;
+    padding:14px 24px;
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:12px;
+  }
+  .brandtitle{font-size:18px;font-weight:600}
+  .btnrow{display:flex;gap:8px;flex-wrap:wrap}
+  .header-btn{
+    appearance:none;
+    border:1px solid rgba(255,255,255,.25);
+    background:transparent;
+    color:#fff;
+    border-radius:8px;
+    padding:8px 12px;
+    cursor:pointer;
+    font-size:13px;
+  }
+  .header-btn:hover{border-color:#fff}
+  .row{display:flex;gap:20px;flex-wrap:wrap}
+  .col{flex:1 1 360px}
+  .card{
+    background:#fff;
+    border:1px solid var(--border);
+    border-radius:10px;
+    padding:16px;
+    margin:18px 0;
+  }
+  h2{margin:0 0 10px;font-size:18px}
+  h3{margin:0 0 10px;font-size:16px}
+  h4{margin:0 0 6px;font-size:13px}
+  .muted{color:var(--muted)}
+  .pill{
+    display:inline-block;
+    font-size:12px;
+    border-radius:999px;
+    padding:2px 8px;
+    border:1px solid var(--border);
+    background:#f9fafb;
+  }
+  .btn{
+    padding:8px 12px;
+    border:1px solid var(--border);
+    border-radius:8px;
+    background:#f9fafb;
+    cursor:pointer;
+    font-size:13px;
+  }
+  .btn.primary{
+    background:#0f5eff;
+    color:#fff;
+    border-color:#0f5eff;
+  }
+  input[type=file]{
+    border:1px solid var(--border);
+    border-radius:8px;
+    padding:6px 8px;
+    width:100%;
+  }
+  table{border-collapse:collapse;width:100%}
+  thead th{background:#fafafa}
+  th,td{
+    border-bottom:1px solid var(--border);
+    padding:6px 8px;
+    text-align:left;
+    font-size:13px;
+    vertical-align:top;
+  }
+  .scroller{max-height:520px;overflow:auto}
+  .tiles{display:flex;gap:12px;flex-wrap:wrap}
+  .tile{
+    flex:1 1 160px;
+    border:1px solid var(--border);
+    border-radius:10px;
+    padding:12px;
+    background:#fff;
+  }
+  .tile h4{
+    margin:0 0 6px;
+    font-size:12px;
+    color:#6b7280;
+    text-transform:uppercase;
+    letter-spacing:.3px;
+  }
+  .tile .big{font-size:22px;font-weight:700}
+  tbody tr[data-filter]{cursor:pointer}
+  tbody tr[data-filter]:hover{background:#f5f7fb}
+  .filterbar{
+    display:flex;
+    gap:8px;
+    align-items:center;
+    margin-bottom:8px;
+    flex-wrap:wrap;
+  }
+  .key{
+    font-size:12px;
+    color:#374151;
+    padding:4px 8px;
+    border:1px solid var(--border);
+    border-radius:8px;
+    background:#f9fafb;
+  }
+  .tag{
+    display:inline-block;
+    padding:2px 8px;
+    border-radius:999px;
+    font-size:12px;
+    color:#fff;
+    white-space:nowrap;
+  }
+  .tag.high{background:var(--critical)}
+  .tag.medium{background:var(--moderate)}
+  .tag.low{background:var(--excellent)}
+  .tag.info{background:#3b82f6}
+  .tag.gray{background:#6b7280}
+  .hidden{display:none!important}
+  .status{color:#fff;opacity:.95;margin-bottom:12px}
+  .pagetitle{color:#fff;font-weight:700;font-size:16px;margin-bottom:4px}
+  .badge-type{display:inline-block;padding:2px 8px;border-radius:4px;font-size:11px;background:#e0e7ff;color:#3730a3}
   .compliance-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin-top:12px}
   .compliance-card{border:1px solid var(--border);border-radius:8px;padding:14px;background:#fff;text-align:center}
-  .compliance-card h5{margin:0 0 8px;font-size:13px;color:#374151}.compliance-card .pct{font-size:28px;font-weight:700}
-  .compliance-card .pct.good{color:var(--excellent)}.compliance-card .pct.warning{color:var(--moderate)}.compliance-card .pct.critical{color:var(--critical)}
+  .compliance-card h5{margin:0 0 8px;font-size:13px;color:#374151}
+  .compliance-card .pct{font-size:28px;font-weight:700}
+  .compliance-card .pct.good{color:var(--excellent)}
+  .compliance-card .pct.warning{color:var(--moderate)}
+  .compliance-card .pct.critical{color:var(--critical)}
+  .alert-banner{background:#fef3c7;border:1px solid #fcd34d;border-radius:8px;padding:12px 16px;margin-bottom:16px;display:flex;align-items:center;gap:10px}
+  .alert-banner .icon{font-size:18px}
 </style>
-<script>(function(){var t=["https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js","https://unpkg.com/xlsx@0.18.5/dist/xlsx.full.min.js","https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"];function l(i){if(window.XLSX||i>=t.length)return;var s=document.createElement("script");s.src=t[i];s.async=true;s.onerror=function(){l(i+1)};document.head.appendChild(s)}l(0)})();</script>
+<script>
+(function(){var t=["https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js","https://unpkg.com/xlsx@0.18.5/dist/xlsx.full.min.js","https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"];function l(i){if(window.XLSX||i>=t.length)return;var s=document.createElement("script");s.src=t[i];s.async=true;s.onerror=function(){l(i+1)};document.head.appendChild(s)}l(0)})();
+</script>
 </head>
 <body>
-  <div class="brandbar"><div class="brandwrap"><div class="brandtitle">TIEVA — Policy & Compliance Analyzer</div><div class="btnrow"><button id="btnExportHTML" class="header-btn">Export HTML</button><button id="btnDownloadDetail" class="header-btn">Download Detail CSV</button></div></div></div>
+  <div class="brandbar">
+    <div class="brandwrap">
+      <div class="brandtitle">TIEVA - Policy & Compliance Analyzer</div>
+      <div class="btnrow">
+        <button id="btnExportHTML" class="header-btn">Export HTML</button>
+        <button id="btnDownloadDetail" class="header-btn">Download Detail CSV</button>
+      </div>
+    </div>
+  </div>
+
   <div class="wrap">
     <div class="pagetitle">Azure Policy posture and compliance overview</div>
-    <div class="status">Upload your <strong>Policy_Audit.xlsx</strong> to analyze policy assignments, compliance state, exemptions, and remediation tasks.</div>
-    <div class="card"><div class="row"><div class="col"><h3>Policy Audit (.xlsx)</h3><input id="auditXlsx" type="file" accept=".xlsx" /><div class="muted" style="font-size:12px;margin-top:4px">Expected sheets: <code>Subscription_Summary</code>, <code>Initiatives</code>, <code>Non_Compliant_Policies</code>, <code>Exemptions</code>, <code>Findings</code></div></div><div class="col" style="display:flex;align-items:flex-end;gap:8px"><div class="btn primary" id="go">Generate report</div><div class="btn" id="clearFilter">Clear filter</div><span id="status" class="muted" style="align-self:center"></span></div></div></div>
-    <div id="kpiSec" class="row hidden"><div class="col card"><h2>At a glance</h2><div class="tiles"><div class="tile"><h4>Initiatives</h4><div class="big" id="kpiInitiatives">0</div></div><div class="tile"><h4>Policies</h4><div class="big" id="kpiPolicies">0</div></div><div class="tile"><h4>Non-Compliant Resources</h4><div class="big" id="kpiNonCompliant">0</div></div><div class="tile"><h4>Exemptions</h4><div class="big" id="kpiExemptions">0</div></div><div class="tile"><h4>Custom Policies</h4><div class="big" id="kpiCustom">0</div></div><div class="tile"><h4>High Findings</h4><div class="big" id="kpiFindings">0</div></div></div></div></div>
-    <div id="complianceSec" class="row hidden"><div class="col card"><h2>Compliance by Subscription</h2><div id="complianceGrid" class="compliance-grid"></div></div></div>
-    <div id="summarySec" class="row hidden"><div class="col card"><h2>Summary</h2><div class="row"><div class="col"><h3>Policy Initiatives</h3><div id="tblInitiatives" class="scroller"></div></div><div class="col"><h3>Top Non-Compliant Policies</h3><div id="tblNonCompliant" class="scroller"></div></div><div class="col"><h3>Policy Exemptions</h3><div id="tblExemptions" class="scroller"></div></div></div></div></div>
-    <div id="findingsSec" class="row hidden"><div class="col card"><div class="filterbar"><h2 style="margin:0">Findings & Recommendations</h2><span class="pill" id="activeFilter" style="display:none"></span></div><div id="tblFindings" class="scroller"></div></div></div>
+    <div class="status">
+      Upload your <strong>Policy_Audit.xlsx</strong> to analyze policy assignments, compliance state, 
+      exemptions, and remediation tasks.
+    </div>
+
+    <div class="card">
+      <div class="row">
+        <div class="col">
+          <h3>Policy Audit (.xlsx)</h3>
+          <input id="auditXlsx" type="file" accept=".xlsx" />
+          <div class="muted" style="font-size:12px;margin-top:4px">
+            Expected sheets: <code>Subscription_Summary</code>, <code>Compliance</code>, 
+            <code>Exemptions</code>, <code>Findings</code>
+          </div>
+        </div>
+        <div class="col" style="display:flex;align-items:flex-end;gap:8px">
+          <div class="btn primary" id="go" role="button" tabindex="0">Generate report</div>
+          <div class="btn" id="clearFilter">Clear filter</div>
+          <span id="status" class="muted" style="align-self:center"></span>
+        </div>
+      </div>
+    </div>
+
+    <div id="kpiSec" class="row hidden">
+      <div class="col card">
+        <h2>At a glance</h2>
+        <div class="tiles">
+          <div class="tile"><h4>Overall Compliance</h4><div class="big" id="kpiCompliance">0%</div><div class="muted" id="kpiComplianceDetail"></div></div>
+          <div class="tile"><h4>Policies</h4><div class="big" id="kpiPolicies">0</div></div>
+          <div class="tile"><h4>Non-Compliant Resources</h4><div class="big" id="kpiNonCompliant">0</div></div>
+          <div class="tile"><h4>Exemptions</h4><div class="big" id="kpiExemptions">0</div></div>
+          <div class="tile"><h4>No Expiry Date</h4><div class="big" id="kpiNoExpiry">0</div></div>
+          <div class="tile"><h4>High Findings</h4><div class="big" id="kpiFindings">0</div></div>
+        </div>
+      </div>
+    </div>
+
+    <div id="alertSec" class="hidden">
+      <div class="alert-banner">
+        <span class="icon">⚠️</span>
+        <span><strong id="alertCount">0</strong> exemptions have no expiry date — these permanently hide non-compliance.</span>
+      </div>
+    </div>
+
+    <div id="complianceSec" class="row hidden">
+      <div class="col card">
+        <h2>Compliance by Subscription</h2>
+        <div id="complianceGrid" class="compliance-grid"></div>
+      </div>
+    </div>
+
+    <div id="summarySec" class="row hidden">
+      <div class="col card">
+        <h2>Summary</h2>
+        <div class="row">
+          <div class="col">
+            <h3>Top Non-Compliant Policies</h3>
+            <div id="tblNonCompliant" class="scroller"></div>
+          </div>
+          <div class="col">
+            <h3>Policy Exemptions</h3>
+            <div id="tblExemptions" class="scroller"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div id="findingsSec" class="row hidden">
+      <div class="col card">
+        <div class="filterbar">
+          <h2 style="margin:0">Findings & Recommendations</h2>
+          <span class="pill" id="activeFilter" style="display:none"></span>
+        </div>
+        <div id="tblFindings" class="scroller"></div>
+      </div>
+    </div>
   </div>
+
 <script>
-let DATA={subscriptions:[],initiatives:[],policies:[],nonCompliant:[],exemptions:[],customPolicies:[],findings:[]};
-let FILTER={active:false,key:null,value:null};
-const $=id=>document.getElementById(id);
-const escapeHtml=s=>String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
-function status(t){$('status').textContent=t||'';}
-function readSheet(wb,name){if(!wb.SheetNames.includes(name))return[];return XLSX.utils.sheet_to_json(wb.Sheets[name],{defval:''});}
-function applyFilter(key,value){FILTER={active:true,key,value};$('activeFilter').style.display='';$('activeFilter').textContent='Filter: '+key+' = '+value;renderAll();}
-function clearFilter(){FILTER={active:false,key:null,value:null};$('activeFilter').style.display='none';renderAll();}
-function filterData(data){if(!FILTER.active)return data;return data.filter(item=>String(item[FILTER.key]||'').toLowerCase()===String(FILTER.value).toLowerCase());}
-function renderTable(el,columns,rows,clickKey){let html='<table><thead><tr>';columns.forEach(c=>html+='<th>'+c.header+'</th>');html+='</tr></thead><tbody>';rows.forEach(r=>{const attr=clickKey&&r[clickKey]!=null?' data-filter="'+clickKey+'" data-value="'+escapeHtml(r[clickKey])+'"':'';html+='<tr'+attr+'>';columns.forEach(c=>html+='<td>'+(c.render?c.render(r):escapeHtml(r[c.key]||''))+'</td>');html+='</tr>';});html+='</tbody></table>';el.innerHTML=html;if(clickKey){el.querySelectorAll('tbody tr[data-filter]').forEach(tr=>{tr.addEventListener('click',()=>applyFilter(tr.getAttribute('data-filter'),tr.getAttribute('data-value')));});}}
-function severityPill(sev){const s=String(sev||'').toLowerCase();if(s==='high')return'<span class="tag high">HIGH</span>';if(s==='medium')return'<span class="tag medium">MEDIUM</span>';if(s==='low')return'<span class="tag low">LOW</span>';return'<span class="tag">'+escapeHtml(sev)+'</span>';}
-function yesNoPill(val){const v=String(val||'').toLowerCase();if(v==='true'||v==='yes')return'<span class="tag info">Yes</span>';if(v==='false'||v==='no')return'<span class="tag low">No</span>';return escapeHtml(val);}
-function renderAll(){const subscriptions=filterData(DATA.subscriptions);const initiatives=filterData(DATA.initiatives);const nonCompliant=filterData(DATA.nonCompliant);const exemptions=filterData(DATA.exemptions);const findings=filterData(DATA.findings);
-$('kpiInitiatives').textContent=initiatives.length;$('kpiPolicies').textContent=DATA.policies.length;
-$('kpiNonCompliant').textContent=subscriptions.reduce((s,sub)=>s+(sub.NonCompliantResources||0),0);
-$('kpiExemptions').textContent=exemptions.length;$('kpiCustom').textContent=DATA.customPolicies.length;
-$('kpiFindings').textContent=findings.filter(f=>f.Severity==='High').length;
-let gridHtml='';subscriptions.forEach(sub=>{const pct=sub.CompliancePercent||0;const colorClass=pct>=90?'good':pct>=70?'warning':'critical';gridHtml+='<div class="compliance-card"><h5>'+escapeHtml(sub.SubscriptionName)+'</h5><div class="pct '+colorClass+'">'+pct+'%</div><div class="muted">'+(sub.NonCompliantResources||0)+' non-compliant</div></div>';});
-$('complianceGrid').innerHTML=gridHtml||'<div class="muted">No subscription data</div>';
-renderTable($('tblInitiatives'),[{key:'SubscriptionName',header:'Subscription'},{key:'DisplayName',header:'Initiative'},{key:'ScopeLevel',header:'Scope'},{key:'EnforcementMode',header:'Enforcement'},{key:'IsCustom',header:'Custom',render:r=>yesNoPill(r.IsCustom)}],initiatives,'SubscriptionName');
-const sortedNC=[...nonCompliant].sort((a,b)=>(b.NonCompliantCount||0)-(a.NonCompliantCount||0));
-renderTable($('tblNonCompliant'),[{key:'SubscriptionName',header:'Subscription'},{key:'PolicyDisplayName',header:'Policy'},{key:'PolicyCategory',header:'Category'},{key:'NonCompliantCount',header:'Non-Compliant',render:r=>'<span class="tag high">'+r.NonCompliantCount+'</span>'}],sortedNC.slice(0,50),'SubscriptionName');
-renderTable($('tblExemptions'),[{key:'SubscriptionName',header:'Subscription'},{key:'DisplayName',header:'Exemption'},{key:'Category',header:'Category'},{key:'ExpiresOn',header:'Expires'},{key:'DaysToExpiry',header:'Days Left'},{key:'IsExpired',header:'Expired',render:r=>r.IsExpired===true||r.IsExpired==='True'?'<span class="tag high">YES</span>':'<span class="tag low">No</span>'}],exemptions,'SubscriptionName');
-renderTable($('tblFindings'),[{key:'SubscriptionName',header:'Subscription'},{key:'Severity',header:'Severity',render:r=>severityPill(r.Severity)},{key:'Category',header:'Category'},{key:'ResourceName',header:'Resource'},{key:'Detail',header:'Finding'},{key:'Recommendation',header:'Recommendation'}],findings,'SubscriptionName');
-const show=DATA.subscriptions.length>0||DATA.findings.length>0;['kpiSec','complianceSec','summarySec','findingsSec'].forEach(id=>{$(id).classList.toggle('hidden',!show);});}
-function cleanCell(v){if(!v)return'';let s=String(v).trim();s=s.replace(/^[=+\-@]+/,'');s=s.replace(/^-\s*/,'');return s;}
-async function handleGenerate(){try{status('');const file=$('auditXlsx').files[0];if(!file){status('Choose the Policy audit workbook.');return;}if(typeof XLSX==='undefined'){status('XLSX library loading...');return;}const btn=$('go');btn.textContent='Generating…';btn.style.opacity='.7';const buf=await file.arrayBuffer();const wb=XLSX.read(buf,{type:'array'});DATA.subscriptions=readSheet(wb,'Subscription_Summary');DATA.initiatives=readSheet(wb,'Initiatives');DATA.policies=readSheet(wb,'Policy_Assignments');DATA.nonCompliant=readSheet(wb,'Non_Compliant_Policies');DATA.exemptions=readSheet(wb,'Exemptions');DATA.customPolicies=readSheet(wb,'Custom_Policies');DATA.findings=readSheet(wb,'Findings');FILTER={active:false,key:null,value:null};$('activeFilter').style.display='none';renderAll();status('Report generated — '+DATA.findings.length+' findings.');}catch(err){console.error(err);status('Error: '+(err?.message||err));}finally{$('go').textContent='Generate report';$('go').style.opacity='';}}
-document.addEventListener('DOMContentLoaded',()=>{$('go').addEventListener('click',handleGenerate);$('clearFilter').addEventListener('click',clearFilter);
-$('btnDownloadDetail').addEventListener('click',()=>{const data=FILTER.active?filterData(DATA.findings):DATA.findings;if(!data.length){alert('Generate report first.');return;}const today=new Date().toISOString().slice(0,10);const rows=data.map(d=>({"Date Identified":today,"Ticket Number":"","Issue Description":cleanCell(d.Detail),"Impact":cleanCell(d.Severity),"Affected Resource(s)":cleanCell([d.SubscriptionName,d.ResourceGroup,d.ResourceName].filter(Boolean).join(" / ")),"Azure Service / Category":cleanCell(d.Category||d.ResourceType),"Root Cause":cleanCell(d.Detail),"Recommendation":cleanCell(d.Recommendation),"Justification / Benefit":cleanCell(d.Recommendation),"Priority":cleanCell(d.Severity),"Status":"Open","Owner / Engineer":"","Target Resolution Date":"","Date Resolved":"","Customer Feedback / Notes":"","Follow-up Actions":"","Validation Date":"","Comments":""}));const headers=["Date Identified","Ticket Number","Issue Description","Impact","Affected Resource(s)","Azure Service / Category","Root Cause","Recommendation","Justification / Benefit","Priority","Status","Owner / Engineer","Target Resolution Date","Date Resolved","Customer Feedback / Notes","Follow-up Actions","Validation Date","Comments"];let csv=headers.join(",")+"\n";rows.forEach(r=>{const vals=headers.map(h=>{const v=cleanCell(r[h]||"");return/[",\n]/.test(v)?'"'+v.replace(/"/g,'""')+'"':v;});csv+=vals.join(",")+"\n";});const blob=new Blob([csv],{type:"text/csv"});const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download="policy_compliance_findings.csv";a.click();});
-$('btnExportHTML').addEventListener('click',()=>{const html='<!doctype html>'+document.documentElement.outerHTML;const blob=new Blob([html],{type:'text/html'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='TIEVA — Policy & Compliance Analyzer.html';a.click();});});
+let DATA = { subscriptions:[], compliance:[], exemptions:[], findings:[] };
+let FILTER = { active:false, key:null, value:null };
+
+const $ = id => document.getElementById(id);
+const escapeHtml = s => String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+
+function status(t){ $('status').textContent = t||''; }
+
+function readSheet(wb, name) {
+  if (!wb.SheetNames.includes(name)) return [];
+  return XLSX.utils.sheet_to_json(wb.Sheets[name], {defval:''});
+}
+
+function applyFilter(key, value) {
+  FILTER = { active:true, key, value };
+  $('activeFilter').style.display = '';
+  $('activeFilter').textContent = 'Filter: ' + key + ' = ' + value;
+  renderAll();
+}
+
+function clearFilter() {
+  FILTER = { active:false, key:null, value:null };
+  $('activeFilter').style.display = 'none';
+  renderAll();
+}
+
+function filterData(data) {
+  if (!FILTER.active) return data;
+  return data.filter(item => String(item[FILTER.key]||'').toLowerCase() === String(FILTER.value).toLowerCase());
+}
+
+function renderTable(el, columns, rows, clickKey) {
+  let html = '<table><thead><tr>';
+  columns.forEach(c => html += `<th>${c.header}</th>`);
+  html += '</tr></thead><tbody>';
+  rows.forEach(r => {
+    const attr = clickKey && r[clickKey] != null ? ` data-filter="${clickKey}" data-value="${escapeHtml(r[clickKey])}"` : '';
+    html += `<tr${attr}>`;
+    columns.forEach(c => html += `<td>${c.render ? c.render(r) : escapeHtml(r[c.key]||'')}</td>`);
+    html += '</tr>';
+  });
+  html += '</tbody></table>';
+  el.innerHTML = html;
+  if (clickKey) {
+    el.querySelectorAll('tbody tr[data-filter]').forEach(tr => {
+      tr.addEventListener('click', () => applyFilter(tr.getAttribute('data-filter'), tr.getAttribute('data-value')));
+    });
+  }
+}
+
+function severityPill(sev) {
+  const s = String(sev||'').toLowerCase();
+  if (s === 'high') return '<span class="tag high">HIGH</span>';
+  if (s === 'medium') return '<span class="tag medium">MEDIUM</span>';
+  if (s === 'low') return '<span class="tag low">LOW</span>';
+  return `<span class="tag">${escapeHtml(sev)}</span>`;
+}
+
+function compliancePill(state) {
+  const s = String(state||'').toLowerCase();
+  if (s === 'non-compliant' || s === 'noncompliant') return '<span class="tag high">Non-compliant</span>';
+  if (s === 'compliant') return '<span class="tag low">Compliant</span>';
+  return `<span class="tag gray">${escapeHtml(state)}</span>`;
+}
+
+function typeBadge(type) {
+  return `<span class="badge-type">${escapeHtml(type)}</span>`;
+}
+
+function expiryPill(val) {
+  if (!val || val === '--') return '<span class="tag high">No Expiry</span>';
+  return escapeHtml(val);
+}
+
+function categoryPill(cat) {
+  if (cat === 'Waiver') return '<span class="tag medium">Waiver</span>';
+  if (cat === 'Mitigated') return '<span class="tag info">Mitigated</span>';
+  return escapeHtml(cat);
+}
+
+function renderAll() {
+  const subscriptions = filterData(DATA.subscriptions);
+  const compliance = filterData(DATA.compliance);
+  const exemptions = filterData(DATA.exemptions);
+  const findings = filterData(DATA.findings);
+
+  // Calculate totals
+  const totalCompliant = compliance.reduce((s,c) => s + (c.CompliantResources||0), 0);
+  const totalNonCompliant = compliance.reduce((s,c) => s + (c.NonCompliantResources||0), 0);
+  const totalResources = totalCompliant + totalNonCompliant;
+  const overallPct = totalResources > 0 ? Math.round((totalCompliant / totalResources) * 100) : 100;
+  const noExpiry = exemptions.filter(e => !e.ExpirationDate || e.ExpirationDate === '--');
+  const highFindings = findings.filter(f => f.Severity === 'High').length;
+
+  // KPIs
+  $('kpiCompliance').textContent = overallPct + '%';
+  $('kpiCompliance').style.color = overallPct >= 90 ? 'var(--excellent)' : overallPct >= 70 ? 'var(--moderate)' : 'var(--critical)';
+  $('kpiComplianceDetail').textContent = totalCompliant + ' of ' + totalResources;
+  $('kpiPolicies').textContent = compliance.length;
+  $('kpiNonCompliant').textContent = totalNonCompliant;
+  $('kpiNonCompliant').style.color = totalNonCompliant > 0 ? 'var(--critical)' : '';
+  $('kpiExemptions').textContent = exemptions.length;
+  $('kpiNoExpiry').textContent = noExpiry.length;
+  $('kpiNoExpiry').style.color = noExpiry.length > 0 ? 'var(--critical)' : '';
+  $('kpiFindings').textContent = highFindings;
+  $('kpiFindings').style.color = highFindings > 0 ? 'var(--critical)' : '';
+
+  // Alert banner
+  if (noExpiry.length > 0) {
+    $('alertSec').classList.remove('hidden');
+    $('alertCount').textContent = noExpiry.length;
+  } else {
+    $('alertSec').classList.add('hidden');
+  }
+
+  // Compliance by subscription grid
+  let gridHtml = '';
+  subscriptions.forEach(sub => {
+    const subData = compliance.filter(c => c.SubscriptionName === sub.SubscriptionName);
+    const subCompliant = subData.reduce((s,c) => s + (c.CompliantResources||0), 0);
+    const subNC = subData.reduce((s,c) => s + (c.NonCompliantResources||0), 0);
+    const subTotal = subCompliant + subNC;
+    const pct = subTotal > 0 ? Math.round((subCompliant / subTotal) * 100) : 100;
+    const colorClass = pct >= 90 ? 'good' : pct >= 70 ? 'warning' : 'critical';
+    gridHtml += `<div class="compliance-card"><h5>${escapeHtml(sub.SubscriptionName)}</h5><div class="pct ${colorClass}">${pct}%</div><div class="muted">${subNC} non-compliant</div></div>`;
+  });
+  $('complianceGrid').innerHTML = gridHtml || '<div class="muted">No subscription data</div>';
+
+  // Non-compliant policies table (sorted by count desc)
+  const ncSorted = [...compliance].filter(c => c.NonCompliantResources > 0).sort((a,b) => (b.NonCompliantResources||0) - (a.NonCompliantResources||0));
+  renderTable($('tblNonCompliant'), [
+    { key:'Name', header:'Policy / Assignment' },
+    { key:'SubscriptionName', header:'Subscription' },
+    { key:'Type', header:'Type', render: r => typeBadge(r.Type) },
+    { key:'ComplianceState', header:'State', render: r => compliancePill(r.ComplianceState) },
+    { key:'ResourceCompliance', header:'Compliance' },
+    { key:'NonCompliantResources', header:'Non-Compliant', render: r => `<span class="tag high">${r.NonCompliantResources}</span>` }
+  ], ncSorted.slice(0, 50), 'SubscriptionName');
+
+  // Exemptions table (no expiry first)
+  const exSorted = [...exemptions].sort((a,b) => {
+    const aNoExp = !a.ExpirationDate || a.ExpirationDate === '--';
+    const bNoExp = !b.ExpirationDate || b.ExpirationDate === '--';
+    if (aNoExp !== bNoExp) return aNoExp ? -1 : 1;
+    return 0;
+  });
+  renderTable($('tblExemptions'), [
+    { key:'Name', header:'Exemption' },
+    { key:'Assignments', header:'Assignment' },
+    { key:'Scope', header:'Scope' },
+    { key:'ExemptionCategory', header:'Category', render: r => categoryPill(r.ExemptionCategory) },
+    { key:'ExpirationDate', header:'Expires', render: r => expiryPill(r.ExpirationDate) }
+  ], exSorted.slice(0, 50), 'Scope');
+
+  // Findings table
+  renderTable($('tblFindings'), [
+    { key:'SubscriptionName', header:'Subscription' },
+    { key:'Severity', header:'Severity', render: r => severityPill(r.Severity) },
+    { key:'Category', header:'Category' },
+    { key:'ResourceName', header:'Resource' },
+    { key:'Detail', header:'Finding' },
+    { key:'Recommendation', header:'Recommendation' }
+  ], findings, 'SubscriptionName');
+
+  // Show sections
+  const show = DATA.subscriptions.length > 0 || DATA.compliance.length > 0 || DATA.findings.length > 0;
+  ['kpiSec','complianceSec','summarySec','findingsSec'].forEach(id => {
+    $(id).classList.toggle('hidden', !show);
+  });
+}
+
+function cleanCell(v) {
+  if (!v) return '';
+  let s = String(v).trim();
+  s = s.replace(/^[=+\-@]+/, '');
+  s = s.replace(/^-\s*/, '');
+  return s;
+}
+
+async function handleGenerate() {
+  try {
+    status('');
+    const file = $('auditXlsx').files[0];
+    if (!file) { status('Choose the Policy audit workbook.'); return; }
+    
+    if (typeof XLSX === 'undefined') { status('XLSX library loading...'); return; }
+    
+    const btn = $('go');
+    btn.textContent = 'Generating...';
+    btn.style.opacity = '.7';
+    
+    const buf = await file.arrayBuffer();
+    const wb = XLSX.read(buf, { type: 'array' });
+    
+    DATA.subscriptions = readSheet(wb, 'Subscription_Summary');
+    DATA.compliance = readSheet(wb, 'Compliance');
+    DATA.exemptions = readSheet(wb, 'Exemptions');
+    DATA.findings = readSheet(wb, 'Findings');
+    
+    FILTER = { active:false, key:null, value:null };
+    $('activeFilter').style.display = 'none';
+    renderAll();
+    
+    status(`Report generated - ${DATA.compliance.length} policies, ${DATA.exemptions.length} exemptions, ${DATA.findings.length} findings.`);
+  } catch (err) {
+    console.error(err);
+    status('Error: ' + (err?.message || err));
+  } finally {
+    $('go').textContent = 'Generate report';
+    $('go').style.opacity = '';
+  }
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  $('go').addEventListener('click', handleGenerate);
+  $('clearFilter').addEventListener('click', clearFilter);
+  
+  $('btnDownloadDetail').addEventListener('click', () => {
+    const data = FILTER.active ? filterData(DATA.findings) : DATA.findings;
+    if (!data.length) { alert('Generate report first.'); return; }
+    
+    const today = new Date().toISOString().slice(0, 10);
+    
+    const rows = data.map(d => ({
+      "Date Identified": today,
+      "Ticket Number": "",
+      "Issue Description": cleanCell(d.Detail),
+      "Impact": cleanCell(d.Severity),
+      "Affected Resource(s)": cleanCell([d.SubscriptionName, d.ResourceGroup, d.ResourceName].filter(Boolean).join(" / ")),
+      "Azure Service / Category": cleanCell(d.Category || d.ResourceType),
+      "Root Cause": cleanCell(d.Detail),
+      "Recommendation": cleanCell(d.Recommendation),
+      "Justification / Benefit": cleanCell(d.Recommendation),
+      "Priority": cleanCell(d.Severity),
+      "Status": "Open",
+      "Owner / Engineer": "",
+      "Target Resolution Date": "",
+      "Date Resolved": "",
+      "Customer Feedback / Notes": "",
+      "Follow-up Actions": "",
+      "Validation Date": "",
+      "Comments": ""
+    }));
+    
+    const headers = [
+      "Date Identified", "Ticket Number", "Issue Description", "Impact",
+      "Affected Resource(s)", "Azure Service / Category", "Root Cause",
+      "Recommendation", "Justification / Benefit", "Priority", "Status",
+      "Owner / Engineer", "Target Resolution Date", "Date Resolved",
+      "Customer Feedback / Notes", "Follow-up Actions", "Validation Date", "Comments"
+    ];
+    
+    let csv = headers.join(",") + "\n";
+    rows.forEach(r => {
+      const vals = headers.map(h => {
+        const v = cleanCell(r[h] || "");
+        return /[",\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v;
+      });
+      csv += vals.join(",") + "\n";
+    });
+    
+    const blob = new Blob([csv], { type: "text/csv" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = "policy_compliance_findings.csv";
+    a.click();
+  });
+  
+  $('btnExportHTML').addEventListener('click', () => {
+    const html = '<!doctype html>' + document.documentElement.outerHTML;
+    const blob = new Blob([html], { type: 'text/html' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'TIEVA - Policy & Compliance Analyzer.html';
+    a.click();
+  });
+});
 </script>
 </body>
 </html>

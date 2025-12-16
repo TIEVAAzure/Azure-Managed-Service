@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>TIEVA — Identity & Access Analyzer</title>
+<title>TIEVA - Identity & Access Analyzer</title>
 <style>
   :root{
     --brand-green:#2DA58E; --critical:#ef4444; --moderate:#f59e0b; --excellent:#10b981;
@@ -151,7 +151,7 @@
 <body>
   <div class="brandbar">
     <div class="brandwrap">
-      <div class="brandtitle">TIEVA — Identity & Access Analyzer</div>
+      <div class="brandtitle">TIEVA - Identity & Access Analyzer</div>
       <div class="btnrow">
         <button id="btnExportHTML" class="header-btn">Export HTML</button>
         <button id="btnDownloadDetail" class="header-btn">Download Detail CSV</button>
@@ -335,13 +335,13 @@ function renderAll() {
   $('kpiFindings').textContent = findings.filter(f => f.Severity === 'High').length;
 
   const byRisk = groupBy(privileged, 'RiskLevel');
-  const riskRows = Object.entries(byRisk).map(([risk, arr]) => ({ risk, count: arr.length }))
-    .sort((a,b) => { const order = {High:0,Medium:1,Low:2}; return (order[a.risk]??3) - (order[b.risk]??3); });
+  const riskRows = Object.entries(byRisk).map(([risk, arr]) => ({ RiskLevel: risk, count: arr.length }))
+    .sort((a,b) => { const order = {High:0,Medium:1,Low:2}; return (order[a.RiskLevel]??3) - (order[b.RiskLevel]??3); });
   
   renderTable($('tblRiskSummary'), [
-    { key:'risk', header:'Risk Level', render: r => riskPill(r.risk) },
+    { key:'RiskLevel', header:'Risk Level', render: r => riskPill(r.RiskLevel) },
     { key:'count', header:'Count' }
-  ], riskRows, 'risk');
+  ], riskRows, 'RiskLevel');
 
   const highRisk = privileged.filter(p => p.RiskLevel === 'High');
   renderTable($('tblHighRisk'), [
@@ -416,7 +416,7 @@ async function handleGenerate() {
     if (typeof XLSX === 'undefined') { status('XLSX library loading...'); return; }
     
     const btn = $('go');
-    btn.textContent = 'Generating…';
+    btn.textContent = 'Generating...';
     btn.style.opacity = '.7';
     
     const buf = await file.arrayBuffer();
@@ -434,7 +434,7 @@ async function handleGenerate() {
     $('activeFilter').style.display = 'none';
     renderAll();
     
-    status(`Report generated — ${DATA.findings.length} findings.`);
+    status(`Report generated - ${DATA.findings.length} findings.`);
   } catch (err) {
     console.error(err);
     status('Error: ' + (err?.message || err));
@@ -504,7 +504,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const blob = new Blob([html], { type: 'text/html' });
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
-    a.download = 'TIEVA — Identity & Access Analyzer.html';
+    a.download = 'TIEVA - Identity & Access Analyzer.html';
     a.click();
   });
 });

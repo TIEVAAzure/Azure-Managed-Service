@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>TIEVA — Network Topology Analyzer</title>
+<title>TIEVA - Network Topology Analyzer</title>
 <style>
   :root{
     --brand-green:#2DA58E; --critical:#ef4444; --moderate:#f59e0b; --excellent:#10b981;
@@ -150,7 +150,7 @@
 <body>
   <div class="brandbar">
     <div class="brandwrap">
-      <div class="brandtitle">TIEVA — Network Topology Analyzer</div>
+      <div class="brandtitle">TIEVA - Network Topology Analyzer</div>
       <div class="btnrow">
         <button id="btnExportHTML" class="header-btn">Export HTML</button>
         <button id="btnDownloadDetail" class="header-btn">Download Detail CSV</button>
@@ -341,13 +341,13 @@ function renderAll() {
   $('kpiFindings').textContent = findings.filter(f => f.Severity === 'High').length;
 
   const byRisk = groupBy(nsgRules, 'RiskLevel');
-  const riskRows = Object.entries(byRisk).map(([risk, arr]) => ({ risk, count: arr.length }))
-    .sort((a,b) => { const order = {Critical:0,High:1,Medium:2,Low:3}; return (order[a.risk]??4) - (order[b.risk]??4); });
+  const riskRows = Object.entries(byRisk).map(([risk, arr]) => ({ RiskLevel: risk, count: arr.length }))
+    .sort((a,b) => { const order = {Critical:0,High:1,Medium:2,Low:3}; return (order[a.RiskLevel]??4) - (order[b.RiskLevel]??4); });
   
   renderTable($('tblRiskSummary'), [
-    { key:'risk', header:'Risk Level', render: r => riskPill(r.risk) },
+    { key:'RiskLevel', header:'Risk Level', render: r => riskPill(r.RiskLevel) },
     { key:'count', header:'Rules' }
-  ], riskRows, 'risk');
+  ], riskRows, 'RiskLevel');
 
   renderTable($('tblHighRiskRules'), [
     { key:'SubscriptionName', header:'Subscription' },
@@ -386,14 +386,14 @@ function renderAll() {
   const bySub = groupBy([...vnets, ...subnets], 'SubscriptionName');
   const subRows = Object.entries(bySub).map(([sub, arr]) => {
     const subFindings = findings.filter(f => f.SubscriptionName === sub);
-    return { subscription: sub, resources: arr.length, findings: subFindings.length };
+    return { SubscriptionName: sub, resources: arr.length, findings: subFindings.length };
   }).sort((a,b) => b.findings - a.findings);
   
   renderTable($('tblSubscriptions'), [
-    { key:'subscription', header:'Subscription' },
+    { key:'SubscriptionName', header:'Subscription' },
     { key:'resources', header:'Resources' },
     { key:'findings', header:'Findings' }
-  ], subRows, 'subscription');
+  ], subRows, 'SubscriptionName');
 
   renderTable($('tblFindings'), [
     { key:'SubscriptionName', header:'Subscription' },
@@ -440,7 +440,7 @@ async function handleGenerate() {
     if (typeof XLSX === 'undefined') { status('XLSX library loading...'); return; }
     
     const btn = $('go');
-    btn.textContent = 'Generating…';
+    btn.textContent = 'Generating...';
     btn.style.opacity = '.7';
     
     const buf = await file.arrayBuffer();
@@ -450,7 +450,7 @@ async function handleGenerate() {
     DATA.subnets = readSheet(wb, 'Subnets');
     DATA.nsgRules = readSheet(wb, 'NSG_Rules');
     DATA.publicIps = readSheet(wb, 'Public_IPs');
-    DATA.peerings = readSheet(wb, 'VNet_Peerings');
+    DATA.peerings = readSheet(wb, 'Peerings');
     DATA.findings = readSheet(wb, 'Findings');
     DATA.subscriptions = readSheet(wb, 'Subscription_Summary');
     
@@ -458,7 +458,7 @@ async function handleGenerate() {
     $('activeFilter').style.display = 'none';
     renderAll();
     
-    status(`Report generated — ${DATA.findings.length} findings.`);
+    status(`Report generated - ${DATA.findings.length} findings.`);
   } catch (err) {
     console.error(err);
     status('Error: ' + (err?.message || err));
@@ -528,7 +528,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const blob = new Blob([html], { type: 'text/html' });
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
-    a.download = 'TIEVA — Network Topology Analyzer.html';
+    a.download = 'TIEVA - Network Topology Analyzer.html';
     a.click();
   });
 });
