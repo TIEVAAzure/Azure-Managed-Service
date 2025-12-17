@@ -1,0 +1,9 @@
+<step title="BackgroundTrace" date="2025-12-17T12:32:35.661" instance="a10eff" url="synctriggers-operation" method="POST" >
+  <step title="Cleanup Xml Logs" date="2025-12-17T12:32:35.677" /><!-- duration: 31ms -->
+  <step title="Updating shutdown sentinel last write time" date="2025-12-17T12:32:35.724" SemaphoreCount="6" /><!-- duration: 16ms -->
+  <step title="Delaying &apos;00:01:00&apos; for Functions site to restart." date="2025-12-17T12:32:35.755" /><!-- duration: 31ms -->
+  <step title="Begin HttpPost https://func-tievaportal-6612.azurewebsites.net/admin/host/synctriggers, x-ms-request-id: 7ee91365-d1a6-4520-9162-512c004729b6" date="2025-12-17T12:33:35.809" /><!-- duration: 47ms -->
+  <step title="End HttpPost, status: OK" date="2025-12-17T12:33:36.075" /><!-- duration: 16ms -->
+  <step title="Syncing function triggers by calling the functions runtime site successful." date="2025-12-17T12:33:36.122" /><!-- duration: 16ms -->
+  <step title="Deleting shutdown sentinel file" date="2025-12-17T12:33:36.169" SemaphoreCount="8" /><!-- duration: 16ms -->
+</step><!-- duration: 60539ms -->

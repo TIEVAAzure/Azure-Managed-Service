@@ -1,0 +1,11 @@
+{
+  "FunctionApp": "func-tievaPortal-6612",
+  "StaticWebAppUrl": "https://yellow-beach-0dfcd8103.3.azurestaticapps.net",
+  "SqlDatabase": "TievaPortal",
+  "StorageAccount": "sttieva3420",
+  "StaticWebApp": "swa-tievaPortal-portal",
+  "FunctionIdentity": "35697b67-2bb0-4ddd-9b90-ac042918b10d",
+  "SqlServer": "sql-tievaPortal-3234.database.windows.net",
+  "KeyVault": "kv-tievaPortal-874",
+  "ResourceGroup": "rg-tievaPortal-prod"
+}
