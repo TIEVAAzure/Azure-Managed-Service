@@ -131,6 +131,7 @@ public class AssessmentModuleResult
     public DateTime? CompletedAt { get; set; }
     public int? DurationSeconds { get; set; }
     public string? ErrorMessage { get; set; }
+    public string? BlobPath { get; set; }
     public Assessment? Assessment { get; set; }
 }
 

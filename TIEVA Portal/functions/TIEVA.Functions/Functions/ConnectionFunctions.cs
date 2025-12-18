@@ -46,7 +46,16 @@ public class ConnectionFunctions
                 c.LastValidated,
                 c.LastValidationStatus,
                 c.IsActive,
-                SubscriptionCount = c.Subscriptions.Count(s => s.IsInScope)
+                SubscriptionCount = c.Subscriptions.Count(s => s.IsInScope),
+                Subscriptions = c.Subscriptions.Select(s => new
+                {
+                    s.Id,
+                    s.SubscriptionId,
+                    s.SubscriptionName,
+                    s.TierId,
+                    s.Environment,
+                    s.IsInScope
+                }).ToList()
             })
             .ToListAsync();
 
@@ -192,6 +201,115 @@ public class ConnectionFunctions
 
         var response = req.CreateResponse(HttpStatusCode.Created);
         await response.WriteAsJsonAsync(new { connection.Id, connection.TenantId, connection.ClientId });
+        return response;
+    }
+
+    [Function("UpdateConnection")]
+    public async Task<HttpResponseData> UpdateConnection(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "put", Route = "connections/{id}")] HttpRequestData req,
+        string id)
+    {
+        if (!Guid.TryParse(id, out var connectionId))
+        {
+            var badRequest = req.CreateResponse(HttpStatusCode.BadRequest);
+            await badRequest.WriteStringAsync("Invalid connection ID");
+            return badRequest;
+        }
+
+        var connection = await _db.AzureConnections.FindAsync(connectionId);
+        if (connection == null)
+        {
+            var notFound = req.CreateResponse(HttpStatusCode.NotFound);
+            await notFound.WriteStringAsync("Connection not found");
+            return notFound;
+        }
+
+        var body = await new StreamReader(req.Body).ReadToEndAsync();
+        var input = JsonSerializer.Deserialize<UpdateConnectionRequest>(body, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+
+        if (input == null)
+        {
+            var badRequest = req.CreateResponse(HttpStatusCode.BadRequest);
+            await badRequest.WriteStringAsync("Invalid request body");
+            return badRequest;
+        }
+
+        // Update basic fields
+        if (input.CustomerId.HasValue && input.CustomerId.Value != Guid.Empty)
+        {
+            var customer = await _db.Customers.FindAsync(input.CustomerId.Value);
+            if (customer == null)
+            {
+                var badRequest = req.CreateResponse(HttpStatusCode.BadRequest);
+                await badRequest.WriteStringAsync("Customer not found");
+                return badRequest;
+            }
+            connection.CustomerId = input.CustomerId.Value;
+        }
+
+        if (!string.IsNullOrWhiteSpace(input.TenantId))
+            connection.TenantId = input.TenantId;
+
+        if (!string.IsNullOrWhiteSpace(input.TenantName))
+            connection.TenantName = input.TenantName;
+
+        if (!string.IsNullOrWhiteSpace(input.ClientId))
+            connection.ClientId = input.ClientId;
+
+        if (input.SecretExpiry.HasValue)
+            connection.SecretExpiry = input.SecretExpiry;
+
+        // Update secret if provided
+        if (!string.IsNullOrWhiteSpace(input.ClientSecret))
+        {
+            // Validate new credentials first
+            try
+            {
+                var credential = new ClientSecretCredential(
+                    input.TenantId ?? connection.TenantId, 
+                    input.ClientId ?? connection.ClientId, 
+                    input.ClientSecret);
+                var armClient = new ArmClient(credential);
+                var subs = armClient.GetSubscriptions();
+                var subCount = 0;
+                await foreach (var sub in subs)
+                {
+                    subCount++;
+                    if (subCount > 0) break;
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to validate new connection credentials");
+                var badRequest = req.CreateResponse(HttpStatusCode.BadRequest);
+                await badRequest.WriteAsJsonAsync(new { error = "Connection validation failed", details = ex.Message });
+                return badRequest;
+            }
+
+            // Store new secret in Key Vault
+            try
+            {
+                var kvClient = new SecretClient(new Uri(_keyVaultUrl), new DefaultAzureCredential());
+                await kvClient.SetSecretAsync(connection.SecretKeyVaultRef, input.ClientSecret);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to update secret in Key Vault");
+                var serverError = req.CreateResponse(HttpStatusCode.InternalServerError);
+                await serverError.WriteStringAsync("Failed to update credentials securely");
+                return serverError;
+            }
+
+            connection.LastValidated = DateTime.UtcNow;
+            connection.LastValidationStatus = "Valid";
+        }
+
+        await _db.SaveChangesAsync();
+
+        _logger.LogInformation("Updated connection {Id}", connection.Id);
+
+        var response = req.CreateResponse(HttpStatusCode.OK);
+        await response.WriteAsJsonAsync(new { connection.Id, connection.TenantId, connection.ClientId, message = "Connection updated" });
         return response;
     }
 
@@ -377,5 +495,15 @@ public class CreateConnectionRequest
     public string? TenantName { get; set; }
     public string ClientId { get; set; } = string.Empty;
     public string ClientSecret { get; set; } = string.Empty;
+    public DateTime? SecretExpiry { get; set; }
+}
+
+public class UpdateConnectionRequest
+{
+    public Guid? CustomerId { get; set; }
+    public string? TenantId { get; set; }
+    public string? TenantName { get; set; }
+    public string? ClientId { get; set; }
+    public string? ClientSecret { get; set; }
     public DateTime? SecretExpiry { get; set; }
 }

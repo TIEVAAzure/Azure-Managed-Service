@@ -135,6 +135,53 @@ public class SubscriptionFunctions
         await response.WriteAsJsonAsync(new { updated });
         return response;
     }
+
+    [Function("GetSubscriptionsForAudit")]
+public async Task<HttpResponseData> GetSubscriptionsForAudit(
+    [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "connections/{connectionId}/audit-subscriptions/{moduleCode}")] HttpRequestData req,
+    string connectionId,
+    string moduleCode)
+{
+    if (!Guid.TryParse(connectionId, out var connId))
+    {
+        var badRequest = req.CreateResponse(HttpStatusCode.BadRequest);
+        await badRequest.WriteStringAsync("Invalid connection ID");
+        return badRequest;
+    }
+
+    // Get subscriptions that:
+    // 1. Belong to this connection
+    // 2. Are in scope
+    // 3. Have a tier assigned
+    // 4. That tier has the specified module enabled
+    var subscriptions = await _db.CustomerSubscriptions
+        .Where(s => s.ConnectionId == connId && s.IsInScope && s.TierId != null)
+        .Include(s => s.Tier)
+            .ThenInclude(t => t!.TierModules)
+                .ThenInclude(tm => tm.Module)
+        .Where(s => s.Tier!.TierModules.Any(tm => 
+            tm.Module!.Code == moduleCode.ToUpper() && tm.IsIncluded))
+        .Select(s => new
+        {
+            s.Id,
+            s.SubscriptionId,
+            s.SubscriptionName,
+            s.Environment,
+            TierId = s.TierId,
+            TierName = s.Tier!.DisplayName,
+            TierColor = s.Tier.Color,
+            Frequency = s.Tier.TierModules
+                .Where(tm => tm.Module!.Code == moduleCode.ToUpper())
+                .Select(tm => tm.Frequency)
+                .FirstOrDefault()
+        })
+        .ToListAsync();
+
+    var response = req.CreateResponse(HttpStatusCode.OK);
+    await response.WriteAsJsonAsync(subscriptions);
+    return response;
+}
+
 }
 
 public class UpdateSubscriptionRequest

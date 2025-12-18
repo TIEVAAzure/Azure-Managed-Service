@@ -1,0 +1,14 @@
+@{
+    'Az.Accounts' = '3.*'
+    'Az.Resources' = '7.*'
+    'Az.Compute' = '8.*'
+    'Az.Network' = '7.*'
+    'Az.RecoveryServices' = '7.*'
+    'Az.Storage' = '7.*'
+    'Az.Monitor' = '5.*'
+    'Az.CostManagement' = '0.*'
+    'Az.PolicyInsights' = '1.*'
+    'Az.ResourceGraph' = '1.*'
+    'Az.KeyVault' = '6.*'
+    'ImportExcel' = '7.*'
+}
