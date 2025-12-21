@@ -184,7 +184,7 @@ foreach ($sub in $subscriptions) {
         Category         = 'Network Security'
         ResourceType     = 'Virtual Network'
         ResourceName     = $vnet.Name
-        ResourceGroup    = $vnet.ResourceGroupName
+        ResourceId       = $vnet.Id
         Detail           = 'DDoS Protection not enabled on VNet'
         Recommendation   = 'Consider enabling DDoS Protection Standard for production workloads'
       })
@@ -233,7 +233,7 @@ foreach ($sub in $subscriptions) {
           Category         = 'Network Security'
           ResourceType     = 'Subnet'
           ResourceName     = "$($vnet.Name)/$($subnet.Name)"
-          ResourceGroup    = $vnet.ResourceGroupName
+          ResourceId       = $subnet.Id
           Detail           = 'Subnet has no Network Security Group attached'
           Recommendation   = 'Attach an NSG to control traffic flow'
         })
@@ -268,7 +268,7 @@ foreach ($sub in $subscriptions) {
           Category         = 'Network Connectivity'
           ResourceType     = 'VNet Peering'
           ResourceName     = "$($vnet.Name) -> $remoteVnet"
-          ResourceGroup    = $vnet.ResourceGroupName
+          ResourceId       = $peering.Id
           Detail           = "Peering state is $($peering.PeeringState), not Connected"
           Recommendation   = 'Investigate and repair peering connection'
         })
@@ -325,7 +325,7 @@ foreach ($sub in $subscriptions) {
         Category         = 'Resource Hygiene'
         ResourceType     = 'NSG'
         ResourceName     = $nsg.Name
-        ResourceGroup    = $nsg.ResourceGroupName
+        ResourceId       = $nsg.Id
         Detail           = 'NSG is not attached to any subnet or NIC'
         Recommendation   = 'Delete if unused or attach to appropriate resources'
       })
@@ -363,7 +363,7 @@ foreach ($sub in $subscriptions) {
           Category         = 'Network Security'
           ResourceType     = 'NSG Rule'
           ResourceName     = "$($nsg.Name)/$($rule.Name)"
-          ResourceGroup    = $nsg.ResourceGroupName
+          ResourceId       = $rule.Id
           Detail           = "Overly permissive rule: $($rule.SourceAddressPrefix) -> Port $($rule.DestinationPortRange)"
           Recommendation   = 'Restrict source addresses and ports to minimum required'
         })
@@ -411,7 +411,7 @@ foreach ($sub in $subscriptions) {
         Category         = 'Reliability'
         ResourceType     = 'Public IP'
         ResourceName     = $pip.Name
-        ResourceGroup    = $pip.ResourceGroupName
+        ResourceId       = $pip.Id
         Detail           = 'Standard SKU Public IP not zone-redundant'
         Recommendation   = 'Consider zone-redundant deployment for high availability'
       })
@@ -469,7 +469,7 @@ foreach ($sub in $subscriptions) {
         Category         = 'Network Connectivity'
         ResourceType     = 'Private Endpoint'
         ResourceName     = $pe.Name
-        ResourceGroup    = $pe.ResourceGroupName
+        ResourceId       = $pe.Id
         Detail           = "Private endpoint connection state is $connectionState"
         Recommendation   = 'Approve the private endpoint connection on the target resource'
       })
@@ -523,7 +523,7 @@ foreach ($sub in $subscriptions) {
         Category         = 'Reliability'
         ResourceType     = 'VPN Gateway'
         ResourceName     = $gw.Name
-        ResourceGroup    = $gw.ResourceGroupName
+        ResourceId       = $gw.Id
         Detail           = 'VPN Gateway is not configured for Active-Active'
         Recommendation   = 'Enable Active-Active for higher availability'
       })
@@ -587,7 +587,7 @@ foreach ($sub in $subscriptions) {
         Category         = 'Reliability'
         ResourceType     = 'Load Balancer'
         ResourceName     = $lb.Name
-        ResourceGroup    = $lb.ResourceGroupName
+        ResourceId       = $lb.Id
         Detail           = 'Basic SKU Load Balancer detected'
         Recommendation   = 'Upgrade to Standard SKU for SLA, zone redundancy, and enhanced features'
       })
@@ -631,7 +631,7 @@ foreach ($sub in $subscriptions) {
         Category         = 'Network Security'
         ResourceType     = 'Application Gateway'
         ResourceName     = $appGw.Name
-        ResourceGroup    = $appGw.ResourceGroupName
+        ResourceId       = $appGw.Id
         Detail           = 'Web Application Firewall (WAF) is not enabled'
         Recommendation   = 'Enable WAF to protect against common web vulnerabilities'
       })
@@ -715,7 +715,7 @@ foreach ($sub in $subscriptions) {
         Category         = 'Monitoring'
         ResourceType     = 'Network Watcher'
         ResourceName     = "Missing in $loc"
-        ResourceGroup    = 'N/A'
+        ResourceId       = $sub.Id
         Detail           = "No Network Watcher in region $loc where VNets exist"
         Recommendation   = 'Enable Network Watcher for network diagnostics and monitoring'
       })

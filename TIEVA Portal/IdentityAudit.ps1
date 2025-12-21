@@ -531,7 +531,7 @@ foreach ($sub in $subscriptions) {
         Category         = 'Privileged Access'
         ResourceType     = 'Role Assignment'
         ResourceName     = "$displayName - $($ra.RoleDefinitionName)"
-        ResourceGroup    = 'N/A'
+        ResourceId       = $ra.RoleAssignmentId
         Detail           = "User has $($ra.RoleDefinitionName) role at subscription scope"
         Recommendation   = 'Use PIM for just-in-time access, or scope down to resource group level'
       })
@@ -546,7 +546,7 @@ foreach ($sub in $subscriptions) {
         Category         = 'Service Principal Security'
         ResourceType     = 'Role Assignment'
         ResourceName     = "$displayName - $($ra.RoleDefinitionName)"
-        ResourceGroup    = 'N/A'
+        ResourceId       = $ra.RoleAssignmentId
         Detail           = "Service Principal has $($ra.RoleDefinitionName) role"
         Recommendation   = 'Apply least privilege - use more specific roles'
       })
@@ -610,7 +610,7 @@ foreach ($sub in $subscriptions) {
         Category         = 'Service Principal Security'
         ResourceType     = 'Service Principal'
         ResourceName     = $spDisplayName
-        ResourceGroup    = 'N/A'
+        ResourceId       = $sp.ObjectId
         Detail           = "Service Principal has $($spRoles.Count) role assignments"
         Recommendation   = 'Review if all roles are necessary - consolidate or reduce'
       })
@@ -695,7 +695,7 @@ foreach ($sub in $subscriptions) {
         Category         = 'Custom Roles'
         ResourceType     = 'Role Definition'
         ResourceName     = $role.Name
-        ResourceGroup    = 'N/A'
+        ResourceId       = $role.Id
         Detail           = 'Custom role contains wildcard (*) actions'
         Recommendation   = 'Replace wildcard with specific action permissions'
       })
@@ -777,7 +777,7 @@ foreach ($sub in $subscriptions) {
         Category         = 'Guest Access'
         ResourceType     = 'Guest User'
         ResourceName     = $guestDisplayName
-        ResourceGroup    = 'N/A'
+        ResourceId       = $guestInfo.ObjectId
         Detail           = "Guest user has privileged role(s): $roles"
         Recommendation   = 'Review guest access - consider using dedicated accounts or reducing privileges'
       })
@@ -816,7 +816,7 @@ foreach ($sub in $subscriptions) {
       Category         = 'Privileged Access'
       ResourceType     = 'Subscription'
       ResourceName     = $sub.Name
-      ResourceGroup    = 'N/A'
+      ResourceId       = $sub.Id
       Detail           = "$($subAdmins.Count) principals have Owner/UAA at subscription level"
       Recommendation   = 'Reduce standing privileged access - implement PIM for JIT access'
     })

@@ -113,4 +113,53 @@ public class DashboardFunctions
             return response;
         }
     }
+
+    [Function("GetDashboardStats")]
+    public async Task<HttpResponseData> GetDashboardStats(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "dashboard/stats")] HttpRequestData req)
+    {
+        // Get unique findings from CustomerFindings table (deduplicated across all assessments)
+        var customerFindingsStats = await _db.CustomerFindings
+            .Where(cf => cf.Status == "Open")
+            .GroupBy(cf => cf.Severity.ToLower())
+            .Select(g => new { Severity = g.Key, Count = g.Count() })
+            .ToListAsync();
+
+        var high = customerFindingsStats.FirstOrDefault(x => x.Severity == "high")?.Count ?? 0;
+        var medium = customerFindingsStats.FirstOrDefault(x => x.Severity == "medium")?.Count ?? 0;
+        var low = customerFindingsStats.FirstOrDefault(x => x.Severity == "low")?.Count ?? 0;
+
+        // Get customer count and assessment count
+        var customerCount = await _db.Customers.CountAsync();
+        var assessmentCount = await _db.Assessments.CountAsync();
+
+        // Get average score from latest assessment per customer
+        var latestAssessmentScores = await _db.Assessments
+            .Where(a => a.ScoreOverall != null)
+            .GroupBy(a => a.CustomerId)
+            .Select(g => g.OrderByDescending(a => a.CreatedAt).First().ScoreOverall)
+            .ToListAsync();
+
+        var avgScore = latestAssessmentScores.Any() 
+            ? Math.Round(latestAssessmentScores.Average(s => s ?? 0), 0) 
+            : 0;
+
+        var stats = new
+        {
+            customers = customerCount,
+            assessments = assessmentCount,
+            findings = new
+            {
+                total = high + medium + low,
+                high,
+                medium,
+                low
+            },
+            avgScore
+        };
+
+        var response = req.CreateResponse(HttpStatusCode.OK);
+        await response.WriteAsJsonAsync(stats);
+        return response;
+    }
 }

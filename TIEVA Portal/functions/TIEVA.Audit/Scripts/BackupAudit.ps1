@@ -1056,8 +1056,9 @@ foreach ($sub in $subs) {
         Category         = 'Vault Configuration'
         ResourceType     = 'Microsoft.RecoveryServices/vaults'
         ResourceName     = $r.VaultName
-        ResourceGroup    = $r.ResourceGroup
+        ResourceId       = $v.Id
         Detail           = "Always-On soft delete is not enabled on Recovery Services vault."
+        Recommendation   = 'Enable Always-On soft delete to protect against accidental or malicious deletion'
       })
     }
     if ($r.SecurityLevel -ne 'Enhanced') {
@@ -1068,8 +1069,9 @@ foreach ($sub in $subs) {
         Category         = 'Vault Configuration'
         ResourceType     = 'Microsoft.RecoveryServices/vaults'
         ResourceName     = $r.VaultName
-        ResourceGroup    = $r.ResourceGroup
+        ResourceId       = $v.Id
         Detail           = "Vault security level is not Enhanced."
+        Recommendation   = 'Enable enhanced security settings including MUA and immutability'
       })
     }
 
@@ -1169,8 +1171,9 @@ foreach ($sub in $subs) {
             Category         = 'RPO'
             ResourceType     = 'Microsoft.Compute/virtualMachines'
             ResourceName     = $vmName
-            ResourceGroup    = $vmRG
+            ResourceId       = $rid
             Detail           = "Observed VM RPO is ${observedRpoHrs}h, above the $severity threshold."
+            Recommendation   = 'Review backup policy schedule and ensure backups are completing successfully'
           })
         }
       }
@@ -1273,8 +1276,9 @@ foreach ($sub in $subs) {
               Category         = 'RPO'
               ResourceType     = 'MSSQL in VM'
               ResourceName     = $p.FriendlyName
-              ResourceGroup    = $v.ResourceGroupName
+              ResourceId       = $it.Id
               Detail           = "Observed SQL-in-VM RPO is ${obsRpo}h, above the $severity threshold."
+              Recommendation   = 'Review SQL backup policy and ensure log backups are completing successfully'
             })
           }
 
@@ -1476,8 +1480,9 @@ foreach ($sub in $subs) {
         Category         = 'Vault Configuration'
         ResourceType     = 'Microsoft.DataProtection/backupVaults'
         ResourceName     = $bvName
-        ResourceGroup    = $rgName
+        ResourceId       = $bv.Id
         Detail           = "Always-On soft delete is not effectively enabled on Backup Vault."
+        Recommendation   = 'Enable Always-On soft delete to protect against accidental or malicious deletion'
       })
     }
     if ($secLevel -ne 'Enhanced') {
@@ -1488,8 +1493,9 @@ foreach ($sub in $subs) {
         Category         = 'Vault Configuration'
         ResourceType     = 'Microsoft.DataProtection/backupVaults'
         ResourceName     = $bvName
-        ResourceGroup    = $rgName
+        ResourceId       = $bv.Id
         Detail           = "Backup Vault security level is not Enhanced."
+        Recommendation   = 'Enable enhanced security settings including MUA and immutability'
       })
     }
 
@@ -1584,8 +1590,9 @@ foreach ($sub in $subs) {
         Category         = 'VM Coverage'
         ResourceType     = 'Microsoft.Compute/virtualMachines'
         ResourceName     = $vm.Name
-        ResourceGroup    = $vm.ResourceGroupName
+        ResourceId       = $vm.Id
         Detail           = "VM is not protected by any backup vault."
+        Recommendation   = 'Configure backup for this VM using Recovery Services or Backup Vault'
       })
     }
   }
@@ -1694,8 +1701,9 @@ foreach ($sub in $subs) {
           Category         = 'RPO'
           ResourceType     = 'Azure SQL (PaaS)'
           ResourceName     = $db.DatabaseName
-          ResourceGroup    = $srv.ResourceGroupName
+          ResourceId       = $db.ResourceId
           Detail           = "Observed Azure SQL RPO is ${obsRpo}h, above the $severity threshold."
+          Recommendation   = 'Review PITR configuration and database health'
         })
       }
     }
@@ -1738,8 +1746,9 @@ foreach ($sub in $subs) {
         Category         = 'DB Coverage'
         ResourceType     = 'PostgreSQL Flexible Server'
         ResourceName     = $pg.Name
-        ResourceGroup    = $pg.ResourceGroupName
+        ResourceId       = $pg.Id
         Detail           = "PostgreSQL flexible server has no backup instance."
+        Recommendation   = 'Configure backup using Azure Backup Vault for PostgreSQL'
       })
     }
   }
@@ -1910,7 +1919,7 @@ if ($ExportXlsx) {
 
   # 7) Findings (gaps / risks)
   if ($findings.Count -gt 0) {
-    $findingCols = @('SubscriptionName','SubscriptionId','Severity','Category','ResourceType','ResourceName','ResourceGroup','Detail')
+    $findingCols = @('SubscriptionName','SubscriptionId','Severity','Category','ResourceType','ResourceName','ResourceId','Detail','Recommendation')
     Export-Sheet -Data $findings -WorksheetName 'Findings' -TableName 'Findings' -Columns $findingCols
   }
 

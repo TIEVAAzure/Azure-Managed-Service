@@ -231,7 +231,7 @@ policyresources
           Category         = 'Policy Exemption'
           ResourceType     = 'Policy Exemption'
           ResourceName     = if ($ex.displayName) { $ex.displayName } else { $ex.name }
-          ResourceGroup    = 'N/A'
+          ResourceId       = $ex.id
           Detail           = 'Policy exemption has no expiry date'
           Recommendation   = 'Set an expiry date or review if exemption is still needed'
         })
@@ -245,7 +245,7 @@ policyresources
           Category         = 'Policy Exemption'
           ResourceType     = 'Policy Exemption'
           ResourceName     = if ($ex.displayName) { $ex.displayName } else { $ex.name }
-          ResourceGroup    = 'N/A'
+          ResourceId       = $ex.id
           Detail           = 'Policy exemption has expired but still exists'
           Recommendation   = 'Remove expired exemption or renew if still needed'
         })
@@ -473,7 +473,7 @@ foreach ($sub in $subscriptions) {
           Category         = 'Policy Exemption'
           ResourceType     = 'Policy Exemption'
           ResourceName     = $ex.Properties.DisplayName
-          ResourceGroup    = 'N/A'
+          ResourceId       = $ex.ResourceId
           Detail           = 'Policy exemption has no expiry date'
           Recommendation   = 'Set an expiry date or review if exemption is still needed'
         })
@@ -487,7 +487,7 @@ foreach ($sub in $subscriptions) {
           Category         = 'Policy Exemption'
           ResourceType     = 'Policy Exemption'
           ResourceName     = $ex.Properties.DisplayName
-          ResourceGroup    = 'N/A'
+          ResourceId       = $ex.ResourceId
           Detail           = 'Policy exemption has expired but still exists'
           Recommendation   = 'Remove expired exemption or renew if still needed'
         })
@@ -553,7 +553,7 @@ foreach ($sub in $subscriptions) {
         Category         = 'Policy Remediation'
         ResourceType     = 'Remediation Task'
         ResourceName     = $rem.Name
-        ResourceGroup    = 'N/A'
+        ResourceId       = $rem.Id
         Detail           = "$($rem.FailedResourceCount) resources failed remediation"
         Recommendation   = 'Investigate failed remediations and resolve blockers'
       })
@@ -600,7 +600,7 @@ foreach ($sub in $subscriptions) {
       Category         = 'Compliance'
       ResourceType     = 'Subscription'
       ResourceName     = $sub.Name
-      ResourceGroup    = 'N/A'
+      ResourceId       = $sub.Id
       Detail           = "Overall compliance is $subCompliancePercent% - below 70% threshold"
       Recommendation   = 'Review and remediate non-compliant resources'
     })
@@ -612,7 +612,7 @@ foreach ($sub in $subscriptions) {
       Category         = 'Compliance'
       ResourceType     = 'Subscription'
       ResourceName     = $sub.Name
-      ResourceGroup    = 'N/A'
+      ResourceId       = $sub.Id
       Detail           = "Overall compliance is $subCompliancePercent% - below 90% target"
       Recommendation   = 'Continue remediation efforts to improve compliance'
     })
@@ -626,7 +626,7 @@ foreach ($sub in $subscriptions) {
       Category         = 'Policy Exemption'
       ResourceType     = 'Subscription'
       ResourceName     = $sub.Name
-      ResourceGroup    = 'N/A'
+      ResourceId       = $sub.Id
       Detail           = "$subExemptionCount policy exemptions in place"
       Recommendation   = 'Review exemptions - high count may indicate policy/resource mismatch'
     })

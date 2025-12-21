@@ -16,6 +16,7 @@ public class TievaDbContext : DbContext
     public DbSet<Assessment> Assessments => Set<Assessment>();
     public DbSet<AssessmentModuleResult> AssessmentModuleResults => Set<AssessmentModuleResult>();
     public DbSet<Finding> Findings => Set<Finding>();
+    public DbSet<CustomerFinding> CustomerFindings => Set<CustomerFinding>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -90,6 +91,17 @@ public class TievaDbContext : DbContext
             e.HasKey(x => x.Id);
             e.Property(x => x.FindingText).HasColumnName("Finding");
             e.HasOne(x => x.Assessment).WithMany(x => x.Findings).HasForeignKey(x => x.AssessmentId);
+            e.HasIndex(x => x.Hash);  // Fast lookup for matching
+        });
+
+        // CustomerFinding - persistent findings per customer
+        modelBuilder.Entity<CustomerFinding>(e =>
+        {
+            e.ToTable("CustomerFindings");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.FindingText).HasColumnName("Finding");
+            e.HasOne(x => x.Customer).WithMany().HasForeignKey(x => x.CustomerId);
+            e.HasIndex(x => new { x.CustomerId, x.Hash }).IsUnique();  // One record per unique finding per customer
         });
     }
 }

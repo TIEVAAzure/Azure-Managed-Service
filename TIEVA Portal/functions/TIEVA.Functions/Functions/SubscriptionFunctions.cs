@@ -68,16 +68,51 @@ public class SubscriptionFunctions
         }
 
         var body = await new StreamReader(req.Body).ReadToEndAsync();
-        var input = JsonSerializer.Deserialize<UpdateSubscriptionRequest>(body, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
-
-        if (input != null)
+        
+        try
         {
-            if (input.TierId.HasValue)
-                subscription.TierId = input.TierId.Value == Guid.Empty ? null : input.TierId.Value;
-            if (input.Environment != null)
-                subscription.Environment = input.Environment;
-            if (input.IsInScope.HasValue)
-                subscription.IsInScope = input.IsInScope.Value;
+            using var doc = JsonDocument.Parse(body);
+            var root = doc.RootElement;
+            
+            // Handle tierId - can be null, empty string, or valid Guid
+            if (root.TryGetProperty("tierId", out var tierIdElement))
+            {
+                if (tierIdElement.ValueKind == JsonValueKind.Null || 
+                    (tierIdElement.ValueKind == JsonValueKind.String && string.IsNullOrEmpty(tierIdElement.GetString())))
+                {
+                    subscription.TierId = null;
+                }
+                else if (tierIdElement.ValueKind == JsonValueKind.String && 
+                         Guid.TryParse(tierIdElement.GetString(), out var tierId))
+                {
+                    subscription.TierId = tierId == Guid.Empty ? null : tierId;
+                }
+            }
+            
+            // Handle environment
+            if (root.TryGetProperty("environment", out var envElement) && 
+                envElement.ValueKind == JsonValueKind.String)
+            {
+                var env = envElement.GetString();
+                if (!string.IsNullOrEmpty(env))
+                    subscription.Environment = env;
+            }
+            
+            // Handle isInScope
+            if (root.TryGetProperty("isInScope", out var scopeElement))
+            {
+                if (scopeElement.ValueKind == JsonValueKind.True)
+                    subscription.IsInScope = true;
+                else if (scopeElement.ValueKind == JsonValueKind.False)
+                    subscription.IsInScope = false;
+            }
+        }
+        catch (JsonException ex)
+        {
+            _logger.LogError(ex, "Failed to parse subscription update");
+            var badRequest = req.CreateResponse(HttpStatusCode.BadRequest);
+            await badRequest.WriteStringAsync("Invalid JSON: " + ex.Message);
+            return badRequest;
         }
 
         await _db.SaveChangesAsync();
@@ -136,51 +171,164 @@ public class SubscriptionFunctions
         return response;
     }
 
-    [Function("GetSubscriptionsForAudit")]
-public async Task<HttpResponseData> GetSubscriptionsForAudit(
-    [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "connections/{connectionId}/audit-subscriptions/{moduleCode}")] HttpRequestData req,
-    string connectionId,
-    string moduleCode)
-{
-    if (!Guid.TryParse(connectionId, out var connId))
+    [Function("GetAuditSubs")]
+    public async Task<HttpResponseData> GetAuditSubs(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "audit-subs/{connectionId}/{moduleCode}")] HttpRequestData req,
+        string connectionId,
+        string moduleCode)
     {
-        var badRequest = req.CreateResponse(HttpStatusCode.BadRequest);
-        await badRequest.WriteStringAsync("Invalid connection ID");
-        return badRequest;
+        if (!Guid.TryParse(connectionId, out var connId))
+        {
+            var badRequest = req.CreateResponse(HttpStatusCode.BadRequest);
+            await badRequest.WriteStringAsync("Invalid connection ID");
+            return badRequest;
+        }
+
+        try
+        {
+            var moduleUpper = moduleCode.ToUpper();
+            var module = await _db.AssessmentModules
+                .FirstOrDefaultAsync(m => m.Code == moduleUpper);
+            
+            if (module == null)
+            {
+                var emptyResponse = req.CreateResponse(HttpStatusCode.OK);
+                await emptyResponse.WriteAsJsonAsync(new List<object>());
+                return emptyResponse;
+            }
+
+            var subscriptions = await _db.CustomerSubscriptions
+                .Where(s => s.ConnectionId == connId && s.IsInScope && s.TierId != null)
+                .Include(s => s.Tier)
+                .ToListAsync();
+
+            var tierModules = await _db.TierModules
+                .Where(tm => tm.ModuleId == module.Id && tm.IsIncluded)
+                .ToListAsync();
+
+            var enabledTierIds = tierModules.Select(tm => tm.TierId).ToHashSet();
+
+            var result = new List<object>();
+            foreach (var s in subscriptions)
+            {
+                if (s.TierId.HasValue && enabledTierIds.Contains(s.TierId.Value))
+                {
+                    var tm = tierModules.FirstOrDefault(t => t.TierId == s.TierId);
+                    result.Add(new
+                    {
+                        s.Id,
+                        s.SubscriptionId,
+                        s.SubscriptionName,
+                        s.Environment,
+                        TierId = s.TierId,
+                        TierName = s.Tier?.DisplayName ?? "Unknown",
+                        TierColor = s.Tier?.Color ?? "#6b7280",
+                        Frequency = tm?.Frequency ?? "Monthly"
+                    });
+                }
+            }
+
+            var response = req.CreateResponse(HttpStatusCode.OK);
+            await response.WriteAsJsonAsync(result);
+            return response;
+        }
+        catch (Exception ex)
+        {
+            var errorResponse = req.CreateResponse(HttpStatusCode.InternalServerError);
+            await errorResponse.WriteStringAsync($"Error: {ex.Message}");
+            return errorResponse;
+        }
     }
 
-    // Get subscriptions that:
-    // 1. Belong to this connection
-    // 2. Are in scope
-    // 3. Have a tier assigned
-    // 4. That tier has the specified module enabled
-    var subscriptions = await _db.CustomerSubscriptions
-        .Where(s => s.ConnectionId == connId && s.IsInScope && s.TierId != null)
-        .Include(s => s.Tier)
-            .ThenInclude(t => t!.TierModules)
-                .ThenInclude(tm => tm.Module)
-        .Where(s => s.Tier!.TierModules.Any(tm => 
-            tm.Module!.Code == moduleCode.ToUpper() && tm.IsIncluded))
-        .Select(s => new
-        {
-            s.Id,
-            s.SubscriptionId,
-            s.SubscriptionName,
-            s.Environment,
-            TierId = s.TierId,
-            TierName = s.Tier!.DisplayName,
-            TierColor = s.Tier.Color,
-            Frequency = s.Tier.TierModules
-                .Where(tm => tm.Module!.Code == moduleCode.ToUpper())
-                .Select(tm => tm.Frequency)
-                .FirstOrDefault()
-        })
-        .ToListAsync();
+    // GetSubscriptionsForAudit moved to ConnectionFunctions.cs as GetAuditSubscriptions
 
-    var response = req.CreateResponse(HttpStatusCode.OK);
-    await response.WriteAsJsonAsync(subscriptions);
-    return response;
-}
+    [Function("DebugAuditSubscriptions")]
+    public async Task<HttpResponseData> DebugAuditSubscriptions(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "debug/audit-subs/{connectionId}/{moduleCode}")] HttpRequestData req,
+        string connectionId,
+        string moduleCode)
+    {
+        var debug = new Dictionary<string, object>();
+        
+        try
+        {
+            // 1. Parse connection ID
+            if (!Guid.TryParse(connectionId, out var connId))
+            {
+                debug["error"] = "Invalid connection ID";
+                var badResp = req.CreateResponse(HttpStatusCode.OK);
+                await badResp.WriteAsJsonAsync(debug);
+                return badResp;
+            }
+            debug["connectionId"] = connId.ToString();
+            debug["moduleCode"] = moduleCode;
+
+            // 2. Find module
+            var moduleUpper = moduleCode.ToUpper();
+            var allModules = await _db.AssessmentModules.ToListAsync();
+            debug["allModules"] = allModules.Select(m => new { m.Id, m.Code, m.Name }).ToList();
+            
+            var module = allModules.FirstOrDefault(m => m.Code == moduleUpper);
+            debug["foundModule"] = module != null ? new { module.Id, module.Code, module.Name } : null;
+
+            if (module == null)
+            {
+                var resp = req.CreateResponse(HttpStatusCode.OK);
+                await resp.WriteAsJsonAsync(debug);
+                return resp;
+            }
+
+            // 3. Get all subscriptions for this connection
+            var allSubs = await _db.CustomerSubscriptions
+                .Where(s => s.ConnectionId == connId)
+                .ToListAsync();
+            debug["allSubscriptionsForConnection"] = allSubs.Select(s => new { 
+                s.Id, s.SubscriptionName, s.TierId, s.IsInScope 
+            }).ToList();
+
+            // 4. Filter to in-scope with tier
+            var inScopeSubs = allSubs.Where(s => s.IsInScope && s.TierId != null).ToList();
+            debug["inScopeWithTier"] = inScopeSubs.Select(s => new { 
+                s.Id, s.SubscriptionName, s.TierId 
+            }).ToList();
+
+            // 5. Get all tier modules
+            var allTierModules = await _db.TierModules.ToListAsync();
+            debug["allTierModulesCount"] = allTierModules.Count;
+
+            // 6. Get tier modules for this specific module
+            var tierModulesForModule = allTierModules
+                .Where(tm => tm.ModuleId == module.Id && tm.IsIncluded)
+                .ToList();
+            debug["tierModulesForThisModule"] = tierModulesForModule.Select(tm => new { 
+                tm.Id, tm.TierId, tm.ModuleId, tm.IsIncluded, tm.Frequency 
+            }).ToList();
+
+            // 7. Get enabled tier IDs
+            var enabledTierIds = tierModulesForModule.Select(tm => tm.TierId).ToHashSet();
+            debug["enabledTierIds"] = enabledTierIds.ToList();
+
+            // 8. Match subscriptions
+            var matchedSubs = inScopeSubs
+                .Where(s => s.TierId.HasValue && enabledTierIds.Contains(s.TierId.Value))
+                .ToList();
+            debug["matchedSubscriptions"] = matchedSubs.Select(s => new { 
+                s.Id, s.SubscriptionId, s.SubscriptionName, s.TierId 
+            }).ToList();
+
+            var response = req.CreateResponse(HttpStatusCode.OK);
+            await response.WriteAsJsonAsync(debug);
+            return response;
+        }
+        catch (Exception ex)
+        {
+            debug["exception"] = ex.Message;
+            debug["stackTrace"] = ex.StackTrace;
+            var response = req.CreateResponse(HttpStatusCode.OK);
+            await response.WriteAsJsonAsync(debug);
+            return response;
+        }
+    }
 
 }
 

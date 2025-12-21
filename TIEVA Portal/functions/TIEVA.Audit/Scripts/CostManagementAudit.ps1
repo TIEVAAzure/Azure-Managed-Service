@@ -149,6 +149,7 @@ foreach ($sub in $subscriptions) {
       Category         = 'Cost Management'
       ResourceType     = 'Subscription'
       ResourceName     = $sub.Name
+      ResourceId       = "/subscriptions/$($sub.Id)"
       Detail           = 'No budgets configured for this subscription'
       Recommendation   = 'Configure monthly budget with forecast and actual spend alerts'
     }
@@ -225,8 +226,21 @@ foreach ($sub in $subscriptions) {
         Category         = 'Budget Configuration'
         ResourceType     = 'Budget'
         ResourceName     = $budget.name
+        ResourceId       = $budget.id
         Detail           = 'Budget missing forecast threshold alert'
         Recommendation   = 'Add forecast alert at 80% threshold'
+      }
+    } else {
+      $findings += [PSCustomObject]@{
+        SubscriptionName = $sub.Name
+        SubscriptionId   = $sub.Id
+        Severity         = 'Info'
+        Category         = 'Budget Configuration'
+        ResourceType     = 'Budget'
+        ResourceName     = $budget.name
+        ResourceId       = $budget.id
+        Detail           = "Forecast alert configured at $($forecastThreshold)% threshold"
+        Recommendation   = 'No action required'
       }
     }
     
@@ -238,8 +252,21 @@ foreach ($sub in $subscriptions) {
         Category         = 'Budget Configuration'
         ResourceType     = 'Budget'
         ResourceName     = $budget.name
+        ResourceId       = $budget.id
         Detail           = 'Budget missing actual spend threshold alert'
         Recommendation   = 'Add actual spend alert at 100% threshold'
+      }
+    } else {
+      $findings += [PSCustomObject]@{
+        SubscriptionName = $sub.Name
+        SubscriptionId   = $sub.Id
+        Severity         = 'Info'
+        Category         = 'Budget Configuration'
+        ResourceType     = 'Budget'
+        ResourceName     = $budget.name
+        ResourceId       = $budget.id
+        Detail           = "Actual spend alert configured at $($actualThreshold)% threshold"
+        Recommendation   = 'No action required'
       }
     }
     
@@ -251,8 +278,21 @@ foreach ($sub in $subscriptions) {
         Category         = 'Budget Configuration'
         ResourceType     = 'Budget'
         ResourceName     = $budget.name
+        ResourceId       = $budget.id
         Detail           = 'Budget has no email recipients'
         Recommendation   = 'Configure alert recipients'
+      }
+    } else {
+      $findings += [PSCustomObject]@{
+        SubscriptionName = $sub.Name
+        SubscriptionId   = $sub.Id
+        Severity         = 'Info'
+        Category         = 'Budget Configuration'
+        ResourceType     = 'Budget'
+        ResourceName     = $budget.name
+        ResourceId       = $budget.id
+        Detail           = "Alert recipients configured: $alertEmailsStr"
+        Recommendation   = 'No action required'
       }
     }
   }
@@ -386,6 +426,22 @@ function Export-Sheet {
 Export-Sheet -Data $subscriptionReport -WorksheetName 'Subscription_Summary' -TableName 'Subscriptions'
 Export-Sheet -Data $budgetReport -WorksheetName 'Budgets' -TableName 'Budgets'
 Export-Sheet -Data $alertReport -WorksheetName 'Action_Groups' -TableName 'ActionGroups'
+
+# Always create Findings sheet (even if empty) for consistent parsing
+if ($findings.Count -eq 0) {
+  # Create placeholder row that indicates no findings
+  $findings = @([PSCustomObject]@{
+    SubscriptionName = 'N/A'
+    SubscriptionId   = 'N/A'
+    Severity         = 'Info'
+    Category         = 'Cost Management'
+    ResourceType     = 'Audit'
+    ResourceName     = 'Cost Management Audit'
+    ResourceId       = 'N/A'
+    Detail           = 'No cost management findings - all budgets properly configured'
+    Recommendation   = 'Continue monitoring budget utilization'
+  })
+}
 Export-Sheet -Data $findings -WorksheetName 'Findings' -TableName 'Findings'
 
 if ($IncludeSpendHistory -and $spendHistoryReport.Count -gt 0) {

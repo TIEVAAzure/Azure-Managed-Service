@@ -37,8 +37,7 @@ public class TierFunctions
                 t.SortOrder,
                 ModuleCount = t.TierModules.Count(tm => tm.IsIncluded),
                 SubscriptionCount = _db.CustomerSubscriptions.Count(s => s.TierId == t.Id && s.IsInScope),
-                Modules = t.TierModules
-                    .Where(tm => tm.IsIncluded)
+                TierModules = t.TierModules
                     .OrderBy(tm => tm.Module!.SortOrder)
                     .Select(tm => new
                     {
@@ -181,6 +180,54 @@ public class TierFunctions
         await response.WriteStringAsync("Tier modules updated");
         return response;
     }
+
+    [Function("BulkUpdateTierModules")]
+    public async Task<HttpResponseData> BulkUpdateTierModules(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "put", Route = "tiers/modules")] HttpRequestData req)
+    {
+        var body = await new StreamReader(req.Body).ReadToEndAsync();
+        var input = JsonSerializer.Deserialize<List<BulkTierModuleUpdate>>(body, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+
+        if (input == null || input.Count == 0)
+        {
+            var badRequest = req.CreateResponse(HttpStatusCode.BadRequest);
+            await badRequest.WriteStringAsync("Invalid request body");
+            return badRequest;
+        }
+
+        // Get all existing tier modules
+        var existingModules = await _db.TierModules.ToListAsync();
+
+        foreach (var update in input)
+        {
+            var existing = existingModules.FirstOrDefault(tm => 
+                tm.TierId == update.TierId && tm.ModuleId == update.ModuleId);
+            
+            if (existing != null)
+            {
+                existing.IsIncluded = update.IsIncluded;
+                existing.Frequency = update.Frequency ?? existing.Frequency;
+            }
+            else if (update.IsIncluded)
+            {
+                _db.TierModules.Add(new TierModule
+                {
+                    Id = Guid.NewGuid(),
+                    TierId = update.TierId,
+                    ModuleId = update.ModuleId,
+                    IsIncluded = true,
+                    Frequency = update.Frequency ?? "Monthly"
+                });
+            }
+        }
+
+        await _db.SaveChangesAsync();
+        _logger.LogInformation("Bulk updated {Count} tier module configurations", input.Count);
+
+        var response = req.CreateResponse(HttpStatusCode.OK);
+        await response.WriteAsJsonAsync(new { updated = input.Count });
+        return response;
+    }
 }
 
 public class UpdateTierRequest
@@ -192,6 +239,14 @@ public class UpdateTierRequest
 
 public class TierModuleUpdate
 {
+    public Guid ModuleId { get; set; }
+    public bool IsIncluded { get; set; }
+    public string? Frequency { get; set; }
+}
+
+public class BulkTierModuleUpdate
+{
+    public Guid TierId { get; set; }
     public Guid ModuleId { get; set; }
     public bool IsIncluded { get; set; }
     public string? Frequency { get; set; }

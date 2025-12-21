@@ -71,9 +71,33 @@ try {
     $auditSubs = Invoke-RestMethod -Uri "$apiBase/connections/$connectionId/audit-subscriptions/$module" -Method Get
     
     if (-not $auditSubs -or $auditSubs.Count -eq 0) {
+        # Get more detail about why no subscriptions found
+        $allSubs = Invoke-RestMethod -Uri "$apiBase/connections/$connectionId" -Method Get -ErrorAction SilentlyContinue
+        $subCount = if ($allSubs.subscriptions) { $allSubs.subscriptions.Count } else { 0 }
+        $inScopeCount = if ($allSubs.subscriptions) { ($allSubs.subscriptions | Where-Object { $_.isInScope }).Count } else { 0 }
+        $withTierCount = if ($allSubs.subscriptions) { ($allSubs.subscriptions | Where-Object { $_.tierId }).Count } else { 0 }
+        
+        $errorDetail = @{
+            error = "No subscriptions configured for $module audit"
+            module = $module
+            connectionId = $connectionId
+            totalSubscriptions = $subCount
+            inScopeSubscriptions = $inScopeCount
+            subscriptionsWithTier = $withTierCount
+            resolution = if ($subCount -eq 0) {
+                "No subscriptions found for this connection. Run 'Sync Subscriptions' first."
+            } elseif ($inScopeCount -eq 0) {
+                "No subscriptions are marked 'In Scope'. Edit subscriptions and enable 'In Scope' checkbox."
+            } elseif ($withTierCount -eq 0) {
+                "No subscriptions have a Service Tier assigned. Assign a tier to subscriptions."
+            } else {
+                "Subscriptions have tiers, but those tiers don't include the $module module. Go to Service Tiers and enable $module for the relevant tier(s)."
+            }
+        }
+        
         Push-OutputBinding -Name Response -Value ([HttpResponseContext]@{
             StatusCode = [HttpStatusCode]::BadRequest
-            Body = @{ error = "No subscriptions configured for $module audit. Ensure subscriptions have tiers assigned with this module enabled." } | ConvertTo-Json
+            Body = $errorDetail | ConvertTo-Json -Depth 5
             ContentType = "application/json"
         })
         return

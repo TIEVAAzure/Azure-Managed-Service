@@ -449,6 +449,76 @@ public class ConnectionFunctions
         }
     }
 
+    [Function("GetAuditSubscriptions")]
+    public async Task<HttpResponseData> GetAuditSubscriptions(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "connections/{id}/audit-subscriptions/{moduleCode}")] HttpRequestData req,
+        string id,
+        string moduleCode)
+    {
+        if (!Guid.TryParse(id, out var connectionId))
+        {
+            var badRequest = req.CreateResponse(HttpStatusCode.BadRequest);
+            await badRequest.WriteStringAsync("Invalid connection ID");
+            return badRequest;
+        }
+
+        try
+        {
+            var moduleUpper = moduleCode.ToUpper();
+            var module = await _db.AssessmentModules
+                .FirstOrDefaultAsync(m => m.Code == moduleUpper);
+            
+            if (module == null)
+            {
+                var emptyResponse = req.CreateResponse(HttpStatusCode.OK);
+                await emptyResponse.WriteAsJsonAsync(new List<object>());
+                return emptyResponse;
+            }
+
+            var subscriptions = await _db.CustomerSubscriptions
+                .Where(s => s.ConnectionId == connectionId && s.IsInScope && s.TierId != null)
+                .Include(s => s.Tier)
+                .ToListAsync();
+
+            var tierModules = await _db.TierModules
+                .Where(tm => tm.ModuleId == module.Id && tm.IsIncluded)
+                .ToListAsync();
+
+            var enabledTierIds = tierModules.Select(tm => tm.TierId).ToHashSet();
+
+            var result = new List<object>();
+            foreach (var s in subscriptions)
+            {
+                if (s.TierId.HasValue && enabledTierIds.Contains(s.TierId.Value))
+                {
+                    var tm = tierModules.FirstOrDefault(t => t.TierId == s.TierId);
+                    result.Add(new
+                    {
+                        s.Id,
+                        s.SubscriptionId,
+                        s.SubscriptionName,
+                        s.Environment,
+                        TierId = s.TierId,
+                        TierName = s.Tier?.DisplayName ?? "Unknown",
+                        TierColor = s.Tier?.Color ?? "#6b7280",
+                        Frequency = tm?.Frequency ?? "Monthly"
+                    });
+                }
+            }
+
+            var response = req.CreateResponse(HttpStatusCode.OK);
+            await response.WriteAsJsonAsync(result);
+            return response;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error getting audit subscriptions");
+            var errorResponse = req.CreateResponse(HttpStatusCode.InternalServerError);
+            await errorResponse.WriteStringAsync($"Error: {ex.Message}");
+            return errorResponse;
+        }
+    }
+
     [Function("DeleteConnection")]
     public async Task<HttpResponseData> DeleteConnection(
         [HttpTrigger(AuthorizationLevel.Anonymous, "delete", Route = "connections/{id}")] HttpRequestData req,

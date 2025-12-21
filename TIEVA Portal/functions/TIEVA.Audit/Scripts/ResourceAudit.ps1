@@ -685,7 +685,7 @@ foreach ($sub in $subscriptions) {
     $findings.Add([PSCustomObject]@{
       SubscriptionName=$sub.Name;SubscriptionId=$sub.Id;Severity='High'
       Category='Governance';ResourceType='Subscription'
-      ResourceName=$sub.Name;ResourceGroup='N/A'
+      ResourceName=$sub.Name;ResourceId=$sub.Id
       Detail="Only $taggedPct% of resources have tags"
       Recommendation='Implement Azure Policy to enforce tagging'
     })
@@ -717,7 +717,7 @@ foreach ($sub in $subscriptions) {
               $findings.Add([PSCustomObject]@{
                 SubscriptionName=$sub.Name;SubscriptionId=$sub.Id;Severity=$severity
                 Category='Security';ResourceType='Key Vault Certificate'
-                ResourceName="$($kv.VaultName)/$($cert.Name)";ResourceGroup=$kv.ResourceGroupName
+                ResourceName="$($kv.VaultName)/$($cert.Name)";ResourceId=$kv.ResourceId
                 Detail=if ($daysToExpiry -le 0) { "Certificate EXPIRED" } else { "Certificate expires in $daysToExpiry days" }
                 Recommendation='Renew certificate before expiry'
               })

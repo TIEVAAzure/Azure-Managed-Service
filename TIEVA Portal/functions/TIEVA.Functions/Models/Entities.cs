@@ -151,9 +151,35 @@ public class Finding
     public string? Recommendation { get; set; }
     public decimal? EffortHours { get; set; }
     public string? Owner { get; set; }
-    public string Status { get; set; } = "Open";
-    public string? Hash { get; set; }
+    public string Status { get; set; } = "Open";  // Open, Resolved
+    public string ChangeStatus { get; set; } = "New";  // New, Recurring, Resolved
+    public string? Hash { get; set; }  // For matching findings across assessments
     public DateTime FirstSeenAt { get; set; }
+    public DateTime LastSeenAt { get; set; }
     public DateTime? ResolvedAt { get; set; }
+    public int OccurrenceCount { get; set; } = 1;  // How many assessments this appeared in
+    public Guid? PreviousFindingId { get; set; }  // Link to the same finding in previous assessment
     public Assessment? Assessment { get; set; }
+}
+
+// Customer Finding Summary - persistent record per unique finding per customer
+public class CustomerFinding
+{
+    public Guid Id { get; set; }
+    public Guid CustomerId { get; set; }
+    public string ModuleCode { get; set; } = string.Empty;
+    public string Hash { get; set; } = string.Empty;  // Unique identifier for this finding type
+    public string Severity { get; set; } = string.Empty;
+    public string? Category { get; set; }
+    public string? ResourceType { get; set; }
+    public string? ResourceId { get; set; }
+    public string FindingText { get; set; } = string.Empty;
+    public string? Recommendation { get; set; }
+    public string Status { get; set; } = "Open";  // Open, Resolved
+    public DateTime FirstSeenAt { get; set; }
+    public DateTime LastSeenAt { get; set; }
+    public DateTime? ResolvedAt { get; set; }
+    public int OccurrenceCount { get; set; } = 1;
+    public Guid? LastAssessmentId { get; set; }
+    public Customer? Customer { get; set; }
 }

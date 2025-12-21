@@ -219,6 +219,73 @@ public class CustomerFunctions
         await response.WriteStringAsync("Customer deleted");
         return response;
     }
+
+    [Function("GetCustomerFindings")]
+    public async Task<HttpResponseData> GetCustomerFindings(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "customers/{id}/findings")] HttpRequestData req,
+        string id)
+    {
+        if (!Guid.TryParse(id, out var customerId))
+        {
+            var badRequest = req.CreateResponse(HttpStatusCode.BadRequest);
+            await badRequest.WriteStringAsync("Invalid customer ID");
+            return badRequest;
+        }
+
+        // Get all open findings from CustomerFindings (deduplicated across all assessments)
+        var findings = await _db.CustomerFindings
+            .Where(cf => cf.CustomerId == customerId && cf.Status == "Open")
+            .OrderBy(cf => cf.Severity == "High" ? 0 : cf.Severity == "Medium" ? 1 : 2)
+            .ThenByDescending(cf => cf.LastSeenAt)
+            .Select(cf => new
+            {
+                cf.Id,
+                cf.CustomerId,
+                cf.ModuleCode,
+                cf.Category,
+                cf.Severity,
+                cf.FindingText,
+                cf.ResourceId,
+                cf.ResourceType,
+                cf.Recommendation,
+                cf.Status,
+                cf.FirstSeenAt,
+                cf.LastSeenAt,
+                cf.OccurrenceCount
+            })
+            .ToListAsync();
+
+        // Get summary stats
+        var high = findings.Count(f => f.Severity?.ToLower() == "high");
+        var medium = findings.Count(f => f.Severity?.ToLower() == "medium");
+        var low = findings.Count(f => f.Severity?.ToLower() == "low");
+
+        // Get latest module results across all assessments for this customer
+        var latestModuleResults = await _db.AssessmentModuleResults
+            .Where(mr => mr.Assessment!.CustomerId == customerId && mr.Status == "Completed")
+            .GroupBy(mr => mr.ModuleCode)
+            .Select(g => new
+            {
+                ModuleCode = g.Key,
+                Score = g.OrderByDescending(mr => mr.CompletedAt).Select(mr => mr.Score).FirstOrDefault(),
+                FindingsCount = g.OrderByDescending(mr => mr.CompletedAt).Select(mr => mr.FindingsCount).FirstOrDefault(),
+                CompletedAt = g.OrderByDescending(mr => mr.CompletedAt).Select(mr => mr.CompletedAt).FirstOrDefault(),
+                AssessmentId = g.OrderByDescending(mr => mr.CompletedAt).Select(mr => mr.AssessmentId).FirstOrDefault()
+            })
+            .ToListAsync();
+
+        var result = new
+        {
+            customerId,
+            summary = new { total = findings.Count, high, medium, low },
+            moduleResults = latestModuleResults,
+            findings
+        };
+
+        var response = req.CreateResponse(HttpStatusCode.OK);
+        await response.WriteAsJsonAsync(result);
+        return response;
+    }
 }
 
 public class CreateCustomerRequest

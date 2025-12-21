@@ -220,26 +220,30 @@ foreach ($order in $reservationOrders) {
     # Findings: Low utilization
     if ($avgUtilization -ne $null -and $avgUtilization -lt $UtilizationWarningThreshold) {
       $findings.Add([PSCustomObject]@{
-        Category         = 'Reservation Utilization'
+        SubscriptionName = 'Tenant-Level'
+        SubscriptionId   = 'N/A'
         Severity         = if ($avgUtilization -lt $UtilizationCriticalThreshold) { 'High' } else { 'Medium' }
+        Category         = 'Reservation Utilization'
         ResourceType     = 'Reservation'
         ResourceName     = $props.DisplayName
+        ResourceId       = $res.Id
         Detail           = "Reservation utilization is $avgUtilization% (below $UtilizationWarningThreshold% threshold)"
         Recommendation   = 'Review reservation scope and consider exchange or cancellation'
-        PotentialSavings = $null
       })
     }
     
     # Findings: Expiring soon without renewal
     if ($daysToExpiry -ne $null -and $daysToExpiry -le $ExpiryCriticalDays -and $daysToExpiry -ge 0 -and -not $props.Renew) {
       $findings.Add([PSCustomObject]@{
-        Category         = 'Reservation Expiry'
+        SubscriptionName = 'Tenant-Level'
+        SubscriptionId   = 'N/A'
         Severity         = 'High'
+        Category         = 'Reservation Expiry'
         ResourceType     = 'Reservation'
         ResourceName     = $props.DisplayName
+        ResourceId       = $res.Id
         Detail           = "Reservation expires in $daysToExpiry days with no auto-renewal configured"
         Recommendation   = 'Enable auto-renewal or plan for replacement purchase'
-        PotentialSavings = $null
       })
     }
   }
@@ -299,13 +303,15 @@ foreach ($sp in $savingsPlans) {
   # Finding: Expiring savings plan
   if ($daysToExpiry -ne $null -and $daysToExpiry -le $ExpiryCriticalDays -and $daysToExpiry -ge 0) {
     $findings.Add([PSCustomObject]@{
-      Category         = 'Savings Plan Expiry'
+      SubscriptionName = 'Tenant-Level'
+      SubscriptionId   = 'N/A'
       Severity         = 'High'
+      Category         = 'Savings Plan Expiry'
       ResourceType     = 'Savings Plan'
       ResourceName     = $props.displayName
+      ResourceId       = $sp.id
       Detail           = "Savings Plan expires in $daysToExpiry days"
       Recommendation   = 'Plan for renewal or replacement'
-      PotentialSavings = $null
     })
   }
 }
@@ -371,13 +377,15 @@ foreach ($sub in $subscriptions) {
     # Finding: High-value recommendation
     if ($props.netSavings -and $props.netSavings -gt 500) {
       $findings.Add([PSCustomObject]@{
-        Category         = 'Purchase Recommendation'
+        SubscriptionName = $sub.Name
+        SubscriptionId   = $sub.Id
         Severity         = if ($props.netSavings -gt 2000) { 'High' } else { 'Medium' }
+        Category         = 'Purchase Recommendation'
         ResourceType     = $props.resourceType
         ResourceName     = "$($props.skuProperties.name) - $($props.skuProperties.location)"
+        ResourceId       = $rec.id
         Detail           = "Recommended: $($props.recommendedQuantity) x $($props.term) reservation"
         Recommendation   = "Purchase reservation for estimated monthly savings of $([math]::Round($props.netSavings, 2))"
-        PotentialSavings = [math]::Round($props.netSavings * 12, 2)
       })
     }
   }
@@ -423,13 +431,15 @@ foreach ($sub in $subscriptions) {
     $potentialSavings = ($recommendationReport | Where-Object { $_.SubscriptionId -eq $sub.Id } | Measure-Object -Property AnnualSavings -Sum).Sum
     
     $findings.Add([PSCustomObject]@{
-      Category         = 'Coverage Gap'
+      SubscriptionName = $sub.Name
+      SubscriptionId   = $sub.Id
       Severity         = 'Medium'
+      Category         = 'Coverage Gap'
       ResourceType     = 'Subscription'
       ResourceName     = $sub.Name
+      ResourceId       = $sub.Id
       Detail           = "Subscription has no reservations but has purchase recommendations"
       Recommendation   = "Review recommendations for potential annual savings of $([math]::Round($potentialSavings, 2))"
-      PotentialSavings = $potentialSavings
     })
   }
 }
