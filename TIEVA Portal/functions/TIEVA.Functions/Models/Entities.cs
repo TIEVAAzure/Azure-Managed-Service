@@ -58,6 +58,16 @@ public class Customer
     public bool IsActive { get; set; } = true;
     public DateTime CreatedAt { get; set; }
     public DateTime UpdatedAt { get; set; }
+    public DateTime? NextMeetingDate { get; set; }
+    public bool SchedulingEnabled { get; set; } = true;
+    
+    // FinOps Configuration
+    public string? FinOpsStorageAccount { get; set; }
+    public string? FinOpsContainer { get; set; }
+    public string? FinOpsPowerBIUrl { get; set; }
+    public string? FinOpsSasKeyVaultRef { get; set; }
+    public DateTime? FinOpsSasExpiry { get; set; }
+    
     public List<AzureConnection> Connections { get; set; } = new();
     public List<Assessment> Assessments { get; set; } = new();
 }
@@ -105,6 +115,7 @@ public class Assessment
     public DateTime? StartedAt { get; set; }
     public DateTime? CompletedAt { get; set; }
     public string? StartedBy { get; set; }
+    public string TriggerType { get; set; } = "Manual";  // Manual, Scheduled, PreMeeting
     public decimal? ScoreOverall { get; set; }
     public int FindingsTotal { get; set; }
     public int FindingsHigh { get; set; }
@@ -181,5 +192,80 @@ public class CustomerFinding
     public DateTime? ResolvedAt { get; set; }
     public int OccurrenceCount { get; set; } = 1;
     public Guid? LastAssessmentId { get; set; }
+    public Customer? Customer { get; set; }
+}
+
+// Effort Settings - Configurable effort estimation
+public class EffortSetting
+{
+    public int Id { get; set; }
+    public string? Category { get; set; }              // e.g., 'Orphaned Resource', 'Security'
+    public string? Severity { get; set; }              // 'High', 'Medium', 'Low' (fallback)
+    public string? RecommendationPattern { get; set; } // Optional: specific recommendation match
+    public decimal BaseHours { get; set; } = 1;        // Fixed hours for this type
+    public decimal PerResourceHours { get; set; } = 0; // Additional hours per resource
+    public string? ImpactOverride { get; set; }        // Override impact: High, Medium, Low (null = use severity)
+    public string? Description { get; set; }           // Explain what this covers
+    public string? Owner { get; set; }                 // Default owner
+    public bool IsActive { get; set; } = true;
+    public int MatchPriority { get; set; } = 0;        // Higher = checked first
+    public DateTime CreatedAt { get; set; }
+    public DateTime UpdatedAt { get; set; }
+    public string? UpdatedBy { get; set; }
+}
+
+// Finding Metadata - Unified configuration for findings (effort, impact, operational metadata)
+public class FindingMetadata
+{
+    public int Id { get; set; }
+    
+    // Pattern Matching
+    public string? ModuleCode { get; set; }              // e.g., 'NETWORK', 'IDENTITY'
+    public string? Category { get; set; }                // e.g., 'NSG Configuration'
+    public string? FindingPattern { get; set; }          // Pattern match on finding text
+    public string? RecommendationPattern { get; set; }   // Pattern match on recommendation
+    
+    // Effort & Impact (for Priority Matrix)
+    public decimal BaseHours { get; set; } = 1;          // Fixed hours for this finding type
+    public decimal PerResourceHours { get; set; } = 0;   // Additional hours per resource
+    public string? ImpactOverride { get; set; }          // Override impact: High, Medium, Low (null = use severity)
+    public string? DefaultOwner { get; set; }            // e.g., 'Network Team'
+    
+    // Operational Metadata
+    public string DowntimeRequired { get; set; } = "None";       // None, Partial, Full
+    public int DowntimeMinutes { get; set; } = 0;
+    public bool ChangeControlRequired { get; set; } = false;
+    public bool MaintenanceWindowRequired { get; set; } = false;
+    public bool AffectsProduction { get; set; } = true;
+    public string CostImplication { get; set; } = "None";        // None, Low, Medium, High
+    public string Complexity { get; set; } = "Medium";           // Low, Medium, High
+    public string RiskLevel { get; set; } = "Medium";            // Low, Medium, High
+    public string? Notes { get; set; }
+    
+    // Matching Control
+    public int MatchPriority { get; set; } = 0;          // Higher = matched first
+    public bool IsActive { get; set; } = true;
+    
+    // Audit
+    public DateTime CreatedAt { get; set; }
+    public DateTime UpdatedAt { get; set; }
+    public string? UpdatedBy { get; set; }
+}
+
+// Customer Roadmap Plan - Saved wave assignments for remediation planning
+public class CustomerRoadmapPlan
+{
+    public int Id { get; set; }
+    public Guid CustomerId { get; set; }
+    public string? Wave1Findings { get; set; }      // JSON array of finding IDs
+    public string? Wave2Findings { get; set; }
+    public string? Wave3Findings { get; set; }
+    public string? SkippedFindings { get; set; }    // Explicitly skipped findings
+    public string? Notes { get; set; }
+    public DateTime CreatedAt { get; set; }
+    public DateTime UpdatedAt { get; set; }
+    public string? UpdatedBy { get; set; }
+    
+    // Navigation
     public Customer? Customer { get; set; }
 }

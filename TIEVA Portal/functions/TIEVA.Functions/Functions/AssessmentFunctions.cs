@@ -923,6 +923,54 @@ public class AssessmentFunctions
         await response.WriteAsJsonAsync(summary);
         return response;
     }
+
+    [Function("DeleteAssessment")]
+    public async Task<HttpResponseData> DeleteAssessment(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "delete", Route = "assessments/{id}")] HttpRequestData req,
+        string id)
+    {
+        if (!Guid.TryParse(id, out var assessmentId))
+        {
+            var badRequest = req.CreateResponse(HttpStatusCode.BadRequest);
+            await badRequest.WriteStringAsync("Invalid assessment ID");
+            return badRequest;
+        }
+
+        var assessment = await _db.Assessments
+            .Include(a => a.ModuleResults)
+            .Include(a => a.Findings)
+            .FirstOrDefaultAsync(a => a.Id == assessmentId);
+
+        if (assessment == null)
+        {
+            var notFound = req.CreateResponse(HttpStatusCode.NotFound);
+            await notFound.WriteStringAsync("Assessment not found");
+            return notFound;
+        }
+
+        // Cascade delete: Remove all findings
+        _db.Findings.RemoveRange(assessment.Findings);
+
+        // Cascade delete: Remove all module results
+        _db.AssessmentModuleResults.RemoveRange(assessment.ModuleResults);
+
+        // Delete the assessment
+        _db.Assessments.Remove(assessment);
+
+        await _db.SaveChangesAsync();
+
+        _logger.LogInformation("Deleted assessment {Id} with {FindingsCount} findings and {ModulesCount} module results",
+            assessmentId, assessment.Findings.Count, assessment.ModuleResults.Count);
+
+        var response = req.CreateResponse(HttpStatusCode.OK);
+        await response.WriteAsJsonAsync(new
+        {
+            message = "Assessment deleted",
+            findingsDeleted = assessment.Findings.Count,
+            moduleResultsDeleted = assessment.ModuleResults.Count
+        });
+        return response;
+    }
 }
 
 public class CreateAssessmentRequest

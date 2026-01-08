@@ -4,6 +4,8 @@ using Microsoft.Azure.Functions.Worker.Http;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using System.Text.Json;
+using Azure.Identity;
+using Azure.Security.KeyVault.Secrets;
 using TIEVA.Functions.Models;
 using TIEVA.Functions.Services;
 
@@ -13,11 +15,14 @@ public class CustomerFunctions
 {
     private readonly ILogger _logger;
     private readonly TievaDbContext _db;
+    private readonly string _keyVaultUrl;
 
     public CustomerFunctions(ILoggerFactory loggerFactory, TievaDbContext db)
     {
         _logger = loggerFactory.CreateLogger<CustomerFunctions>();
         _db = db;
+        _keyVaultUrl = Environment.GetEnvironmentVariable("KEY_VAULT_URL") 
+            ?? "https://kv-tievaPortal-874.vault.azure.net/";
     }
 
     [Function("GetCustomers")]
@@ -36,6 +41,13 @@ public class CustomerFunctions
                 c.PrimaryContact,
                 c.Email,
                 c.IsActive,
+                c.NextMeetingDate,
+                c.SchedulingEnabled,
+                c.FinOpsStorageAccount,
+                c.FinOpsContainer,
+                c.FinOpsPowerBIUrl,
+                c.FinOpsSasExpiry,
+                HasFinOpsSas = !string.IsNullOrEmpty(c.FinOpsSasKeyVaultRef),
                 ConnectionCount = c.Connections.Count(x => x.IsActive),
                 SubscriptionCount = c.Connections.Where(x => x.IsActive).SelectMany(x => x.Subscriptions).Count(s => s.IsInScope),
                 LastAssessment = c.Assessments.OrderByDescending(a => a.CompletedAt).Select(a => a.CompletedAt).FirstOrDefault(),
@@ -74,6 +86,13 @@ public class CustomerFunctions
                 c.Notes,
                 c.IsActive,
                 c.CreatedAt,
+                c.NextMeetingDate,
+                c.SchedulingEnabled,
+                c.FinOpsStorageAccount,
+                c.FinOpsContainer,
+                c.FinOpsPowerBIUrl,
+                c.FinOpsSasExpiry,
+                HasFinOpsSas = !string.IsNullOrEmpty(c.FinOpsSasKeyVaultRef),
                 Connections = c.Connections.Where(x => x.IsActive).Select(conn => new
                 {
                     conn.Id,
@@ -134,6 +153,8 @@ public class CustomerFunctions
             Email = input.Email,
             Phone = input.Phone,
             Notes = input.Notes,
+            NextMeetingDate = input.NextMeetingDate,
+            SchedulingEnabled = input.SchedulingEnabled ?? true,
             IsActive = true,
             CreatedAt = DateTime.UtcNow,
             UpdatedAt = DateTime.UtcNow
@@ -181,6 +202,18 @@ public class CustomerFunctions
             if (input.Email != null) customer.Email = input.Email;
             if (input.Phone != null) customer.Phone = input.Phone;
             if (input.Notes != null) customer.Notes = input.Notes;
+            // Always update scheduling fields (allow null to clear NextMeetingDate)
+            customer.NextMeetingDate = input.NextMeetingDate;
+            if (input.SchedulingEnabled.HasValue) customer.SchedulingEnabled = input.SchedulingEnabled.Value;
+            
+            // FinOps fields (empty string clears the field)
+            if (input.FinOpsStorageAccount != null) 
+                customer.FinOpsStorageAccount = string.IsNullOrWhiteSpace(input.FinOpsStorageAccount) ? null : input.FinOpsStorageAccount;
+            if (input.FinOpsContainer != null) 
+                customer.FinOpsContainer = string.IsNullOrWhiteSpace(input.FinOpsContainer) ? null : input.FinOpsContainer;
+            if (input.FinOpsPowerBIUrl != null) 
+                customer.FinOpsPowerBIUrl = string.IsNullOrWhiteSpace(input.FinOpsPowerBIUrl) ? null : input.FinOpsPowerBIUrl;
+            
             customer.UpdatedAt = DateTime.UtcNow;
         }
 
@@ -203,7 +236,11 @@ public class CustomerFunctions
             return badRequest;
         }
 
-        var customer = await _db.Customers.FindAsync(customerId);
+        var customer = await _db.Customers
+            .Include(c => c.Connections)
+                .ThenInclude(conn => conn.Subscriptions)
+            .FirstOrDefaultAsync(c => c.Id == customerId);
+
         if (customer == null)
         {
             var notFound = req.CreateResponse(HttpStatusCode.NotFound);
@@ -211,12 +248,92 @@ public class CustomerFunctions
             return notFound;
         }
 
-        customer.IsActive = false;
-        customer.UpdatedAt = DateTime.UtcNow;
+        // Track deletion counts
+        var connectionsDeleted = customer.Connections.Count;
+        var subscriptionsDeleted = 0;
+        var assessmentsDeleted = 0;
+        var findingsDeleted = 0;
+        var moduleResultsDeleted = 0;
+        var customerFindingsDeleted = 0;
+
+        // Cascade delete: CustomerFindings
+        var customerFindings = await _db.CustomerFindings
+            .Where(cf => cf.CustomerId == customerId)
+            .ToListAsync();
+        customerFindingsDeleted = customerFindings.Count;
+        _db.CustomerFindings.RemoveRange(customerFindings);
+
+        // Cascade delete: Assessments (with their findings and module results)
+        var assessments = await _db.Assessments
+            .Include(a => a.ModuleResults)
+            .Include(a => a.Findings)
+            .Where(a => a.CustomerId == customerId)
+            .ToListAsync();
+
+        foreach (var assessment in assessments)
+        {
+            findingsDeleted += assessment.Findings.Count;
+            moduleResultsDeleted += assessment.ModuleResults.Count;
+            _db.Findings.RemoveRange(assessment.Findings);
+            _db.AssessmentModuleResults.RemoveRange(assessment.ModuleResults);
+            assessmentsDeleted++;
+        }
+        _db.Assessments.RemoveRange(assessments);
+
+        // Cascade delete: Connections and their subscriptions
+        var secretRefsToDelete = new List<string>();
+        foreach (var connection in customer.Connections)
+        {
+            subscriptionsDeleted += connection.Subscriptions.Count;
+            _db.CustomerSubscriptions.RemoveRange(connection.Subscriptions);
+            if (!string.IsNullOrEmpty(connection.SecretKeyVaultRef))
+                secretRefsToDelete.Add(connection.SecretKeyVaultRef);
+        }
+        _db.AzureConnections.RemoveRange(customer.Connections);
+
+        // Delete the customer
+        _db.Customers.Remove(customer);
+
         await _db.SaveChangesAsync();
 
+        // Delete KeyVault secrets for all connections
+        if (secretRefsToDelete.Count > 0)
+        {
+            try
+            {
+                var kvClient = new SecretClient(new Uri(_keyVaultUrl), new DefaultAzureCredential());
+                foreach (var secretRef in secretRefsToDelete)
+                {
+                    try
+                    {
+                        await kvClient.StartDeleteSecretAsync(secretRef);
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogWarning(ex, "Failed to delete secret {SecretRef} from Key Vault", secretRef);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to connect to Key Vault for secret deletion");
+            }
+        }
+
+        _logger.LogInformation("Deleted customer {Id} ({Name}) with {Connections} connections, {Assessments} assessments, {Findings} findings",
+            customerId, customer.Name, connectionsDeleted, assessmentsDeleted, findingsDeleted);
+
         var response = req.CreateResponse(HttpStatusCode.OK);
-        await response.WriteStringAsync("Customer deleted");
+        await response.WriteAsJsonAsync(new
+        {
+            message = "Customer deleted",
+            connectionsDeleted,
+            subscriptionsDeleted,
+            assessmentsDeleted,
+            findingsDeleted,
+            moduleResultsDeleted,
+            customerFindingsDeleted
+        });
         return response;
     }
 
@@ -286,6 +403,118 @@ public class CustomerFunctions
         await response.WriteAsJsonAsync(result);
         return response;
     }
+
+    // ========================================================================
+    // ROADMAP PLAN CRUD
+    // ========================================================================
+
+    [Function("GetCustomerRoadmapPlan")]
+    public async Task<HttpResponseData> GetCustomerRoadmapPlan(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "customers/{customerId:guid}/roadmap-plan")] HttpRequestData req,
+        Guid customerId)
+    {
+        var plan = await _db.CustomerRoadmapPlans
+            .FirstOrDefaultAsync(p => p.CustomerId == customerId);
+
+        if (plan == null)
+        {
+            var notFound = req.CreateResponse(HttpStatusCode.NotFound);
+            await notFound.WriteAsJsonAsync(new { error = "No roadmap plan found for this customer" });
+            return notFound;
+        }
+
+        var response = req.CreateResponse(HttpStatusCode.OK);
+        await response.WriteAsJsonAsync(plan);
+        return response;
+    }
+
+    [Function("SaveCustomerRoadmapPlan")]
+    public async Task<HttpResponseData> SaveCustomerRoadmapPlan(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "customers/{customerId:guid}/roadmap-plan")] HttpRequestData req,
+        Guid customerId)
+    {
+        var input = await req.ReadFromJsonAsync<RoadmapPlanInput>();
+        if (input == null)
+        {
+            var badRequest = req.CreateResponse(HttpStatusCode.BadRequest);
+            await badRequest.WriteAsJsonAsync(new { error = "Invalid request body" });
+            return badRequest;
+        }
+
+        // Check if plan exists
+        var existing = await _db.CustomerRoadmapPlans
+            .FirstOrDefaultAsync(p => p.CustomerId == customerId);
+
+        if (existing != null)
+        {
+            // Update existing
+            existing.Wave1Findings = input.Wave1Findings;
+            existing.Wave2Findings = input.Wave2Findings;
+            existing.Wave3Findings = input.Wave3Findings;
+            existing.SkippedFindings = input.SkippedFindings;
+            existing.Notes = input.Notes;
+            existing.UpdatedAt = DateTime.UtcNow;
+            existing.UpdatedBy = input.UpdatedBy;
+        }
+        else
+        {
+            // Create new
+            existing = new CustomerRoadmapPlan
+            {
+                CustomerId = customerId,
+                Wave1Findings = input.Wave1Findings,
+                Wave2Findings = input.Wave2Findings,
+                Wave3Findings = input.Wave3Findings,
+                SkippedFindings = input.SkippedFindings,
+                Notes = input.Notes,
+                CreatedAt = DateTime.UtcNow,
+                UpdatedAt = DateTime.UtcNow,
+                UpdatedBy = input.UpdatedBy
+            };
+            _db.CustomerRoadmapPlans.Add(existing);
+        }
+
+        await _db.SaveChangesAsync();
+
+        _logger.LogInformation("Saved roadmap plan for customer {CustomerId}", customerId);
+
+        var response = req.CreateResponse(HttpStatusCode.OK);
+        await response.WriteAsJsonAsync(existing);
+        return response;
+    }
+
+    [Function("DeleteCustomerRoadmapPlan")]
+    public async Task<HttpResponseData> DeleteCustomerRoadmapPlan(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "delete", Route = "customers/{customerId:guid}/roadmap-plan")] HttpRequestData req,
+        Guid customerId)
+    {
+        var plan = await _db.CustomerRoadmapPlans
+            .FirstOrDefaultAsync(p => p.CustomerId == customerId);
+
+        if (plan == null)
+        {
+            var notFound = req.CreateResponse(HttpStatusCode.NotFound);
+            await notFound.WriteAsJsonAsync(new { error = "No roadmap plan found" });
+            return notFound;
+        }
+
+        _db.CustomerRoadmapPlans.Remove(plan);
+        await _db.SaveChangesAsync();
+
+        _logger.LogInformation("Deleted roadmap plan for customer {CustomerId}", customerId);
+
+        return req.CreateResponse(HttpStatusCode.NoContent);
+    }
+}
+
+public class RoadmapPlanInput
+{
+    public string? Wave1Findings { get; set; }
+    public string? Wave2Findings { get; set; }
+    public string? Wave3Findings { get; set; }
+    public string? SkippedFindings { get; set; }
+    public string? Notes { get; set; }
+    public string? UpdatedBy { get; set; }
 }
 
 public class CreateCustomerRequest
@@ -297,4 +526,11 @@ public class CreateCustomerRequest
     public string? Email { get; set; }
     public string? Phone { get; set; }
     public string? Notes { get; set; }
+    public DateTime? NextMeetingDate { get; set; }
+    public bool? SchedulingEnabled { get; set; }
+    
+    // FinOps Configuration
+    public string? FinOpsStorageAccount { get; set; }
+    public string? FinOpsContainer { get; set; }
+    public string? FinOpsPowerBIUrl { get; set; }
 }

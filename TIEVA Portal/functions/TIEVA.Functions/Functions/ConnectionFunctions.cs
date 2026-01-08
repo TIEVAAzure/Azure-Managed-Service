@@ -531,7 +531,10 @@ public class ConnectionFunctions
             return badRequest;
         }
 
-        var connection = await _db.AzureConnections.FindAsync(connectionId);
+        var connection = await _db.AzureConnections
+            .Include(c => c.Subscriptions)
+            .FirstOrDefaultAsync(c => c.Id == connectionId);
+
         if (connection == null)
         {
             var notFound = req.CreateResponse(HttpStatusCode.NotFound);
@@ -539,9 +542,38 @@ public class ConnectionFunctions
             return notFound;
         }
 
-        connection.IsActive = false;
+        // Track deletion counts
+        var subscriptionsDeleted = connection.Subscriptions.Count;
+        var assessmentsDeleted = 0;
+        var findingsDeleted = 0;
+        var moduleResultsDeleted = 0;
+
+        // Cascade delete: Find and delete all assessments for this connection
+        var assessments = await _db.Assessments
+            .Include(a => a.ModuleResults)
+            .Include(a => a.Findings)
+            .Where(a => a.ConnectionId == connectionId)
+            .ToListAsync();
+
+        foreach (var assessment in assessments)
+        {
+            findingsDeleted += assessment.Findings.Count;
+            moduleResultsDeleted += assessment.ModuleResults.Count;
+            _db.Findings.RemoveRange(assessment.Findings);
+            _db.AssessmentModuleResults.RemoveRange(assessment.ModuleResults);
+            assessmentsDeleted++;
+        }
+        _db.Assessments.RemoveRange(assessments);
+
+        // Cascade delete: Remove all subscriptions
+        _db.CustomerSubscriptions.RemoveRange(connection.Subscriptions);
+
+        // Delete the connection
+        _db.AzureConnections.Remove(connection);
+
         await _db.SaveChangesAsync();
 
+        // Delete KeyVault secret
         try
         {
             var kvClient = new SecretClient(new Uri(_keyVaultUrl), new DefaultAzureCredential());
@@ -552,8 +584,18 @@ public class ConnectionFunctions
             _logger.LogWarning(ex, "Failed to delete secret from Key Vault");
         }
 
+        _logger.LogInformation("Deleted connection {Id} with {Subs} subscriptions, {Assessments} assessments, {Findings} findings",
+            connectionId, subscriptionsDeleted, assessmentsDeleted, findingsDeleted);
+
         var response = req.CreateResponse(HttpStatusCode.OK);
-        await response.WriteStringAsync("Connection deleted");
+        await response.WriteAsJsonAsync(new
+        {
+            message = "Connection deleted",
+            subscriptionsDeleted,
+            assessmentsDeleted,
+            findingsDeleted,
+            moduleResultsDeleted
+        });
         return response;
     }
 }

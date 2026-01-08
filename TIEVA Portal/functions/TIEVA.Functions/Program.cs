@@ -22,6 +22,9 @@ var host = new HostBuilder()
 
         services.AddDbContext<TievaDbContext>(options =>
             options.UseSqlServer(connectionString));
+        
+        // HttpClient for calling TIEVA.Audit function
+        services.AddHttpClient();
     })
     .Build();
 
