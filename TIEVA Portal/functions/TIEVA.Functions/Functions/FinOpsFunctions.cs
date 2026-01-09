@@ -32,7 +32,7 @@ public class FinOpsFunctions
     /// </summary>
     [Function("GenerateFinOpsSas")]
     public async Task<HttpResponseData> GenerateFinOpsSas(
-        [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "customers/{customerId:guid}/finops/generate-sas")] HttpRequestData req,
+        [HttpTrigger(AuthorizationLevel.Function, "post", Route = "customers/{customerId:guid}/finops/generate-sas")] HttpRequestData req,
         Guid customerId)
     {
         try
@@ -139,7 +139,7 @@ public class FinOpsFunctions
     /// </summary>
     [Function("GetFinOpsSas")]
     public async Task<HttpResponseData> GetFinOpsSas(
-        [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "customers/{customerId:guid}/finops/sas")] HttpRequestData req,
+        [HttpTrigger(AuthorizationLevel.Function, "get", Route = "customers/{customerId:guid}/finops/sas")] HttpRequestData req,
         Guid customerId)
     {
         try
@@ -188,7 +188,7 @@ public class FinOpsFunctions
     /// </summary>
     [Function("SaveFinOpsSas")]
     public async Task<HttpResponseData> SaveFinOpsSas(
-        [HttpTrigger(AuthorizationLevel.Anonymous, "put", Route = "customers/{customerId:guid}/finops/sas")] HttpRequestData req,
+        [HttpTrigger(AuthorizationLevel.Function, "put", Route = "customers/{customerId:guid}/finops/sas")] HttpRequestData req,
         Guid customerId)
     {
         try
@@ -317,7 +317,7 @@ public class FinOpsFunctions
     /// </summary>
     [Function("DeleteFinOpsSas")]
     public async Task<HttpResponseData> DeleteFinOpsSas(
-        [HttpTrigger(AuthorizationLevel.Anonymous, "delete", Route = "customers/{customerId:guid}/finops/sas")] HttpRequestData req,
+        [HttpTrigger(AuthorizationLevel.Function, "delete", Route = "customers/{customerId:guid}/finops/sas")] HttpRequestData req,
         Guid customerId)
     {
         try
@@ -366,7 +366,7 @@ public class FinOpsFunctions
     /// </summary>
     [Function("RunFinOpsExport")]
     public async Task<HttpResponseData> RunFinOpsExport(
-        [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "customers/{customerId:guid}/finops/run-export")] HttpRequestData req,
+        [HttpTrigger(AuthorizationLevel.Function, "post", Route = "customers/{customerId:guid}/finops/run-export")] HttpRequestData req,
         Guid customerId)
     {
         try
@@ -519,7 +519,7 @@ public class FinOpsFunctions
     /// </summary>
     [Function("GetReservationData")]
     public async Task<HttpResponseData> GetReservationData(
-        [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "customers/{customerId:guid}/finops/reservations")] HttpRequestData req,
+        [HttpTrigger(AuthorizationLevel.Function, "get", Route = "customers/{customerId:guid}/finops/reservations")] HttpRequestData req,
         Guid customerId)
     {
         try
@@ -610,8 +610,14 @@ public class FinOpsFunctions
 
             // Get purchase recommendations
             var subscriptions = connection.Subscriptions.Where(s => s.IsInScope).ToList();
+            var recommendationDiagnostics = new List<object>();
+            string? sampleRawJson = null; // Capture first raw recommendation for diagnostics
+            
+            _logger.LogInformation("Fetching recommendations for {Count} in-scope subscriptions", subscriptions.Count);
+            
             foreach (var sub in subscriptions)
             {
+                var subName = sub.SubscriptionName ?? sub.SubscriptionId;
                 try
                 {
                     var recUrl = $"https://management.azure.com/subscriptions/{sub.SubscriptionId}/providers/Microsoft.Consumption/reservationRecommendations?api-version=2023-05-01";
@@ -619,17 +625,43 @@ public class FinOpsFunctions
                     
                     if (recResponse.IsSuccessStatusCode)
                     {
-                        var recJson = System.Text.Json.JsonDocument.Parse(await recResponse.Content.ReadAsStringAsync());
+                        var recBody = await recResponse.Content.ReadAsStringAsync();
+                        var recJson = System.Text.Json.JsonDocument.Parse(recBody);
+                        var recCount = 0;
+                        
                         if (recJson.RootElement.TryGetProperty("value", out var recs))
                         {
                             foreach (var rec in recs.EnumerateArray())
                             {
-                                purchaseRecommendations.Add(ParsePurchaseRecommendation(rec, sub.SubscriptionName ?? sub.SubscriptionId));
+                                // Capture first raw JSON for diagnostics
+                                if (sampleRawJson == null)
+                                {
+                                    sampleRawJson = rec.ToString();
+                                }
+                                
+                                purchaseRecommendations.Add(ParsePurchaseRecommendation(rec, subName));
+                                recCount++;
                             }
                         }
+                        
+                        _logger.LogInformation("Subscription {SubName}: {Count} recommendations found", subName, recCount);
+                        recommendationDiagnostics.Add(new { subscription = subName, status = "OK", count = recCount });
+                    }
+                    else
+                    {
+                        var errorBody = await recResponse.Content.ReadAsStringAsync();
+                        _logger.LogWarning("Subscription {SubName}: Recommendations API returned {Status} - {Error}", 
+                            subName, recResponse.StatusCode, errorBody);
+                        recommendationDiagnostics.Add(new { subscription = subName, status = recResponse.StatusCode.ToString(), error = errorBody.Length > 200 ? errorBody.Substring(0, 200) : errorBody });
+                        errors.Add($"Recommendations for {subName}: {recResponse.StatusCode}");
                     }
                 }
-                catch { /* ignore per-subscription errors */ }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Subscription {SubName}: Exception fetching recommendations", subName);
+                    recommendationDiagnostics.Add(new { subscription = subName, status = "Exception", error = ex.Message });
+                    errors.Add($"Recommendations for {subName}: {ex.Message}");
+                }
             }
 
             // Generate intelligent insights with cost analysis
@@ -672,7 +704,13 @@ public class FinOpsFunctions
                 reservations = reservations.OrderBy(r => GetInt(r, "DaysToExpiry", 9999)),
                 insights = insights,
                 purchaseRecommendations = purchaseRecommendations.OrderByDescending(r => GetDouble(r, "AnnualSavings")),
-                errors = errors
+                errors = errors,
+                diagnostics = new
+                {
+                    inScopeSubscriptions = subscriptions.Count,
+                    recommendationResults = recommendationDiagnostics,
+                    sampleRawRecommendation = sampleRawJson
+                }
             });
             return response;
         }
@@ -1059,22 +1097,90 @@ public class FinOpsFunctions
 
     private Dictionary<string, object> ParsePurchaseRecommendation(System.Text.Json.JsonElement rec, string subscriptionName)
     {
-        var data = new Dictionary<string, object> { ["SubscriptionName"] = subscriptionName };
+        // Initialize ALL fields with defaults upfront - ensures fields always exist in output
+        var data = new Dictionary<string, object>
+        {
+            ["SubscriptionName"] = subscriptionName,
+            ["SkuName"] = "",
+            ["Location"] = "",
+            ["ResourceType"] = "",
+            ["Term"] = "",
+            ["Quantity"] = 0.0,
+            ["LookBackPeriod"] = "",
+            ["MonthlySavings"] = 0.0,
+            ["AnnualSavings"] = 0.0,
+            ["CostWithRI"] = 0.0,
+            ["CostWithoutRI"] = 0.0,
+            ["SavingsPercent"] = 0.0
+        };
         
         try
         {
+            // SKU - Azure returns this as a STRING at root level (not an object!)
+            // e.g. "sku": "Standard_D2s_v3"
+            if (rec.TryGetProperty("sku", out var skuElem))
+            {
+                if (skuElem.ValueKind == System.Text.Json.JsonValueKind.String)
+                {
+                    // SKU is a direct string value
+                    data["SkuName"] = skuElem.GetString() ?? "";
+                }
+                else if (skuElem.ValueKind == System.Text.Json.JsonValueKind.Object)
+                {
+                    // SKU is an object with name property (different API version)
+                    if (skuElem.TryGetProperty("name", out var skuNameElem))
+                        data["SkuName"] = skuNameElem.GetString() ?? "";
+                }
+            }
+            
+            // Location - at root level as string
+            if (rec.TryGetProperty("location", out var locElem))
+            {
+                data["Location"] = locElem.GetString() ?? "";
+            }
+            
+            // Parse properties section
             if (rec.TryGetProperty("properties", out var props))
             {
-                data["ResourceType"] = props.TryGetProperty("resourceType", out var rt) ? rt.GetString() ?? "" : "";
-                data["Term"] = props.TryGetProperty("term", out var term) ? term.GetString() ?? "" : "";
-                data["Quantity"] = props.TryGetProperty("recommendedQuantity", out var qty) ? qty.GetDouble() : 0;
-                data["LookBackPeriod"] = props.TryGetProperty("lookBackPeriod", out var lb) ? lb.GetString() ?? "" : "";
-                data["SkuName"] = props.TryGetProperty("skuName", out var sn) ? sn.GetString() ?? "" : "";
-                data["Location"] = props.TryGetProperty("location", out var loc) ? loc.GetString() ?? "" : "";
+                // Resource type
+                if (props.TryGetProperty("resourceType", out var rt))
+                    data["ResourceType"] = rt.GetString() ?? "";
                 
-                var netSavings = props.TryGetProperty("netSavings", out var ns) ? ns.GetDouble() : 0;
-                var costWithRI = props.TryGetProperty("totalCostWithReservedInstances", out var cw) ? cw.GetDouble() : 0;
-                var costWithoutRI = props.TryGetProperty("costWithNoReservedInstances", out var cwout) ? cwout.GetDouble() : 0;
+                // Term
+                if (props.TryGetProperty("term", out var term))
+                    data["Term"] = term.GetString() ?? "";
+                
+                // Quantity - try different property names
+                if (props.TryGetProperty("recommendedQuantity", out var qty))
+                    data["Quantity"] = qty.GetDouble();
+                else if (props.TryGetProperty("quantity", out var qty2))
+                    data["Quantity"] = qty2.GetDouble();
+                
+                // Look back period
+                if (props.TryGetProperty("lookBackPeriod", out var lb))
+                    data["LookBackPeriod"] = lb.GetString() ?? "";
+                
+                // Fallback: check properties for SKU if not found at root
+                if (string.IsNullOrEmpty((string)data["SkuName"]))
+                {
+                    if (props.TryGetProperty("normalizedSize", out var ns))
+                        data["SkuName"] = ns.GetString() ?? "";
+                    else if (props.TryGetProperty("skuName", out var sn))
+                        data["SkuName"] = sn.GetString() ?? "";
+                }
+                
+                // Cost savings calculations
+                double netSavings = 0;
+                if (props.TryGetProperty("netSavings", out var nsVal))
+                    netSavings = nsVal.GetDouble();
+                
+                double costWithRI = 0;
+                if (props.TryGetProperty("totalCostWithReservedInstances", out var cw))
+                    costWithRI = cw.GetDouble();
+                
+                double costWithoutRI = 0;
+                if (props.TryGetProperty("costWithNoReservedInstances", out var cwout))
+                    costWithoutRI = cwout.GetDouble();
                 
                 data["MonthlySavings"] = Math.Round(netSavings, 2);
                 data["AnnualSavings"] = Math.Round(netSavings * 12, 2);
@@ -1083,7 +1189,10 @@ public class FinOpsFunctions
                 data["SavingsPercent"] = costWithoutRI > 0 ? Math.Round((netSavings / costWithoutRI) * 100, 1) : 0;
             }
         }
-        catch { }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error parsing purchase recommendation. SubscriptionName={Sub}", subscriptionName);
+        }
         
         return data;
     }

@@ -27,7 +27,7 @@ public class CustomerFunctions
 
     [Function("GetCustomers")]
     public async Task<HttpResponseData> GetCustomers(
-        [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "customers")] HttpRequestData req)
+        [HttpTrigger(AuthorizationLevel.Function, "get", Route = "customers")] HttpRequestData req)
     {
         var customers = await _db.Customers
             .Where(c => c.IsActive)
@@ -62,7 +62,7 @@ public class CustomerFunctions
 
     [Function("GetCustomer")]
     public async Task<HttpResponseData> GetCustomer(
-        [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "customers/{id}")] HttpRequestData req,
+        [HttpTrigger(AuthorizationLevel.Function, "get", Route = "customers/{id}")] HttpRequestData req,
         string id)
     {
         if (!Guid.TryParse(id, out var customerId))
@@ -131,7 +131,7 @@ public class CustomerFunctions
 
     [Function("CreateCustomer")]
     public async Task<HttpResponseData> CreateCustomer(
-        [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "customers")] HttpRequestData req)
+        [HttpTrigger(AuthorizationLevel.Function, "post", Route = "customers")] HttpRequestData req)
     {
         var body = await new StreamReader(req.Body).ReadToEndAsync();
         var input = JsonSerializer.Deserialize<CreateCustomerRequest>(body, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
@@ -172,7 +172,7 @@ public class CustomerFunctions
 
     [Function("UpdateCustomer")]
     public async Task<HttpResponseData> UpdateCustomer(
-        [HttpTrigger(AuthorizationLevel.Anonymous, "put", Route = "customers/{id}")] HttpRequestData req,
+        [HttpTrigger(AuthorizationLevel.Function, "put", Route = "customers/{id}")] HttpRequestData req,
         string id)
     {
         if (!Guid.TryParse(id, out var customerId))
@@ -226,7 +226,7 @@ public class CustomerFunctions
 
     [Function("DeleteCustomer")]
     public async Task<HttpResponseData> DeleteCustomer(
-        [HttpTrigger(AuthorizationLevel.Anonymous, "delete", Route = "customers/{id}")] HttpRequestData req,
+        [HttpTrigger(AuthorizationLevel.Function, "delete", Route = "customers/{id}")] HttpRequestData req,
         string id)
     {
         if (!Guid.TryParse(id, out var customerId))
@@ -339,7 +339,7 @@ public class CustomerFunctions
 
     [Function("GetCustomerFindings")]
     public async Task<HttpResponseData> GetCustomerFindings(
-        [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "customers/{id}/findings")] HttpRequestData req,
+        [HttpTrigger(AuthorizationLevel.Function, "get", Route = "customers/{id}/findings")] HttpRequestData req,
         string id)
     {
         if (!Guid.TryParse(id, out var customerId))
@@ -410,7 +410,7 @@ public class CustomerFunctions
 
     [Function("GetCustomerRoadmapPlan")]
     public async Task<HttpResponseData> GetCustomerRoadmapPlan(
-        [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "customers/{customerId:guid}/roadmap-plan")] HttpRequestData req,
+        [HttpTrigger(AuthorizationLevel.Function, "get", Route = "customers/{customerId:guid}/roadmap-plan")] HttpRequestData req,
         Guid customerId)
     {
         var plan = await _db.CustomerRoadmapPlans
@@ -430,7 +430,7 @@ public class CustomerFunctions
 
     [Function("SaveCustomerRoadmapPlan")]
     public async Task<HttpResponseData> SaveCustomerRoadmapPlan(
-        [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "customers/{customerId:guid}/roadmap-plan")] HttpRequestData req,
+        [HttpTrigger(AuthorizationLevel.Function, "post", Route = "customers/{customerId:guid}/roadmap-plan")] HttpRequestData req,
         Guid customerId)
     {
         var input = await req.ReadFromJsonAsync<RoadmapPlanInput>();
@@ -485,7 +485,7 @@ public class CustomerFunctions
 
     [Function("DeleteCustomerRoadmapPlan")]
     public async Task<HttpResponseData> DeleteCustomerRoadmapPlan(
-        [HttpTrigger(AuthorizationLevel.Anonymous, "delete", Route = "customers/{customerId:guid}/roadmap-plan")] HttpRequestData req,
+        [HttpTrigger(AuthorizationLevel.Function, "delete", Route = "customers/{customerId:guid}/roadmap-plan")] HttpRequestData req,
         Guid customerId)
     {
         var plan = await _db.CustomerRoadmapPlans

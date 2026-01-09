@@ -1,0 +1,12 @@
+C:\VS Code\Azure-Managed-Service\TIEVA Audit\src\TIEVA.Core\obj\Debug\net8.0\TIEVA.Core.GeneratedMSBuildEditorConfig.editorconfig
+C:\VS Code\Azure-Managed-Service\TIEVA Audit\src\TIEVA.Core\obj\Debug\net8.0\TIEVA.Core.AssemblyInfoInputs.cache
+C:\VS Code\Azure-Managed-Service\TIEVA Audit\src\TIEVA.Core\obj\Debug\net8.0\TIEVA.Core.AssemblyInfo.cs
+C:\VS Code\Azure-Managed-Service\TIEVA Audit\src\TIEVA.Core\obj\Debug\net8.0\TIEVA.Core.csproj.CoreCompileInputs.cache
+C:\VS Code\Azure-Managed-Service\TIEVA Audit\src\TIEVA.Core\obj\Debug\net8.0\TIEVA.Core.sourcelink.json
+C:\VS Code\Azure-Managed-Service\TIEVA Audit\src\TIEVA.Core\bin\Debug\net8.0\TIEVA.Core.deps.json
+C:\VS Code\Azure-Managed-Service\TIEVA Audit\src\TIEVA.Core\bin\Debug\net8.0\TIEVA.Core.dll
+C:\VS Code\Azure-Managed-Service\TIEVA Audit\src\TIEVA.Core\bin\Debug\net8.0\TIEVA.Core.pdb
+C:\VS Code\Azure-Managed-Service\TIEVA Audit\src\TIEVA.Core\obj\Debug\net8.0\TIEVA.Core.dll
+C:\VS Code\Azure-Managed-Service\TIEVA Audit\src\TIEVA.Core\obj\Debug\net8.0\refint\TIEVA.Core.dll
+C:\VS Code\Azure-Managed-Service\TIEVA Audit\src\TIEVA.Core\obj\Debug\net8.0\TIEVA.Core.pdb
+C:\VS Code\Azure-Managed-Service\TIEVA Audit\src\TIEVA.Core\obj\Debug\net8.0\ref\TIEVA.Core.dll

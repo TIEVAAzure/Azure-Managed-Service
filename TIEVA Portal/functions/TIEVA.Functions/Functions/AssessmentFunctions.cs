@@ -26,7 +26,7 @@ public class AssessmentFunctions
 
     [Function("GetAssessments")]
     public async Task<HttpResponseData> GetAssessments(
-        [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "assessments")] HttpRequestData req)
+        [HttpTrigger(AuthorizationLevel.Function, "get", Route = "assessments")] HttpRequestData req)
     {
         var assessments = await _db.Assessments
             .OrderByDescending(a => a.CreatedAt)
@@ -66,7 +66,7 @@ public class AssessmentFunctions
 
     [Function("GetAssessment")]
     public async Task<HttpResponseData> GetAssessment(
-        [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "assessments/{id}")] HttpRequestData req,
+        [HttpTrigger(AuthorizationLevel.Function, "get", Route = "assessments/{id}")] HttpRequestData req,
         string id)
     {
         if (!Guid.TryParse(id, out var assessmentId))
@@ -161,7 +161,7 @@ public class AssessmentFunctions
 
     [Function("CreateAssessment")]
     public async Task<HttpResponseData> CreateAssessment(
-        [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "assessments")] HttpRequestData req)
+        [HttpTrigger(AuthorizationLevel.Function, "post", Route = "assessments")] HttpRequestData req)
     {
         var body = await new StreamReader(req.Body).ReadToEndAsync();
         var input = JsonSerializer.Deserialize<CreateAssessmentRequest>(body, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
@@ -206,7 +206,7 @@ public class AssessmentFunctions
 
     [Function("UpdateAssessment")]
     public async Task<HttpResponseData> UpdateAssessment(
-        [HttpTrigger(AuthorizationLevel.Anonymous, "put", Route = "assessments/{id}")] HttpRequestData req,
+        [HttpTrigger(AuthorizationLevel.Function, "put", Route = "assessments/{id}")] HttpRequestData req,
         string id)
     {
         if (!Guid.TryParse(id, out var assessmentId))
@@ -247,7 +247,7 @@ public class AssessmentFunctions
 
     [Function("AddModuleResult")]
     public async Task<HttpResponseData> AddModuleResult(
-        [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "assessments/{id}/modules")] HttpRequestData req,
+        [HttpTrigger(AuthorizationLevel.Function, "post", Route = "assessments/{id}/modules")] HttpRequestData req,
         string id)
     {
         if (!Guid.TryParse(id, out var assessmentId))
@@ -297,7 +297,7 @@ public class AssessmentFunctions
 
     [Function("GetAssessmentsByConnection")]
     public async Task<HttpResponseData> GetAssessmentsByConnection(
-        [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "connections/{connectionId}/assessments")] HttpRequestData req,
+        [HttpTrigger(AuthorizationLevel.Function, "get", Route = "connections/{connectionId}/assessments")] HttpRequestData req,
         string connectionId)
     {
         if (!Guid.TryParse(connectionId, out var connId))
@@ -338,7 +338,7 @@ public class AssessmentFunctions
 
     [Function("GetModuleResultDownload")]
     public async Task<HttpResponseData> GetModuleResultDownload(
-        [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "assessments/{assessmentId}/modules/{moduleCode}/download")] HttpRequestData req,
+        [HttpTrigger(AuthorizationLevel.Function, "get", Route = "assessments/{assessmentId}/modules/{moduleCode}/download")] HttpRequestData req,
         string assessmentId,
         string moduleCode)
     {
@@ -446,7 +446,7 @@ public class AssessmentFunctions
 
     [Function("ParseModuleFindings")]
     public async Task<HttpResponseData> ParseModuleFindings(
-        [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "assessments/{assessmentId}/modules/{moduleCode}/parse")] HttpRequestData req,
+        [HttpTrigger(AuthorizationLevel.Function, "post", Route = "assessments/{assessmentId}/modules/{moduleCode}/parse")] HttpRequestData req,
         string assessmentId,
         string moduleCode)
     {
@@ -761,7 +761,7 @@ public class AssessmentFunctions
 
     [Function("GetResolvedFindings")]
     public async Task<HttpResponseData> GetResolvedFindings(
-        [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "assessments/{assessmentId}/resolved")] HttpRequestData req,
+        [HttpTrigger(AuthorizationLevel.Function, "get", Route = "assessments/{assessmentId}/resolved")] HttpRequestData req,
         string assessmentId)
     {
         if (!Guid.TryParse(assessmentId, out var assId))
@@ -830,7 +830,7 @@ public class AssessmentFunctions
 
     [Function("GetAssessmentChangeSummary")]
     public async Task<HttpResponseData> GetAssessmentChangeSummary(
-        [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "assessments/{assessmentId}/changes")] HttpRequestData req,
+        [HttpTrigger(AuthorizationLevel.Function, "get", Route = "assessments/{assessmentId}/changes")] HttpRequestData req,
         string assessmentId)
     {
         if (!Guid.TryParse(assessmentId, out var assId))
@@ -926,7 +926,7 @@ public class AssessmentFunctions
 
     [Function("DeleteAssessment")]
     public async Task<HttpResponseData> DeleteAssessment(
-        [HttpTrigger(AuthorizationLevel.Anonymous, "delete", Route = "assessments/{id}")] HttpRequestData req,
+        [HttpTrigger(AuthorizationLevel.Function, "delete", Route = "assessments/{id}")] HttpRequestData req,
         string id)
     {
         if (!Guid.TryParse(id, out var assessmentId))

@@ -22,7 +22,7 @@ public class TierFunctions
 
     [Function("GetTiers")]
     public async Task<HttpResponseData> GetTiers(
-        [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "tiers")] HttpRequestData req)
+        [HttpTrigger(AuthorizationLevel.Function, "get", Route = "tiers")] HttpRequestData req)
     {
         var tiers = await _db.ServiceTiers
             .Where(t => t.IsActive)
@@ -58,7 +58,7 @@ public class TierFunctions
 
     [Function("GetModules")]
     public async Task<HttpResponseData> GetModules(
-        [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "modules")] HttpRequestData req)
+        [HttpTrigger(AuthorizationLevel.Function, "get", Route = "modules")] HttpRequestData req)
     {
         var modules = await _db.AssessmentModules
             .Where(m => m.IsActive)
@@ -82,7 +82,7 @@ public class TierFunctions
 
     [Function("UpdateTier")]
     public async Task<HttpResponseData> UpdateTier(
-        [HttpTrigger(AuthorizationLevel.Anonymous, "put", Route = "tiers/{id}")] HttpRequestData req,
+        [HttpTrigger(AuthorizationLevel.Function, "put", Route = "tiers/{id}")] HttpRequestData req,
         string id)
     {
         if (!Guid.TryParse(id, out var tierId))
@@ -119,7 +119,7 @@ public class TierFunctions
 
     [Function("UpdateTierModules")]
     public async Task<HttpResponseData> UpdateTierModules(
-        [HttpTrigger(AuthorizationLevel.Anonymous, "put", Route = "tiers/{id}/modules")] HttpRequestData req,
+        [HttpTrigger(AuthorizationLevel.Function, "put", Route = "tiers/{id}/modules")] HttpRequestData req,
         string id)
     {
         if (!Guid.TryParse(id, out var tierId))
@@ -183,7 +183,7 @@ public class TierFunctions
 
     [Function("BulkUpdateTierModules")]
     public async Task<HttpResponseData> BulkUpdateTierModules(
-        [HttpTrigger(AuthorizationLevel.Anonymous, "put", Route = "tiers/modules")] HttpRequestData req)
+        [HttpTrigger(AuthorizationLevel.Function, "put", Route = "tiers/modules")] HttpRequestData req)
     {
         var body = await new StreamReader(req.Body).ReadToEndAsync();
         var input = JsonSerializer.Deserialize<List<BulkTierModuleUpdate>>(body, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });

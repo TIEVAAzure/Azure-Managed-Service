@@ -95,13 +95,13 @@ $SqlRpoCriticalHours  = 50
 # Centralized API versions
 $Api = @{
   RSV_VaultRoot_New       = '2025-08-01' # vault **root** returns securitySettings/redundancy/restoreSettings
-  RSV_BackupResourceCfg   = '2023-02-01' # Microsoft.RecoveryServices/vaults/<name>/backupResourceConfig
-  RSV_BackupConfig        = '2023-02-01' # Microsoft.RecoveryServices/vaults/<name>/backupconfig
+  RSV_BackupResourceCfg   = '2023-02-01' # Microsoft.RecoveryServices/vaults/<n>/backupResourceConfig
+  RSV_BackupConfig        = '2023-02-01' # Microsoft.RecoveryServices/vaults/<n>/backupconfig
   RSV_BackupConfig_Legacy = '2016-12-01'
-  RSV_ProtectedItems      = '2023-02-01' # Microsoft.RecoveryServices/vaults/<name>/backupProtectedItems
+  RSV_ProtectedItems      = '2023-02-01' # Microsoft.RecoveryServices/vaults/<n>/backupProtectedItems
   RSV_RecoveryPoints      = '2023-02-01' # .../protectedItems/<id>/recoveryPoints
   DP_BackupVault          = '2024-04-01' # Microsoft.DataProtection/backupVaults
-  DP_BackupInstances      = '2024-04-01' # Microsoft.DataProtection/backupVaults/<name>/backupInstances
+  DP_BackupInstances      = '2024-04-01' # Microsoft.DataProtection/backupVaults/<n>/backupInstances
 }
 
 # ---------------- Module sanity check ----------------
@@ -164,7 +164,7 @@ function Invoke-ArmGet {
   param(
     [Parameter(Mandatory)] [string]$SubscriptionId,
     [Parameter(Mandatory)] [string]$ResourceGroup,
-    [Parameter(Mandatory)] [string]$ProviderTypePath, # e.g. Microsoft.DataProtection/backupVaults/<name>[/...]
+    [Parameter(Mandatory)] [string]$ProviderTypePath, # e.g. Microsoft.DataProtection/backupVaults/<n>[/...]
     [string]$ApiVersion
   )
   if ([string]::IsNullOrWhiteSpace($ApiVersion)) {
@@ -181,7 +181,7 @@ function Invoke-ArmGet {
 
 function Invoke-ArmGetById {
   param(
-    [Parameter(Mandatory)][string]$ResourceId,     # /subscriptions/.../providers/Microsoft.RecoveryServices/vaults/<name>
+    [Parameter(Mandatory)][string]$ResourceId,     # /subscriptions/.../providers/Microsoft.RecoveryServices/vaults/<n>
     [string]$SuffixPath = '',                      # '/backupResourceConfig' | '/backupconfig' | ''
     [Parameter(Mandatory)][string]$ApiVersion
   )
@@ -974,16 +974,34 @@ function Get-RsvPosture {
 # ---------------- Iterate subscriptions ----------------
 $useExplicitTargets = $SubscriptionIds -and $SubscriptionIds.Count -gt 0
 
-# Suppress warnings only during subscription enumeration (cross-tenant auth noise)
-$originalWarningPref = $WarningPreference
-$WarningPreference = 'SilentlyContinue'
-$subs = Get-AzSubscription -TenantId $targetTenantId | Where-Object {
-  # If explicit targets are defined, only include subs whose Id is in $SubscriptionIds
-  (-not $useExplicitTargets -or ($SubscriptionIds -contains $_.Id)) -and
-  (-not $SubIncludeNameRegex -or $_.Name -match $SubIncludeNameRegex) -and
-  (-not $SubIncludeIdRegex   -or $_.Id   -match $SubIncludeIdRegex)
-} | Sort-Object Name
-$WarningPreference = $originalWarningPref
+if ($useExplicitTargets) {
+    # Trust the subscription IDs passed to us - don't enumerate
+    $subs = @()
+    foreach ($subId in $SubscriptionIds) {
+        try {
+            $sub = Get-AzSubscription -SubscriptionId $subId -ErrorAction SilentlyContinue
+            if ($sub) {
+                $subs += $sub
+            } else {
+                Write-Host "WARNING: Could not access subscription $subId - skipping" -ForegroundColor Yellow
+            }
+        } catch {
+            Write-Host "WARNING: Could not access subscription $subId - skipping" -ForegroundColor Yellow
+        }
+    }
+} else {
+    # No explicit targets - enumerate all accessible subscriptions
+    $targetTenantId = if ($TenantId) { $TenantId } else { (Get-AzContext).Tenant.Id }
+    
+    # Suppress warnings during subscription enumeration
+    $originalWarningPref = $WarningPreference
+    $WarningPreference = 'SilentlyContinue'
+    $subs = Get-AzSubscription -TenantId $targetTenantId | Where-Object {
+        (-not $SubIncludeNameRegex -or $_.Name -match $SubIncludeNameRegex) -and
+        (-not $SubIncludeIdRegex   -or $_.Id   -match $SubIncludeIdRegex)
+    } | Sort-Object Name
+    $WarningPreference = $originalWarningPref
+}
 
 if (-not $subs -or $subs.Count -eq 0) {
   Write-Error "No accessible subscriptions found matching the specified criteria."
@@ -1072,6 +1090,76 @@ foreach ($sub in $subs) {
         ResourceId       = $v.Id
         Detail           = "Vault security level is not Enhanced."
         Recommendation   = 'Enable enhanced security settings including MUA and immutability'
+      })
+    }
+    # MUA not enabled
+    if ($r.MUAEnabled -eq $false) {
+      $findings.Add([pscustomobject]@{
+        SubscriptionName = $sub.Name
+        SubscriptionId   = $sub.Id
+        Severity         = 'Medium'
+        Category         = 'Vault Configuration'
+        ResourceType     = 'Microsoft.RecoveryServices/vaults'
+        ResourceName     = $r.VaultName
+        ResourceId       = $v.Id
+        Detail           = "Multi-User Authorization (MUA) is not enabled on vault."
+        Recommendation   = 'Enable MUA to require additional authorization for critical backup operations like disable protection or delete backups'
+      })
+    }
+    # Immutability not configured
+    if ($r.Immutable -in @($null, 'Disabled', 'NotApplicable')) {
+      $findings.Add([pscustomobject]@{
+        SubscriptionName = $sub.Name
+        SubscriptionId   = $sub.Id
+        Severity         = 'Low'
+        Category         = 'Vault Configuration'
+        ResourceType     = 'Microsoft.RecoveryServices/vaults'
+        ResourceName     = $r.VaultName
+        ResourceId       = $v.Id
+        Detail           = "Vault immutability is not configured."
+        Recommendation   = 'Consider enabling immutability to protect backup data from ransomware and malicious actors'
+      })
+    }
+    # Public network access enabled
+    if ($r.PublicNetworkAccess -eq 'Enabled') {
+      $findings.Add([pscustomobject]@{
+        SubscriptionName = $sub.Name
+        SubscriptionId   = $sub.Id
+        Severity         = 'Low'
+        Category         = 'Vault Configuration'
+        ResourceType     = 'Microsoft.RecoveryServices/vaults'
+        ResourceName     = $r.VaultName
+        ResourceId       = $v.Id
+        Detail           = "Public network access is enabled on vault."
+        Recommendation   = 'Consider using Private Endpoints for vault access to improve security'
+      })
+    }
+    # LRS storage redundancy
+    if ($r.StorageRedundancy -eq 'LRS') {
+      $findings.Add([pscustomobject]@{
+        SubscriptionName = $sub.Name
+        SubscriptionId   = $sub.Id
+        Severity         = 'Low'
+        Category         = 'Vault Configuration'
+        ResourceType     = 'Microsoft.RecoveryServices/vaults'
+        ResourceName     = $r.VaultName
+        ResourceId       = $v.Id
+        Detail           = "Vault is using Locally Redundant Storage (LRS)."
+        Recommendation   = 'Consider using GRS or ZRS for disaster recovery protection across regions or zones'
+      })
+    }
+    # Cross-Region Restore not enabled
+    if ($r.CrossRegionRestore -in @($null, $false, 'Disabled')) {
+      $findings.Add([pscustomobject]@{
+        SubscriptionName = $sub.Name
+        SubscriptionId   = $sub.Id
+        Severity         = 'Low'
+        Category         = 'Vault Configuration'
+        ResourceType     = 'Microsoft.RecoveryServices/vaults'
+        ResourceName     = $r.VaultName
+        ResourceId       = $v.Id
+        Detail           = "Cross-Region Restore is not enabled on vault."
+        Recommendation   = 'Enable Cross-Region Restore for regional disaster recovery capability'
       })
     }
 
@@ -1496,6 +1584,48 @@ foreach ($sub in $subs) {
         ResourceId       = $bv.Id
         Detail           = "Backup Vault security level is not Enhanced."
         Recommendation   = 'Enable enhanced security settings including MUA and immutability'
+      })
+    }
+    # MUA not enabled
+    if ($mua -eq $false) {
+      $findings.Add([pscustomobject]@{
+        SubscriptionName = $sub.Name
+        SubscriptionId   = $sub.Id
+        Severity         = 'Medium'
+        Category         = 'Vault Configuration'
+        ResourceType     = 'Microsoft.DataProtection/backupVaults'
+        ResourceName     = $bvName
+        ResourceId       = $bv.Id
+        Detail           = "Multi-User Authorization (MUA) is not enabled on Backup Vault."
+        Recommendation   = 'Enable MUA to require additional authorization for critical backup operations like disable protection or delete backups'
+      })
+    }
+    # Immutability not configured
+    if ($immutable -in @($null, 'Disabled', 'NotApplicable')) {
+      $findings.Add([pscustomobject]@{
+        SubscriptionName = $sub.Name
+        SubscriptionId   = $sub.Id
+        Severity         = 'Low'
+        Category         = 'Vault Configuration'
+        ResourceType     = 'Microsoft.DataProtection/backupVaults'
+        ResourceName     = $bvName
+        ResourceId       = $bv.Id
+        Detail           = "Backup Vault immutability is not configured."
+        Recommendation   = 'Consider enabling immutability to protect backup data from ransomware and malicious actors'
+      })
+    }
+    # LRS storage redundancy
+    if ($redundancy -eq 'LRS') {
+      $findings.Add([pscustomobject]@{
+        SubscriptionName = $sub.Name
+        SubscriptionId   = $sub.Id
+        Severity         = 'Low'
+        Category         = 'Vault Configuration'
+        ResourceType     = 'Microsoft.DataProtection/backupVaults'
+        ResourceName     = $bvName
+        ResourceId       = $bv.Id
+        Detail           = "Backup Vault is using Locally Redundant Storage (LRS)."
+        Recommendation   = 'Consider using GRS or ZRS for disaster recovery protection across regions or zones'
       })
     }
 

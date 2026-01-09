@@ -1,7 +1,12 @@
 # TIEVA Portal - Project Summary
 
+**Last Updated:** January 2025 (v2.1 - Reservations Tier Filtering & PDF Export)
+
 ## Overview
-TIEVA Portal is an Azure-hosted web application for managing Azure assessments for customers. It runs automated audit scripts against customer Azure tenants, stores results, and provides analysis tools for remediation planning.
+
+TIEVA Portal is an Azure-hosted web application for managing Azure assessments for managed service customers. It runs 10 automated audit modules against customer Azure tenants, parses findings into a database, tracks issues over time, provides remediation roadmaps, and now includes **FinOps cost analysis and reservation management**.
+
+---
 
 ## Architecture
 
@@ -11,8 +16,8 @@ TIEVA Portal is an Azure-hosted web application for managing Azure assessments f
 |----------|------|---------|
 | SQL Server | sql-tievaPortal-3234.database.windows.net | Entra-only auth |
 | SQL Database | TievaPortal | Basic tier, stores all data |
-| Key Vault | kv-tievaPortal-874 | Stores customer Service Principal secrets |
-| Function App (.NET) | func-tievaPortal-6612 | Main API (customers, connections, tiers, assessments) |
+| Key Vault | kv-tievaPortal-874 | Stores customer Service Principal secrets + FinOps SAS tokens |
+| Function App (.NET) | func-tievaPortal-6612 | Main API + FinOps APIs |
 | Function App (PowerShell) | func-tieva-audit | Runs audit scripts |
 | Static Web App | swa-tievaPortal-portal | Portal UI |
 | Storage Account | sttieva3420 | Function App storage |
@@ -25,120 +30,149 @@ TIEVA Portal is an Azure-hosted web application for managing Azure assessments f
 - **GitHub**: https://github.com/TIEVAAzure/tieva-portal
 
 ### Managed Identities
-- **func-tievaPortal-6612**: `35697b67-2bb0-4ddd-9b90-ac042918b10d` (has SQL access, Key Vault Secrets Officer)
-- **func-tieva-audit**: `a2e06bf6-61a2-46b9-92a0-0065b8721235` (has Key Vault Secrets User, Storage Blob Data Contributor)
+- **func-tievaPortal-6612**: `35697b67-2bb0-4ddd-9b90-ac042918b10d` (SQL access, Key Vault Secrets Officer)
+- **func-tieva-audit**: `a2e06bf6-61a2-46b9-92a0-0065b8721235` (Key Vault Secrets User, Storage Blob Data Contributor)
 
-## Local File Structure
+---
 
-```
-C:\VS Code\Azure-Managed-Service\TIEVA Portal\
-├── portal\                          # Static Web App (GitHub linked)
-│   ├── index.html                   # Main SPA (~3100 lines)
-│   └── staticwebapp.config.json     # Auth config
-├── functions\
-│   ├── TIEVA.Functions\             # .NET 8 API
-│   │   ├── Functions\
-│   │   │   ├── CustomerFunctions.cs
-│   │   │   ├── ConnectionFunctions.cs
-│   │   │   ├── TierFunctions.cs
-│   │   │   ├── SubscriptionFunctions.cs
-│   │   │   ├── AssessmentFunctions.cs
-│   │   │   └── DashboardFunctions.cs
-│   │   ├── Models\Entities.cs
-│   │   ├── Services\TievaDbContext.cs
-│   │   └── deploy.ps1               # Deploy script
-│   └── TIEVA.Audit\                 # PowerShell Function App
-│       ├── StartAssessment\run.ps1  # Main assessment trigger
-│       ├── Scripts\                 # Audit scripts
-│       │   ├── NetworkAudit.ps1
-│       │   ├── BackupAudit.ps1
-│       │   ├── CostManagementAudit.ps1
-│       │   ├── IdentityAudit.ps1
-│       │   ├── PolicyAudit.ps1
-│       │   ├── ResourceAudit.ps1
-│       │   └── ReservationAudit.ps1
-│       └── requirements.psd1        # Az modules + ImportExcel
-├── *Audit.ps1                       # Original audit scripts
-├── TIEVA_*.html                     # Analyzer HTML tools
-└── SCALABILITY_NOTES.md             # Performance & scaling documentation
-```
+## Assessment Modules (10 Active)
 
-## API Endpoints
+| Code | Name | Description |
+|------|------|-------------|
+| NETWORK | Network Topology | NSG rules, route tables, VNet peerings, public IPs |
+| BACKUP | Backup Posture | VM backup status, policies, vault configuration |
+| COST | Cost Management | Spending analysis, anomalies, optimization |
+| IDENTITY | Identity & Access | Role assignments, PIM, guest access, MFA |
+| POLICY | Policy Compliance | Azure Policy compliance state |
+| RESOURCE | Resource Inventory | Orphaned resources, tagging compliance |
+| SECURITY | Defender for Cloud | Security posture score, alerts, recommendations |
+| PATCH | VM Patch Compliance | OS update status, missing patches |
+| PERFORMANCE | Right-sizing | VM utilization, resize recommendations |
+| COMPLIANCE | Regulatory Compliance | Framework scores (CIS, NIST, etc.) |
 
-### Main API (func-tievaPortal-6612)
+> **Note:** RESERVATION module removed from assessments - now uses live Azure API in FinOps tab
 
-**Customers**
-- `GET /api/customers` - List customers
-- `GET /api/customers/{id}` - Get customer
-- `GET /api/customers/{id}/findings` - Get consolidated findings (CustomerFindings table)
-- `POST /api/customers` - Create customer
-- `PUT /api/customers/{id}` - Update customer
-- `DELETE /api/customers/{id}` - Soft delete customer
+---
 
-**Connections**
-- `GET /api/connections` - List connections
-- `GET /api/connections/{id}` - Get connection with subscriptions
-- `POST /api/connections` - Create connection (validates & stores secret in Key Vault)
-- `PUT /api/connections/{id}` - Update connection
-- `POST /api/connections/{id}/validate` - Validate connection
-- `POST /api/connections/{id}/sync` - Sync subscriptions from Azure
-- `DELETE /api/connections/{id}` - Delete connection
+## Portal Features
 
-**Subscriptions**
-- `GET /api/subscriptions` - List all subscriptions
-- `PUT /api/subscriptions/{id}` - Update subscription (tier, environment, scope)
-- `PUT /api/connections/{connectionId}/subscriptions` - Bulk update
-- `GET /api/connections/{connectionId}/audit-subscriptions/{moduleCode}` - Get subscriptions for audit
+### Customer Management
+- Add/edit/delete customers with cascading deletes
+- Industry classification
+- Primary contact information
+- Next meeting date scheduling
+- Auto-scheduling toggle
+- **FinOps configuration** (storage account, container, Power BI URL)
 
-**Tiers**
-- `GET /api/tiers` - List tiers with modules
-- `GET /api/modules` - List modules
-- `PUT /api/tiers/{id}` - Update tier
-- `PUT /api/tiers/modules` - Update tier module assignments
+### Connection Management
+- Add Azure tenant connections via Service Principal
+- Validate credentials against Azure
+- Sync subscriptions from Azure
+- Cascading deletes (subscriptions, assessments, findings)
+- Onboarding workflow with PowerShell script
 
-**Assessments**
-- `GET /api/assessments` - List assessments
-- `GET /api/assessments/{id}` - Get assessment with findings
-- `GET /api/assessments/{id}/resolved` - Get resolved findings for comparison
-- `POST /api/assessments` - Create assessment
-- `PUT /api/assessments/{id}` - Update assessment
-- `POST /api/assessments/{id}/modules/{moduleCode}/parse` - Re-parse module findings
+### Subscription Configuration
+- Assign service tiers (Premium, Advanced, Standard, Ad-hoc)
+- Set environment (Production, Development, Test, Staging, Sandbox)
+- Mark in/out of scope for assessments
 
-**Dashboard**
-- `GET /api/dashboard/stats` - Dashboard stats (deduplicated findings counts)
-- `GET /api/health` - Health check
+### Service Tier Configuration
+- Configure which modules are included per tier
+- Set module frequency (Monthly, Quarterly, On-Demand)
+- Visual tier-module matrix
 
-### Audit API (func-tieva-audit)
+### Assessment Execution
+- Run multi-module assessments from UI
+- Real-time progress tracking
+- Results stored in blob storage
+- Automatic findings parsing
+- Score calculation
 
-- `POST /api/assessments/start` - Run assessment
-  - Body: `{ "connectionId": "guid", "module": "NETWORK" }`
-  - Runs audit against subscriptions that have tiers with the module enabled
-  - Uploads results to blob storage
-  - Parses Excel and stores findings in database
-  - Updates CustomerFindings for deduplication
+### Findings Analysis
+- **Customer Findings**: Aggregated, deduplicated across assessments
+- **Change Tracking**: New, Recurring, Resolved status
+- **Occurrence Counting**: Track how many times issues seen
+- **Module Filtering**: 10 module tabs for focused view
+- **Severity Filtering**: High, Medium, Low
+- **Priority Matrix**: Impact vs Effort grid with auto-wave assignment
+- **Remediation Roadmap**: 3-wave prioritized view with effort estimates
+- **Recommendations**: Grouped by category
+
+### Finding Metadata (Effort & Impact)
+- Configurable metadata by module, category, or pattern
+- **Effort estimation**: Base hours + per-resource hours
+- **Impact override**: Override severity-based impact
+- **Operational metadata**: Downtime required, change control, maintenance window
+- Default owner assignment
+- Priority-based matching rules
+
+### FinOps Integration
+**Cost Analysis Sub-Tab:**
+- Daily/weekly/monthly cost trends from FOCUS parquet data
+- Cost breakdown by service category, resource group, subscription
+- Anomaly detection and week-over-week changes
+- Interactive treemap visualization
+- Drill-down to resource level
+- Export run trigger
+
+**Reservations Sub-Tab (Live API):**
+- Real-time reservation data from Azure APIs
+- **Tier-based filtering**: Only shows reservations for Advanced, Premium, and Adhoc tier subscriptions (Standard tier excluded)
+- Utilization metrics (1-day, 7-day, 30-day)
+- **Intelligent insights with recommendations**:
+  - 🚨 Zero utilization - exchange/cancel immediately
+  - ✅ High utilization expiring - renew recommendation
+  - ⚠️ Low utilization - PAYG comparison analysis
+  - 🚫 Low utilization expiring - don't renew warning
+  - 💰 Purchase recommendations with annual savings
+- Expiry tracking with days remaining
+- Auto-renew status visibility
+- Purchase recommendations from Azure
+- **PDF Export**: Generate professional PDF reports with:
+  - Summary statistics and key metrics
+  - Active reservations table with utilization
+  - Purchase recommendations with savings analysis
+  - Actionable insights prioritized by impact
+  - Tier filtering applied (Advanced/Premium/Adhoc only)
+- **Presentation Mode**: Full-screen display optimized for customer meetings with tier filtering applied
+
+### Scheduling
+- Customer next meeting dates
+- Pre-meeting assessment triggers (3 days before)
+- Module due date tracking based on tier frequency
+- Scheduling status dashboard
+
+---
 
 ## Database Schema
 
 ### Core Tables
-- **ServiceTiers** - Premium, Advanced, Standard, Ad-hoc
-- **AssessmentModules** - NETWORK, BACKUP, COST, IDENTITY, POLICY, RESOURCE, RESERVATION
-- **TierModules** - Maps tiers to modules with frequency
-- **Customers** - Customer records
-- **AzureConnections** - Customer Azure connections (tenant, client ID, secret ref)
+- **Customers** - Customer records with scheduling + FinOps settings
+- **AzureConnections** - Tenant connections with SP credentials
 - **CustomerSubscriptions** - Synced subscriptions with tier assignment
+- **ServiceTiers** - Premium, Advanced, Standard, Ad-hoc
+- **AssessmentModules** - 10 audit module definitions
+- **TierModules** - Tier-to-module mapping with frequency
 
 ### Assessment Tables
-- **Assessments** - Assessment records with scores
-- **AssessmentModuleResults** - Per-module results with BlobPath and score
-- **Findings** - Individual findings per assessment (with changeStatus: New/Recurring)
-- **CustomerFindings** - Deduplicated findings across all assessments (status: Open/Resolved)
+- **Assessments** - Assessment run records with scores
+- **AssessmentModuleResults** - Per-module results with blob paths
+- **Findings** - Individual findings from each assessment
+
+### Aggregation Tables
+- **CustomerFindings** - Deduplicated findings per customer
+- **FindingMetadata** - Effort/impact/operational configuration (replaces EffortSettings)
+- **CustomerRoadmapPlans** - Saved wave assignments for remediation planning
+
+---
 
 ## Deployment Commands
 
 **Deploy .NET API:**
 ```powershell
 cd "C:\VS Code\Azure-Managed-Service\TIEVA Portal\functions\TIEVA.Functions"
-.\deploy.ps1
+dotnet publish -c Release
+func azure functionapp publish func-tievaportal-6612
 ```
 
 **Deploy PowerShell Audit Function:**
@@ -149,56 +183,49 @@ func azure functionapp publish func-tieva-audit
 
 **Deploy Portal:**
 ```powershell
-cd "C:\VS Code\Azure-Managed-Service\TIEVA Portal"
+cd "C:\VS Code\Azure-Managed-Service\TIEVA Portal\portal"
 git add -A
 git commit -m "message"
 git push
 ```
 
-## Current State (2024-12-21)
+---
 
-### Working Features
-- ✅ Entra ID SSO login
-- ✅ Customer CRUD (add, edit, delete)
-- ✅ Connection management (add, validate, sync, edit, delete)
-- ✅ Subscription configuration (tier, environment, scope)
-- ✅ Service tier configuration with module matrix
-- ✅ Run assessments from portal UI (all 7 modules)
-- ✅ Results stored in blob storage
-- ✅ Automatic Excel parsing into Findings table
-- ✅ CustomerFindings deduplication (Open/Resolved tracking)
-- ✅ Change tracking (New/Recurring findings)
-- ✅ Dashboard with deduplicated stats
-- ✅ Customer detail page with consolidated findings
-- ✅ Remediation Roadmap (3-wave priority view)
-- ✅ Recommendations tab
-- ✅ Assessment detail with Changes tab
-- ✅ Module sub-tabs for filtering
-- ✅ Average score display across all assessments
+## Current State (January 2025)
 
-### Performance Optimizations (Dec 2024)
-- ✅ Parallel API calls with Promise.all()
-- ✅ O(1) lookup Maps for customers/connections
-- ✅ Debounced filter functions
-- ✅ DOM reference caching
-- ✅ Scalability documentation added
+### ✅ Fully Working
+- Entra ID SSO login
+- Customer CRUD with cascading deletes
+- Connection management with cascading deletes
+- Subscription configuration with tiers
+- Service tier configuration with module matrix
+- All 10 audit modules executing
+- Findings parsing and storage
+- CustomerFindings aggregation
+- Change tracking (New/Recurring/Resolved)
+- Module filter tabs
+- **Priority Matrix** with Impact vs Effort grid
+- **Remediation roadmap** with wave auto-population
+- **Roadmap plan save/load**
+- Recommendations display
+- **Finding Metadata** (effort, impact, operational)
+- Scheduling status
+- Assessment deletion (single + bulk)
+- Excel download
+- Re-parse functionality
+- **FinOps Cost Analysis** (FOCUS parquet data)
+- **FinOps Reservations** (live Azure API with intelligent insights)
+- **Reservations Tier Filtering** (Advanced/Premium/Adhoc only - Standard excluded)
+- **Reservations PDF Export** (professional reports with tier filtering)
+- **Reservations Presentation Mode** (customer-ready full-screen display)
 
-### Assessment Modules
-| Module | Status | Notes |
-|--------|--------|-------|
-| NETWORK | ✅ Working | Full end-to-end |
-| IDENTITY | ✅ Working | Full end-to-end |
-| BACKUP | ✅ Working | Full end-to-end |
-| COST | ✅ Working | Full end-to-end |
-| POLICY | ✅ Working | Full end-to-end |
-| RESOURCE | ✅ Working | Full end-to-end |
-| RESERVATION | ✅ Working | Full end-to-end |
+### Performance Optimizations
+- Parallel API calls with Promise.all()
+- O(1) lookup Maps for customers/connections
+- Debounced filter functions
+- DOM reference caching
 
-### Next Steps
-1. **PDF/Excel Export** - Generate downloadable reports
-2. **Scheduling** - Automated assessment runs based on tier frequency
-3. **Email notifications** - Alert on new high-severity findings
-4. **Pagination** - When data volume increases (see SCALABILITY_NOTES.md)
+---
 
 ## Test Data
 
@@ -210,11 +237,14 @@ git push
 ```powershell
 $body = @{
     connectionId = "e08a13c4-4696-49a9-98e5-d19a67e7caba"
-    module = "NETWORK"
+    modules = @("NETWORK", "BACKUP", "SECURITY")
 } | ConvertTo-Json
 
-Invoke-WebRequest -Uri "https://func-tieva-audit.azurewebsites.net/api/assessments/start" -Method Post -Body $body -ContentType "application/json" -TimeoutSec 600
+Invoke-WebRequest -Uri "https://func-tieva-audit.azurewebsites.net/api/assessments/start" `
+    -Method Post -Body $body -ContentType "application/json" -TimeoutSec 600
 ```
+
+---
 
 ## App Registration
 
@@ -222,3 +252,36 @@ Invoke-WebRequest -Uri "https://func-tieva-audit.azurewebsites.net/api/assessmen
 - **Name**: TIEVA Portal
 - **Tenant**: 0976df27-8d6a-4158-998c-8dd6650fd495
 - **Redirect URI**: https://ambitious-wave-092ef1703.3.azurestaticapps.net/.auth/login/aad/callback
+
+---
+
+## FinOps Requirements
+
+### Customer Azure Tenant Setup
+1. **Cost Management Export** configured to export FOCUS parquet to storage account
+2. **Storage Account** with container for cost data (typically `ingestion`)
+3. **SAS Token** with read access to the container (stored in Key Vault)
+4. **Reservation Reader** role at tenant/billing level for live reservation data
+
+### Portal Configuration
+- Set `FinOpsStorageAccount` on customer record
+- Set `FinOpsContainer` (default: `ingestion`)
+- Optionally set `FinOpsPowerBIUrl` for Power BI report link
+
+### Reservations Tier Filtering
+The Reservations tab automatically filters data based on subscription service tiers:
+- **Included Tiers**: Advanced, Premium, Adhoc
+- **Excluded Tiers**: Standard
+- **Scope**: Filtering applies to all views (main tab, presentation mode, PDF export)
+- **Tenant-Level**: Reservations without subscription info (tenant-level) are always included
+- **Statistics**: All summary metrics are recalculated from filtered data
+
+---
+
+## Future Enhancements
+
+1. **LogicMonitor Integration** - Pull alerts/monitoring data via REST API v3
+2. **PDF Report Generation** - Customer-ready PDF reports for all modules
+3. **Email Notifications** - Alerts for due assessments
+4. **Trend Analysis** - Score trends over time
+5. **Bulk Operations** - Multi-customer assessment runs

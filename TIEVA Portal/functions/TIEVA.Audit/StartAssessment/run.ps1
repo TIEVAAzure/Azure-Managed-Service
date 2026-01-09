@@ -2,7 +2,12 @@ using namespace System.Net
 
 param($Request, $TriggerMetadata)
 
-Write-Host "StartAssessment function triggered"
+# Generate unique context name for this invocation to avoid concurrent context conflicts
+$contextName = "audit-$([Guid]::NewGuid().ToString('N').Substring(0,8))"
+Write-Host "StartAssessment function triggered (Context: $contextName)"
+
+# Disable context autosave to prevent cross-invocation pollution
+Disable-AzContextAutosave -Scope Process -ErrorAction SilentlyContinue | Out-Null
 
 # Get request body
 $body = $Request.Body
@@ -40,6 +45,10 @@ $scriptMap = @{
     'POLICY'      = 'PolicyAudit.ps1'
     'RESOURCE'    = 'ResourceAudit.ps1'
     'RESERVATION' = 'ReservationAudit.ps1'
+    'SECURITY'    = 'SecurityAudit.ps1'
+    'PATCH'       = 'PatchAudit.ps1'
+    'PERFORMANCE' = 'PerformanceAudit.ps1'
+    'COMPLIANCE'  = 'ComplianceAudit.ps1'
 }
 
 # Output file mapping
@@ -51,6 +60,10 @@ $outputFileMap = @{
     'POLICY'      = 'Policy_Audit.xlsx'
     'RESOURCE'    = 'Resource_Audit.xlsx'
     'RESERVATION' = 'Reservation_Audit.xlsx'
+    'SECURITY'    = 'Security_Audit.xlsx'
+    'PATCH'       = 'Patch_Audit.xlsx'
+    'PERFORMANCE' = 'Performance_Audit.xlsx'
+    'COMPLIANCE'  = 'Compliance_Audit.xlsx'
 }
 
 $scriptName = $scriptMap[$module]
@@ -65,14 +78,22 @@ if (-not $scriptName) {
 
 try {
     $apiBase = if ($env:TIEVA_API_URL) { $env:TIEVA_API_URL } else { "https://func-tievaportal-6612.azurewebsites.net/api" }
+    $apiKey = $env:TIEVA_API_KEY
+    
+    # Build headers with API key if available
+    $apiHeaders = @{ 'Content-Type' = 'application/json' }
+    $apiKeyParam = if ($apiKey) { "?code=$apiKey" } else { "" }
     
     # Get subscriptions that should be audited for this module
     Write-Host "Getting subscriptions for audit..."
-    $auditSubs = Invoke-RestMethod -Uri "$apiBase/connections/$connectionId/audit-subscriptions/$module" -Method Get
+    Write-Host "API Base: $apiBase"
+    Write-Host "API Key present: $($apiKey -ne $null -and $apiKey.Length -gt 0)"
+    Write-Host "Full URL: $apiBase/connections/$connectionId/audit-subscriptions/$module$apiKeyParam"
+    $auditSubs = Invoke-RestMethod -Uri "$apiBase/connections/$connectionId/audit-subscriptions/$module$apiKeyParam" -Method Get -Headers $apiHeaders
     
     if (-not $auditSubs -or $auditSubs.Count -eq 0) {
         # Get more detail about why no subscriptions found
-        $allSubs = Invoke-RestMethod -Uri "$apiBase/connections/$connectionId" -Method Get -ErrorAction SilentlyContinue
+        $allSubs = Invoke-RestMethod -Uri "$apiBase/connections/$connectionId$apiKeyParam" -Method Get -Headers $apiHeaders -ErrorAction SilentlyContinue
         $subCount = if ($allSubs.subscriptions) { $allSubs.subscriptions.Count } else { 0 }
         $inScopeCount = if ($allSubs.subscriptions) { ($allSubs.subscriptions | Where-Object { $_.isInScope }).Count } else { 0 }
         $withTierCount = if ($allSubs.subscriptions) { ($allSubs.subscriptions | Where-Object { $_.tierId }).Count } else { 0 }
@@ -106,7 +127,7 @@ try {
     Write-Host "Found $($auditSubs.Count) subscriptions to audit"
     
     # Get connection details
-    $connResponse = Invoke-RestMethod -Uri "$apiBase/connections/$connectionId" -Method Get
+    $connResponse = Invoke-RestMethod -Uri "$apiBase/connections/$connectionId$apiKeyParam" -Method Get -Headers $apiHeaders
     
     $tenantId = if ($connResponse.tenantId) { $connResponse.tenantId } else { $connResponse.TenantId }
     $clientId = if ($connResponse.clientId) { $connResponse.clientId } else { $connResponse.ClientId }
@@ -114,22 +135,38 @@ try {
     
     Write-Host "Tenant: $tenantId, ClientId: $clientId, Customer: $customerName"
     
-    # Get secret from Key Vault
+    # Get secret from Key Vault using Managed Identity
+    # Use unique context name to isolate from concurrent invocations
     $secretName = "sp-$connectionId"
     Write-Host "Retrieving secret from Key Vault..."
-    $secret = Get-AzKeyVaultSecret -VaultName "kv-tievaPortal-874" -Name $secretName -AsPlainText
+    
+    try {
+        # Connect with Managed Identity using isolated context
+        Connect-AzAccount -Identity -ContextName "$contextName-identity" -Force -WarningAction SilentlyContinue | Out-Null
+        Set-AzContext -Context (Get-AzContext -Name "$contextName-identity") | Out-Null
+        $secret = Get-AzKeyVaultSecret -VaultName "kv-tievaPortal-874" -Name $secretName -AsPlainText -ErrorAction Stop
+    }
+    catch {
+        Write-Host "Key Vault access failed, retrying with fresh identity..."
+        # Retry once with a fresh connection
+        Start-Sleep -Milliseconds 1000
+        Connect-AzAccount -Identity -ContextName "$contextName-identity" -Force -WarningAction SilentlyContinue | Out-Null
+        Set-AzContext -Context (Get-AzContext -Name "$contextName-identity") | Out-Null
+        $secret = Get-AzKeyVaultSecret -VaultName "kv-tievaPortal-874" -Name $secretName -AsPlainText
+    }
     
     if (-not $secret) {
         throw "Could not retrieve secret for connection"
     }
     
-    # Connect to customer tenant
+    # Connect to customer tenant using isolated context
     Write-Host "Connecting to customer tenant..."
     $secureSecret = ConvertTo-SecureString $secret -AsPlainText -Force
     $credential = New-Object System.Management.Automation.PSCredential($clientId, $secureSecret)
     
-    Connect-AzAccount -ServicePrincipal -Credential $credential -Tenant $tenantId -ErrorAction Stop | Out-Null
-    Write-Host "Connected successfully to tenant $tenantId"
+    Connect-AzAccount -ServicePrincipal -Credential $credential -Tenant $tenantId -ContextName "$contextName-customer" -Force -ErrorAction Stop | Out-Null
+    Set-AzContext -Context (Get-AzContext -Name "$contextName-customer") | Out-Null
+    Write-Host "Connected successfully to tenant $tenantId (Context: $contextName-customer)"
     
     # Extract subscription IDs
     $subscriptionIds = @($auditSubs | ForEach-Object { 
@@ -152,7 +189,7 @@ try {
     } | ConvertTo-Json
     
     try {
-        Invoke-RestMethod -Uri "$apiBase/assessments" -Method Post -Body $assessmentBody -ContentType "application/json" | Out-Null
+        Invoke-RestMethod -Uri "$apiBase/assessments$apiKeyParam" -Method Post -Body $assessmentBody -ContentType "application/json" | Out-Null
         Write-Host "Assessment record created: $assessmentId"
     }
     catch {
@@ -220,8 +257,9 @@ try {
     if (Test-Path $outputFile) {
         Write-Host "Uploading $expectedFile to Blob Storage..."
         
-        # Connect back to TIEVA subscription for blob upload
-        Connect-AzAccount -Identity | Out-Null
+        # Connect back to TIEVA subscription for blob upload using isolated context
+        Connect-AzAccount -Identity -ContextName "$contextName-identity" -Force -WarningAction SilentlyContinue | Out-Null
+        Set-AzContext -Context (Get-AzContext -Name "$contextName-identity") | Out-Null
         
         $storageAccount = "sttievaaudit"
         $container = "audit-results"
@@ -248,7 +286,7 @@ try {
     } | ConvertTo-Json
     
     try {
-        Invoke-RestMethod -Uri "$apiBase/assessments/$assessmentId" -Method Put -Body $updateBody -ContentType "application/json" | Out-Null
+        Invoke-RestMethod -Uri "$apiBase/assessments/$assessmentId$apiKeyParam" -Method Put -Body $updateBody -ContentType "application/json" | Out-Null
     }
     catch {
         Write-Host "Warning: Could not update assessment: $_"
@@ -266,7 +304,7 @@ try {
     } | ConvertTo-Json
     
     try {
-        Invoke-RestMethod -Uri "$apiBase/assessments/$assessmentId/modules" -Method Post -Body $moduleResultBody -ContentType "application/json" | Out-Null
+        Invoke-RestMethod -Uri "$apiBase/assessments/$assessmentId/modules$apiKeyParam" -Method Post -Body $moduleResultBody -ContentType "application/json" | Out-Null
         Write-Host "Module result added"
     }
     catch {
@@ -277,7 +315,7 @@ try {
     if ($blobPath -and $results.status -eq "Completed") {
         Write-Host "Parsing findings from Excel..."
         try {
-            $parseResult = Invoke-RestMethod -Uri "$apiBase/assessments/$assessmentId/modules/$module/parse" -Method Post -ContentType "application/json"
+            $parseResult = Invoke-RestMethod -Uri "$apiBase/assessments/$assessmentId/modules/$module/parse$apiKeyParam" -Method Post -ContentType "application/json"
             Write-Host "Parsed $($parseResult.parsed) findings (High: $($parseResult.high), Medium: $($parseResult.medium), Low: $($parseResult.low)) - Score: $($parseResult.score)%"
             $results.findingsParsed = $parseResult.parsed
             $results.findingsHigh = $parseResult.high
@@ -305,4 +343,12 @@ catch {
         Body = @{ error = $_.Exception.Message } | ConvertTo-Json
         ContentType = "application/json"
     })
+}
+finally {
+    # Clean up isolated contexts to prevent memory leaks
+    try {
+        Remove-AzContext -Name "$contextName-identity" -Force -ErrorAction SilentlyContinue | Out-Null
+        Remove-AzContext -Name "$contextName-customer" -Force -ErrorAction SilentlyContinue | Out-Null
+    }
+    catch { }
 }

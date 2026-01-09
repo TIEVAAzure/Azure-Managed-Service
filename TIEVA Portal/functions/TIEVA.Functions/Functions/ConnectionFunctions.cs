@@ -29,7 +29,7 @@ public class ConnectionFunctions
 
     [Function("GetConnections")]
     public async Task<HttpResponseData> GetConnections(
-        [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "connections")] HttpRequestData req)
+        [HttpTrigger(AuthorizationLevel.Function, "get", Route = "connections")] HttpRequestData req)
     {
         var connections = await _db.AzureConnections
             .Where(c => c.IsActive)
@@ -66,7 +66,7 @@ public class ConnectionFunctions
 
     [Function("GetConnection")]
     public async Task<HttpResponseData> GetConnection(
-        [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "connections/{id}")] HttpRequestData req,
+        [HttpTrigger(AuthorizationLevel.Function, "get", Route = "connections/{id}")] HttpRequestData req,
         string id)
     {
         if (!Guid.TryParse(id, out var connectionId))
@@ -118,7 +118,7 @@ public class ConnectionFunctions
 
     [Function("CreateConnection")]
     public async Task<HttpResponseData> CreateConnection(
-        [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "connections")] HttpRequestData req)
+        [HttpTrigger(AuthorizationLevel.Function, "post", Route = "connections")] HttpRequestData req)
     {
         var body = await new StreamReader(req.Body).ReadToEndAsync();
         var input = JsonSerializer.Deserialize<CreateConnectionRequest>(body, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
@@ -206,7 +206,7 @@ public class ConnectionFunctions
 
     [Function("UpdateConnection")]
     public async Task<HttpResponseData> UpdateConnection(
-        [HttpTrigger(AuthorizationLevel.Anonymous, "put", Route = "connections/{id}")] HttpRequestData req,
+        [HttpTrigger(AuthorizationLevel.Function, "put", Route = "connections/{id}")] HttpRequestData req,
         string id)
     {
         if (!Guid.TryParse(id, out var connectionId))
@@ -315,7 +315,7 @@ public class ConnectionFunctions
 
     [Function("ValidateConnection")]
     public async Task<HttpResponseData> ValidateConnection(
-        [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "connections/{id}/validate")] HttpRequestData req,
+        [HttpTrigger(AuthorizationLevel.Function, "post", Route = "connections/{id}/validate")] HttpRequestData req,
         string id)
     {
         if (!Guid.TryParse(id, out var connectionId))
@@ -369,7 +369,7 @@ public class ConnectionFunctions
 
     [Function("SyncSubscriptions")]
     public async Task<HttpResponseData> SyncSubscriptions(
-        [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "connections/{id}/sync")] HttpRequestData req,
+        [HttpTrigger(AuthorizationLevel.Function, "post", Route = "connections/{id}/sync")] HttpRequestData req,
         string id)
     {
         if (!Guid.TryParse(id, out var connectionId))
@@ -451,7 +451,7 @@ public class ConnectionFunctions
 
     [Function("GetAuditSubscriptions")]
     public async Task<HttpResponseData> GetAuditSubscriptions(
-        [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "connections/{id}/audit-subscriptions/{moduleCode}")] HttpRequestData req,
+        [HttpTrigger(AuthorizationLevel.Function, "get", Route = "connections/{id}/audit-subscriptions/{moduleCode}")] HttpRequestData req,
         string id,
         string moduleCode)
     {
@@ -521,7 +521,7 @@ public class ConnectionFunctions
 
     [Function("DeleteConnection")]
     public async Task<HttpResponseData> DeleteConnection(
-        [HttpTrigger(AuthorizationLevel.Anonymous, "delete", Route = "connections/{id}")] HttpRequestData req,
+        [HttpTrigger(AuthorizationLevel.Function, "delete", Route = "connections/{id}")] HttpRequestData req,
         string id)
     {
         if (!Guid.TryParse(id, out var connectionId))

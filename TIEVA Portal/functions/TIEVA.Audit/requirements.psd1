@@ -10,5 +10,8 @@
     'Az.PolicyInsights' = '1.*'
     'Az.ResourceGraph' = '1.*'
     'Az.KeyVault' = '6.*'
+    'Az.Security' = '1.*'
+    'Az.Maintenance' = '1.*'
+    'Az.Advisor' = '2.*'
     'ImportExcel' = '7.*'
 }
