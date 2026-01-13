@@ -35,7 +35,7 @@ public class SchedulerFunctions
     /// </summary>
     [Function("GetSchedulingStatus")]
     public async Task<HttpResponseData> GetSchedulingStatus(
-        [HttpTrigger(AuthorizationLevel.Function, "get", Route = "scheduler/status")] HttpRequestData req)
+        [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "scheduler/status")] HttpRequestData req)
     {
         var now = DateTime.UtcNow;
         var today = DateOnly.FromDateTime(now);

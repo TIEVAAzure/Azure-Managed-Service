@@ -33,7 +33,7 @@ public class AuditProxyFunctions
     /// </summary>
     [Function("StartAssessmentProxy")]
     public async Task<HttpResponseData> StartAssessment(
-        [HttpTrigger(AuthorizationLevel.Function, "post", Route = "assessments/start")] HttpRequestData req)
+        [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "assessments/start")] HttpRequestData req)
     {
         _logger.LogInformation("Proxying StartAssessment request to audit function app");
 
@@ -56,7 +56,7 @@ public class AuditProxyFunctions
     /// </summary>
     [Function("SetupFinOpsProxy")]
     public async Task<HttpResponseData> SetupFinOps(
-        [HttpTrigger(AuthorizationLevel.Function, "post", Route = "finops/setup")] HttpRequestData req)
+        [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "finops/setup")] HttpRequestData req)
     {
         _logger.LogInformation("Proxying SetupFinOps request to audit function app");
 
@@ -80,13 +80,19 @@ public class AuditProxyFunctions
     private async Task<HttpResponseData> ProxyRequest(HttpRequestData req, string route)
     {
         var client = _httpClientFactory.CreateClient();
+        client.Timeout = TimeSpan.FromMinutes(6); // FinOps setup can take 3-5 minutes
+        
+        // Validate configuration
+        if (string.IsNullOrEmpty(_auditApiKey))
+        {
+            _logger.LogError("AUDIT_API_KEY environment variable is not configured");
+            var configError = req.CreateResponse(HttpStatusCode.InternalServerError);
+            await configError.WriteAsJsonAsync(new { error = "Audit API key not configured. Please set AUDIT_API_KEY environment variable." });
+            return configError;
+        }
         
         // Build the target URL with function key
-        var targetUrl = $"{_auditApiUrl}/{route}";
-        if (!string.IsNullOrEmpty(_auditApiKey))
-        {
-            targetUrl += $"?code={_auditApiKey}";
-        }
+        var targetUrl = $"{_auditApiUrl}/{route}?code={_auditApiKey}";
 
         _logger.LogInformation("Forwarding request to: {Url}", targetUrl.Split('?')[0]); // Don't log the key
 
@@ -101,24 +107,63 @@ public class AuditProxyFunctions
             proxyRequest.Content = new StringContent(requestBody, System.Text.Encoding.UTF8, "application/json");
         }
 
-        // Forward relevant headers
-        if (req.Headers.TryGetValues("Content-Type", out var contentTypes))
-        {
-            // Content-Type is set via StringContent above
-        }
-
         // Make the request
-        var proxyResponse = await client.SendAsync(proxyRequest);
+        HttpResponseMessage proxyResponse;
+        try
+        {
+            proxyResponse = await client.SendAsync(proxyRequest);
+        }
+        catch (TaskCanceledException ex)
+        {
+            _logger.LogError(ex, "Request to audit function app timed out after 6 minutes");
+            var timeoutResponse = req.CreateResponse(HttpStatusCode.GatewayTimeout);
+            await timeoutResponse.WriteAsJsonAsync(new { error = "Request timed out. The operation may still be running in the background." });
+            return timeoutResponse;
+        }
+        catch (HttpRequestException ex)
+        {
+            _logger.LogError(ex, "Failed to connect to audit function app at {Url}", _auditApiUrl);
+            var connError = req.CreateResponse(HttpStatusCode.BadGateway);
+            await connError.WriteAsJsonAsync(new { error = $"Failed to connect to audit service: {ex.Message}" });
+            return connError;
+        }
+        
+        // Read response content
+        var responseContent = await proxyResponse.Content.ReadAsStringAsync();
         
         // Build response
         var response = req.CreateResponse(proxyResponse.StatusCode);
         
-        // Copy response content
-        var responseContent = await proxyResponse.Content.ReadAsStringAsync();
+        // Ensure we always return valid JSON
         if (!string.IsNullOrEmpty(responseContent))
         {
-            response.Headers.Add("Content-Type", "application/json");
-            await response.WriteStringAsync(responseContent);
+            // Check if response is valid JSON
+            try
+            {
+                System.Text.Json.JsonDocument.Parse(responseContent);
+                // It's valid JSON, forward as-is
+                response.Headers.Add("Content-Type", "application/json");
+                await response.WriteStringAsync(responseContent);
+            }
+            catch (System.Text.Json.JsonException)
+            {
+                // Not valid JSON - wrap it in a JSON error object
+                _logger.LogWarning("Audit function returned non-JSON response (status {Status}): {Content}", 
+                    proxyResponse.StatusCode, responseContent.Length > 200 ? responseContent.Substring(0, 200) : responseContent);
+                await response.WriteAsJsonAsync(new { 
+                    error = "Unexpected response from audit service",
+                    details = responseContent,
+                    statusCode = (int)proxyResponse.StatusCode
+                });
+            }
+        }
+        else if (!proxyResponse.IsSuccessStatusCode)
+        {
+            // Empty response with error status
+            await response.WriteAsJsonAsync(new { 
+                error = $"Audit service returned {proxyResponse.StatusCode}",
+                statusCode = (int)proxyResponse.StatusCode
+            });
         }
 
         return response;

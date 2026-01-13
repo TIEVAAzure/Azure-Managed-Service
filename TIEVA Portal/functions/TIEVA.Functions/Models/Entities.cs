@@ -68,6 +68,9 @@ public class Customer
     public string? FinOpsSasKeyVaultRef { get; set; }
     public DateTime? FinOpsSasExpiry { get; set; }
     
+    // LogicMonitor Integration
+    public int? LogicMonitorGroupId { get; set; }
+    
     public List<AzureConnection> Connections { get; set; } = new();
     public List<Assessment> Assessments { get; set; } = new();
 }
@@ -265,6 +268,26 @@ public class CustomerRoadmapPlan
     public DateTime CreatedAt { get; set; }
     public DateTime UpdatedAt { get; set; }
     public string? UpdatedBy { get; set; }
+    
+    // Navigation
+    public Customer? Customer { get; set; }
+}
+
+// Customer Reservation Cache - Cached reservation data for async processing
+public class CustomerReservationCache
+{
+    public Guid Id { get; set; }
+    public Guid CustomerId { get; set; }
+    public string Status { get; set; } = "Pending";  // Pending, Running, Completed, Failed
+    public DateTime? LastRefreshed { get; set; }
+    public string? ReservationsJson { get; set; }    // Cached reservation data
+    public string? InsightsJson { get; set; }        // Cached insights
+    public string? SummaryJson { get; set; }         // Cached summary stats  
+    public string? PurchaseRecommendationsJson { get; set; }  // Cached purchase recommendations
+    public string? ErrorsJson { get; set; }          // Any errors during fetch
+    public string? ErrorMessage { get; set; }        // Fatal error message
+    public DateTime CreatedAt { get; set; }
+    public DateTime UpdatedAt { get; set; }
     
     // Navigation
     public Customer? Customer { get; set; }

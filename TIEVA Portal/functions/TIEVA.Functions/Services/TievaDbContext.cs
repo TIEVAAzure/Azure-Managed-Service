@@ -20,6 +20,7 @@ public class TievaDbContext : DbContext
     public DbSet<EffortSetting> EffortSettings => Set<EffortSetting>();
     public DbSet<FindingMetadata> FindingMetadata => Set<FindingMetadata>();
     public DbSet<CustomerRoadmapPlan> CustomerRoadmapPlans => Set<CustomerRoadmapPlan>();
+    public DbSet<CustomerReservationCache> CustomerReservationCache => Set<CustomerReservationCache>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -139,6 +140,15 @@ public class TievaDbContext : DbContext
             e.HasKey(x => x.Id);
             e.HasOne(x => x.Customer).WithMany().HasForeignKey(x => x.CustomerId);
             e.HasIndex(x => x.CustomerId).IsUnique();  // One plan per customer
+        });
+
+        // CustomerReservationCache - cached reservation data for async processing
+        modelBuilder.Entity<CustomerReservationCache>(e =>
+        {
+            e.ToTable("CustomerReservationCache");
+            e.HasKey(x => x.Id);
+            e.HasOne(x => x.Customer).WithMany().HasForeignKey(x => x.CustomerId);
+            e.HasIndex(x => x.CustomerId).IsUnique();  // One cache per customer
         });
     }
 }

@@ -1,6 +1,6 @@
 # TIEVA Portal - Database Schema
 
-**Last Updated:** January 2025 (v2.1)
+**Last Updated:** January 2025 (v2.2 - CustomerReservationCache & FinOps Enhancements)
 
 ## Connection Details
 
@@ -10,6 +10,58 @@
 | Database | TievaPortal |
 | Auth | Entra-only (no SQL auth) |
 | Tier | Basic |
+
+---
+
+## Schema Overview
+
+```
+┌─────────────────┐     ┌─────────────────┐
+│ ServiceTiers    │     │AssessmentModules│
+└────────┬────────┘     └────────┬────────┘
+         │                       │
+         └───────┬───────────────┘
+                 ▼
+         ┌──────────────┐
+         │ TierModules  │
+         └──────────────┘
+
+┌─────────────────┐
+│   Customers     │◄─────────────────────────────────────┐
+└────────┬────────┘                                      │
+         │                                               │
+         ├──────────────┐                                │
+         ▼              ▼                                │
+┌─────────────────┐ ┌──────────────────────────┐         │
+│AzureConnections │ │ CustomerRoadmapPlans (1:1)│         │
+└────────┬────────┘ └──────────────────────────┘         │
+         │                                               │
+         ▼                                               │
+┌──────────────────────┐                                 │
+│ CustomerSubscriptions │──────┐                        │
+└──────────────────────┘       │                        │
+                               ▼                        │
+                      ┌──────────────┐                  │
+                      │ ServiceTiers │                  │
+                      └──────────────┘                  │
+                                                        │
+┌─────────────────┐     ┌────────────────────────┐      │
+│  Assessments    │────▶│AssessmentModuleResults │      │
+└────────┬────────┘     └────────────────────────┘      │
+         │                                              │
+         ▼                                              │
+┌─────────────────┐     ┌────────────────────────┐      │
+│    Findings     │     │  CustomerFindings (1:N) │◄────┘
+└─────────────────┘     └────────────────────────┘
+
+┌─────────────────────┐   ┌──────────────────────────┐
+│ FindingMetadata     │   │ CustomerReservationCache │
+└─────────────────────┘   └──────────────────────────┘
+
+┌─────────────────────┐
+│ EffortSettings      │ (deprecated - replaced by FindingMetadata)
+└─────────────────────┘
+```
 
 ---
 
@@ -24,9 +76,13 @@ Service tiers that define assessment scope and frequency.
 | Name | nvarchar(50) | Internal name (Premium, Standard, Basic, AdHoc) |
 | DisplayName | nvarchar(50) | UI display name (Premium, Advanced, Standard, Ad-hoc) |
 | Description | nvarchar(500) | Tier description |
+| Color | nvarchar(20) | UI color code |
+| SortOrder | int | Display order |
 | IsActive | bit | Active flag |
+| CreatedAt | datetime2 | Created timestamp |
 
 **Seed Data:**
+
 | Name | DisplayName | FinOps Reservations |
 |------|-------------|---------------------|
 | Premium | Premium | ✅ Included |
@@ -47,9 +103,14 @@ Available assessment modules (10 active).
 | Code | nvarchar(20) | Module code |
 | Name | nvarchar(100) | Display name |
 | Description | nvarchar(500) | Module description |
+| Icon | nvarchar(20) | Emoji icon |
+| Category | nvarchar(50) | Module category |
+| EstimatedMinutes | int | Expected run time |
+| SortOrder | int | Display order |
 | IsActive | bit | Active flag |
 
-**Seed Data:**
+**Active Modules:**
+
 | Code | Name | Status |
 |------|------|--------|
 | NETWORK | Network Topology | Active |
@@ -58,11 +119,12 @@ Available assessment modules (10 active).
 | IDENTITY | Identity & Access | Active |
 | POLICY | Policy Compliance | Active |
 | RESOURCE | Resource Inventory | Active |
-| RESERVATION | Reservations & Savings | Inactive (replaced by live API) |
 | SECURITY | Defender for Cloud | Active |
 | PATCH | VM Patch Compliance | Active |
 | PERFORMANCE | Right-sizing Analysis | Active |
 | COMPLIANCE | Regulatory Compliance | Active |
+
+> **Note:** RESERVATION module marked inactive - replaced by live Azure API in FinOps tab
 
 ---
 
@@ -72,7 +134,7 @@ Maps tiers to modules with frequency.
 | Column | Type | Description |
 |--------|------|-------------|
 | Id | uniqueidentifier | PK |
-| ServiceTierId | uniqueidentifier | FK to ServiceTiers |
+| TierId | uniqueidentifier | FK to ServiceTiers |
 | ModuleId | uniqueidentifier | FK to AssessmentModules |
 | Frequency | nvarchar(20) | Monthly, Quarterly, OnDemand |
 | IsIncluded | bit | Module included for tier |
@@ -80,23 +142,26 @@ Maps tiers to modules with frequency.
 ---
 
 ### Customers
-Customer records.
+Customer records with scheduling and FinOps configuration.
 
 | Column | Type | Description |
 |--------|------|-------------|
 | Id | uniqueidentifier | PK |
 | Name | nvarchar(200) | Customer name |
+| Code | nvarchar(20) | Short code |
 | Industry | nvarchar(100) | Industry sector |
 | PrimaryContact | nvarchar(200) | Primary contact name |
-| ContactEmail | nvarchar(200) | Contact email |
+| Email | nvarchar(200) | Contact email |
+| Phone | nvarchar(50) | Contact phone |
+| Notes | nvarchar(max) | Internal notes |
+| IsActive | bit | Active flag |
 | NextMeetingDate | datetime2 | Next scheduled meeting |
 | SchedulingEnabled | bit | Auto-scheduling enabled |
-| FinOpsStorageAccount | nvarchar(200) | FinOps storage account name |
-| FinOpsContainer | nvarchar(100) | FinOps blob container (default: ingestion) |
-| FinOpsPowerBIUrl | nvarchar(500) | Power BI report URL |
-| FinOpsSasKeyVaultRef | nvarchar(200) | Key Vault secret name for SAS token |
-| FinOpsSasExpiry | datetime2 | SAS token expiry date |
-| IsDeleted | bit | Soft delete flag |
+| **FinOpsStorageAccount** | nvarchar(200) | FinOps storage account name |
+| **FinOpsContainer** | nvarchar(100) | FinOps blob container (default: ingestion) |
+| **FinOpsPowerBIUrl** | nvarchar(500) | Power BI report URL |
+| **FinOpsSasKeyVaultRef** | nvarchar(200) | Key Vault secret name for SAS token |
+| **FinOpsSasExpiry** | datetime2 | SAS token expiry date |
 | CreatedAt | datetime2 | Created timestamp |
 | UpdatedAt | datetime2 | Updated timestamp |
 
@@ -109,17 +174,15 @@ Customer Azure tenant connections.
 |--------|------|-------------|
 | Id | uniqueidentifier | PK |
 | CustomerId | uniqueidentifier | FK to Customers |
-| TenantId | nvarchar(50) | Azure tenant ID |
+| TenantId | nvarchar(50) | Azure tenant ID (GUID) |
 | TenantName | nvarchar(200) | Tenant display name |
 | ClientId | nvarchar(50) | Service Principal app ID |
-| KeyVaultSecretName | nvarchar(200) | Key Vault secret name |
+| SecretKeyVaultRef | nvarchar(200) | Key Vault secret name |
 | SecretExpiry | datetime2 | SP secret expiry date |
-| Status | nvarchar(20) | Active, Expired, Invalid |
 | IsActive | bit | Connection active |
 | LastValidated | datetime2 | Last validation timestamp |
-| IsDeleted | bit | Soft delete flag |
+| LastValidationStatus | nvarchar(50) | Success, Failed, etc. |
 | CreatedAt | datetime2 | Created timestamp |
-| UpdatedAt | datetime2 | Updated timestamp |
 
 ---
 
@@ -130,18 +193,17 @@ Synced Azure subscriptions.
 |--------|------|-------------|
 | Id | uniqueidentifier | PK |
 | ConnectionId | uniqueidentifier | FK to AzureConnections |
-| SubscriptionId | nvarchar(50) | Azure subscription ID |
+| SubscriptionId | nvarchar(50) | Azure subscription ID (GUID) |
 | SubscriptionName | nvarchar(200) | Subscription display name |
-| ServiceTierId | uniqueidentifier | FK to ServiceTiers (nullable) |
+| TierId | uniqueidentifier | FK to ServiceTiers (nullable) |
 | Environment | nvarchar(50) | Production, Development, Test, Staging, Sandbox |
 | IsInScope | bit | Include in assessments |
-| IsDeleted | bit | Soft delete flag |
 | CreatedAt | datetime2 | Created timestamp |
-| UpdatedAt | datetime2 | Updated timestamp |
 
-**Tier Usage:**
-- TierName is used for reservations filtering (Advanced/Premium/Adhoc included, Standard excluded)
-- Filtering is performed client-side in the portal UI
+**Notes:**
+- TierId determines which modules run for this subscription
+- TierName used for reservations filtering (Advanced/Premium/Adhoc included, Standard excluded)
+- Environment used for filtering/reporting purposes
 
 ---
 
@@ -151,280 +213,260 @@ Assessment run records.
 | Column | Type | Description |
 |--------|------|-------------|
 | Id | uniqueidentifier | PK |
-| ConnectionId | uniqueidentifier | FK to AzureConnections |
-| CustomerId | uniqueidentifier | FK to Customers (denormalized) |
-| CustomerName | nvarchar(200) | Customer name (denormalized) |
-| Name | nvarchar(200) | Assessment name/description |
-| Status | nvarchar(20) | Pending, Running, Completed, Failed |
+| CustomerId | uniqueidentifier | FK to Customers |
+| ConnectionId | uniqueidentifier | FK to AzureConnections (nullable) |
+| Status | nvarchar(20) | Pending, Processing, Completed, Failed |
+| StartedAt | datetime2 | Start timestamp |
+| CompletedAt | datetime2 | Completion timestamp |
+| StartedBy | nvarchar(200) | User who started |
+| TriggerType | nvarchar(20) | Manual, Scheduled, PreMeeting |
 | ScoreOverall | decimal(5,2) | Overall assessment score |
 | FindingsTotal | int | Total findings count |
 | FindingsHigh | int | High severity count |
 | FindingsMedium | int | Medium severity count |
 | FindingsLow | int | Low severity count |
-| StartedAt | datetime2 | Start timestamp |
-| CompletedAt | datetime2 | Completion timestamp |
-| CreatedBy | nvarchar(200) | User who initiated |
-| Notes | nvarchar(max) | Assessment notes |
 | CreatedAt | datetime2 | Created timestamp |
-| UpdatedAt | datetime2 | Updated timestamp |
 
 ---
 
 ### AssessmentModuleResults
-Per-module results within an assessment.
+Per-module results with blob paths.
 
 | Column | Type | Description |
 |--------|------|-------------|
 | Id | uniqueidentifier | PK |
 | AssessmentId | uniqueidentifier | FK to Assessments |
-| ModuleId | uniqueidentifier | FK to AssessmentModules |
-| ModuleCode | nvarchar(20) | Module code (denormalized) |
-| Status | nvarchar(20) | Pending, Running, Completed, Failed |
-| BlobPath | nvarchar(500) | Path to Excel in blob storage |
-| FindingsCount | int | Total findings count |
-| HighCount | int | High severity count |
-| MediumCount | int | Medium severity count |
-| LowCount | int | Low severity count |
-| Score | decimal(5,2) | Calculated module score |
+| ModuleCode | nvarchar(20) | Module code |
+| SubscriptionId | nvarchar(50) | Subscription assessed (nullable) |
+| Status | nvarchar(20) | Pending, Running, Completed, Failed, Skipped |
+| Score | decimal(5,2) | Module score |
+| FindingsCount | int | Findings for this module |
 | StartedAt | datetime2 | Start timestamp |
 | CompletedAt | datetime2 | Completion timestamp |
+| DurationSeconds | int | Run duration |
 | ErrorMessage | nvarchar(max) | Error details if failed |
-| CreatedAt | datetime2 | Created timestamp |
-| UpdatedAt | datetime2 | Updated timestamp |
+| BlobPath | nvarchar(500) | Path to Excel results in blob storage |
 
 ---
 
 ### Findings
-Individual findings from assessments.
+Individual findings from each assessment.
 
-| Column | Type | Description |
-|--------|------|-------------|
-| Id | uniqueidentifier | PK |
-| ModuleResultId | uniqueidentifier | FK to AssessmentModuleResults |
-| AssessmentId | uniqueidentifier | FK to Assessments |
-| ModuleCode | nvarchar(20) | Module code |
-| Category | nvarchar(100) | Finding category |
-| FindingText | nvarchar(500) | Main finding description |
-| Detail | nvarchar(max) | Additional details |
-| Severity | nvarchar(20) | High, Medium, Low, Info |
-| ResourceId | nvarchar(500) | Azure resource ID |
-| ResourceName | nvarchar(200) | Resource display name |
-| ResourceType | nvarchar(100) | Azure resource type |
-| SubscriptionId | nvarchar(50) | Subscription ID |
-| SubscriptionName | nvarchar(200) | Subscription name |
-| Recommendation | nvarchar(max) | Remediation recommendation |
-| Impact | nvarchar(max) | Business impact |
-| Status | nvarchar(20) | Open, Resolved, Acknowledged |
-| ChangeStatus | nvarchar(20) | New, Recurring, Resolved |
-| OccurrenceCount | int | Times seen across assessments |
-| FirstSeenAt | datetime2 | First detection date |
-| LastSeenAt | datetime2 | Most recent detection |
-| ResolvedAt | datetime2 | Resolution date |
-| CreatedAt | datetime2 | Created timestamp |
+| Column | Type | EF Property | Description |
+|--------|------|-------------|-------------|
+| Id | uniqueidentifier | Id | PK |
+| AssessmentId | uniqueidentifier | AssessmentId | FK to Assessments |
+| ModuleCode | nvarchar(20) | ModuleCode | Module code |
+| SubscriptionId | nvarchar(50) | SubscriptionId | Subscription ID |
+| Severity | nvarchar(20) | Severity | High, Medium, Low, Info |
+| Category | nvarchar(100) | Category | Finding category |
+| ResourceType | nvarchar(100) | ResourceType | Azure resource type |
+| ResourceName | nvarchar(200) | ResourceName | Resource display name |
+| ResourceId | nvarchar(500) | ResourceId | Azure resource ID |
+| **Finding** | nvarchar(500) | **FindingText** | Main finding description |
+| Recommendation | nvarchar(max) | Recommendation | Remediation recommendation |
+| EffortHours | decimal(6,2) | EffortHours | Estimated effort |
+| Owner | nvarchar(100) | Owner | Assigned owner |
+| Status | nvarchar(20) | Status | Open, Resolved |
+| ChangeStatus | nvarchar(20) | ChangeStatus | New, Recurring, Resolved |
+| Hash | nvarchar(100) | Hash | Unique finding identifier |
+| FirstSeenAt | datetime2 | FirstSeenAt | First detection date |
+| LastSeenAt | datetime2 | LastSeenAt | Most recent detection |
+| ResolvedAt | datetime2 | ResolvedAt | Resolution date |
+| OccurrenceCount | int | OccurrenceCount | Times seen across assessments |
+| PreviousFindingId | uniqueidentifier | PreviousFindingId | Link to previous occurrence |
+
+> **⚠️ Important:** Database column `Finding` maps to EF property `FindingText`. PowerShell scripts must insert into `Finding` column.
 
 ---
 
 ### CustomerFindings
 Aggregated findings per customer (deduplicated across assessments).
 
-| Column | Type | Description |
-|--------|------|-------------|
-| Id | uniqueidentifier | PK |
-| CustomerId | uniqueidentifier | FK to Customers |
-| ModuleCode | nvarchar(20) | Module code |
-| Category | nvarchar(100) | Finding category |
-| FindingText | nvarchar(500) | Main finding description |
-| Detail | nvarchar(max) | Additional details |
-| Severity | nvarchar(20) | High, Medium, Low, Info |
-| ResourceId | nvarchar(500) | Azure resource ID |
-| ResourceName | nvarchar(200) | Resource display name |
-| ResourceType | nvarchar(100) | Azure resource type |
-| SubscriptionId | nvarchar(50) | Subscription ID |
-| SubscriptionName | nvarchar(200) | Subscription name |
-| Recommendation | nvarchar(max) | Remediation recommendation |
-| Status | nvarchar(20) | Open, Resolved |
-| OccurrenceCount | int | Times seen |
-| FirstSeenAt | datetime2 | First detection |
-| LastSeenAt | datetime2 | Most recent detection |
-| ResolvedAt | datetime2 | Resolution date |
-| CreatedAt | datetime2 | Created timestamp |
-| UpdatedAt | datetime2 | Updated timestamp |
+| Column | Type | EF Property | Description |
+|--------|------|-------------|-------------|
+| Id | uniqueidentifier | Id | PK |
+| CustomerId | uniqueidentifier | CustomerId | FK to Customers |
+| ModuleCode | nvarchar(20) | ModuleCode | Module code |
+| Hash | nvarchar(100) | Hash | Unique finding identifier |
+| Severity | nvarchar(20) | Severity | High, Medium, Low, Info |
+| Category | nvarchar(100) | Category | Finding category |
+| ResourceType | nvarchar(100) | ResourceType | Azure resource type |
+| ResourceId | nvarchar(500) | ResourceId | Azure resource ID |
+| **Finding** | nvarchar(500) | **FindingText** | Main finding description |
+| Recommendation | nvarchar(max) | Recommendation | Remediation recommendation |
+| Status | nvarchar(20) | Status | Open, Resolved |
+| FirstSeenAt | datetime2 | FirstSeenAt | First detection |
+| LastSeenAt | datetime2 | LastSeenAt | Most recent detection |
+| ResolvedAt | datetime2 | ResolvedAt | Resolution date |
+| OccurrenceCount | int | OccurrenceCount | Times seen |
+| LastAssessmentId | uniqueidentifier | LastAssessmentId | Most recent assessment |
+| CreatedAt | datetime2 | CreatedAt | Created timestamp |
+| UpdatedAt | datetime2 | UpdatedAt | Updated timestamp |
+
+**Indexes:**
+- Unique: (CustomerId, Hash) - One record per unique finding per customer
 
 ---
 
-### FindingMetadata (replaces EffortSettings)
+### FindingMetadata
 Unified configuration for effort, impact, and operational metadata.
 
 | Column | Type | Description |
 |--------|------|-------------|
-| Id | uniqueidentifier | PK |
-| ModuleCode | nvarchar(20) | Module code (null = all modules) |
-| Category | nvarchar(100) | Finding category (null = all categories) |
-| FindingPattern | nvarchar(500) | Text pattern match (null = no pattern) |
-| BaseHours | decimal(5,2) | Fixed hours for remediation |
-| PerResourceHours | decimal(5,2) | Additional hours per affected resource |
-| ImpactOverride | nvarchar(20) | Override severity-based impact (High/Medium/Low) |
-| DefaultOwner | nvarchar(100) | Suggested remediation owner |
+| Id | int | PK (identity) |
+| ModuleCode | nvarchar(20) | Pattern: module code filter |
+| Category | nvarchar(100) | Pattern: category filter |
+| FindingPattern | nvarchar(500) | Pattern: finding text match |
+| RecommendationPattern | nvarchar(500) | Pattern: recommendation match |
+| BaseHours | decimal(6,2) | Fixed hours for this finding type |
+| PerResourceHours | decimal(6,2) | Additional hours per resource |
+| ImpactOverride | nvarchar(20) | Override impact: High, Medium, Low |
+| DefaultOwner | nvarchar(100) | Default assignment |
 | DowntimeRequired | nvarchar(20) | None, Partial, Full |
-| DowntimeMinutes | int | Expected downtime in minutes |
+| DowntimeMinutes | int | Expected downtime duration |
+| ChangeControlRequired | bit | Requires change control |
+| MaintenanceWindowRequired | bit | Requires maintenance window |
+| AffectsProduction | bit | Impacts production |
+| CostImplication | nvarchar(20) | None, Low, Medium, High |
 | Complexity | nvarchar(20) | Low, Medium, High |
 | RiskLevel | nvarchar(20) | Low, Medium, High |
-| CostImplication | nvarchar(20) | None, Minor, Significant |
-| ChangeControlRequired | bit | Requires CAB approval |
-| MaintenanceWindowRequired | bit | Requires maintenance window |
-| AffectsProduction | bit | Affects production workloads |
-| MatchPriority | int | Higher = checked first |
-| IsActive | bit | Active flag |
 | Notes | nvarchar(max) | Additional notes |
+| MatchPriority | int | Higher = matched first |
+| IsActive | bit | Active flag |
 | CreatedAt | datetime2 | Created timestamp |
 | UpdatedAt | datetime2 | Updated timestamp |
+| UpdatedBy | nvarchar(200) | Last modified by |
+
+**Indexes:**
+- ModuleCode, Category, MatchPriority, IsActive
 
 ---
 
 ### CustomerRoadmapPlans
-Saved remediation roadmap wave assignments.
+Saved wave assignments for remediation planning.
+
+| Column | Type | Description |
+|--------|------|-------------|
+| Id | int | PK (identity) |
+| CustomerId | uniqueidentifier | FK to Customers |
+| Wave1Findings | nvarchar(max) | JSON array of finding IDs |
+| Wave2Findings | nvarchar(max) | JSON array of finding IDs |
+| Wave3Findings | nvarchar(max) | JSON array of finding IDs |
+| SkippedFindings | nvarchar(max) | Explicitly skipped findings |
+| Notes | nvarchar(max) | Plan notes |
+| CreatedAt | datetime2 | Created timestamp |
+| UpdatedAt | datetime2 | Updated timestamp |
+| UpdatedBy | nvarchar(200) | Last modified by |
+
+**Indexes:**
+- Unique: CustomerId - One plan per customer
+
+---
+
+### CustomerReservationCache
+Cached reservation data for async processing.
 
 | Column | Type | Description |
 |--------|------|-------------|
 | Id | uniqueidentifier | PK |
 | CustomerId | uniqueidentifier | FK to Customers |
-| Wave1Findings | nvarchar(max) | JSON array of finding IDs |
-| Wave2Findings | nvarchar(max) | JSON array of finding IDs |
-| Wave3Findings | nvarchar(max) | JSON array of finding IDs |
-| SkippedFindings | nvarchar(max) | JSON array of finding IDs |
-| UpdatedBy | nvarchar(200) | User who last saved |
+| Status | nvarchar(20) | Pending, Running, Completed, Failed |
+| LastRefreshed | datetime2 | Last data refresh time |
+| ReservationsJson | nvarchar(max) | Cached reservation data |
+| InsightsJson | nvarchar(max) | Cached insights |
+| SummaryJson | nvarchar(max) | Cached summary stats |
+| PurchaseRecommendationsJson | nvarchar(max) | Cached purchase recommendations |
+| ErrorsJson | nvarchar(max) | Errors during fetch |
+| ErrorMessage | nvarchar(max) | Fatal error message |
 | CreatedAt | datetime2 | Created timestamp |
 | UpdatedAt | datetime2 | Updated timestamp |
 
----
+**Indexes:**
+- Unique: CustomerId - One cache per customer
 
-## Entity Relationships
-
-```
-Customers
-    ├── AzureConnections (1:many)
-    │       ├── CustomerSubscriptions (1:many)
-    │       │       └── ServiceTiers (many:1)
-    │       └── Assessments (1:many)
-    │               └── AssessmentModuleResults (1:many)
-    │                       ├── AssessmentModules (many:1)
-    │                       └── Findings (1:many)
-    ├── CustomerFindings (1:many)
-    └── CustomerRoadmapPlans (1:1)
-
-ServiceTiers
-    └── TierModules (1:many)
-            └── AssessmentModules (many:1)
-
-FindingMetadata (standalone reference table)
-```
+**Usage:** Portal polls this table for reservation data. When user clicks "Refresh", backend updates cache asynchronously. Frontend polls until Status = "Completed".
 
 ---
 
-## Cascading Delete Behavior
+### EffortSettings (DEPRECATED)
+Legacy effort estimation table - replaced by FindingMetadata.
 
-### Customer Delete
-Deletes in order:
-1. CustomerRoadmapPlans (for customer)
-2. CustomerFindings (for customer)
-3. Findings (for customer's assessments)
-4. AssessmentModuleResults (for customer's assessments)
-5. Assessments (for customer's connections)
-6. CustomerSubscriptions (for customer's connections)
-7. AzureConnections (for customer)
-8. Customer record
+| Column | Type | Description |
+|--------|------|-------------|
+| Id | int | PK (identity) |
+| Category | nvarchar(100) | Finding category |
+| Severity | nvarchar(20) | Severity fallback |
+| RecommendationPattern | nvarchar(500) | Pattern match |
+| BaseHours | decimal(6,2) | Fixed hours |
+| PerResourceHours | decimal(6,2) | Per-resource hours |
+| ImpactOverride | nvarchar(20) | Impact override |
+| Description | nvarchar(500) | Description |
+| Owner | nvarchar(100) | Default owner |
+| IsActive | bit | Active flag |
+| MatchPriority | int | Match priority |
+| CreatedAt | datetime2 | Created timestamp |
+| UpdatedAt | datetime2 | Updated timestamp |
+| UpdatedBy | nvarchar(200) | Last modified by |
 
-### Connection Delete
-Deletes in order:
-1. Findings (for connection's assessments)
-2. AssessmentModuleResults (for connection's assessments)
-3. Assessments (for connection)
-4. CustomerSubscriptions (for connection)
-5. Connection record
-6. Updates CustomerFindings (recalculates status)
-
-### Assessment Delete
-Deletes in order:
-1. Findings (for assessment)
-2. AssessmentModuleResults (for assessment)
-3. Assessment record
-4. Updates CustomerFindings (recalculates status)
+> **⚠️ Deprecated:** Use FindingMetadata instead. Data may have been migrated.
 
 ---
 
-## Key SQL Scripts
+## Relationships Summary
 
-### Add New Modules
-```sql
-INSERT INTO AssessmentModules (Id, Code, Name, Description, IsActive)
-VALUES 
-    (NEWID(), 'SECURITY', 'Defender for Cloud', 'Security posture and alerts', 1),
-    (NEWID(), 'PATCH', 'VM Patch Compliance', 'OS update compliance', 1),
-    (NEWID(), 'PERFORMANCE', 'Right-sizing Analysis', 'VM utilization and sizing', 1),
-    (NEWID(), 'COMPLIANCE', 'Regulatory Compliance', 'Framework compliance scores', 1);
+```
+Customers (1) ─────┬──── (N) AzureConnections
+                   ├──── (N) Assessments
+                   ├──── (N) CustomerFindings
+                   ├──── (1) CustomerRoadmapPlan
+                   └──── (1) CustomerReservationCache
+
+AzureConnections (1) ──── (N) CustomerSubscriptions
+
+CustomerSubscriptions (N) ──── (1) ServiceTiers
+
+Assessments (1) ────┬──── (N) AssessmentModuleResults
+                    └──── (N) Findings
+
+ServiceTiers (1) ──── (N) TierModules ──── (N) AssessmentModules
 ```
 
-### Check Module Coverage by Tier
+---
+
+## Cascading Delete Rules
+
+| Delete | Cascades To |
+|--------|-------------|
+| Customer | Connections, Subscriptions, Assessments, Findings, CustomerFindings, RoadmapPlan, ReservationCache |
+| Connection | Subscriptions, Assessments (via connection), Findings |
+| Assessment | ModuleResults, Findings |
+
+---
+
+## SQL Useful Queries
+
+### View all tables
 ```sql
-SELECT 
-    st.DisplayName as Tier,
-    am.Code as Module,
-    tm.Frequency,
-    tm.IsIncluded
-FROM TierModules tm
-JOIN ServiceTiers st ON tm.ServiceTierId = st.Id
-JOIN AssessmentModules am ON tm.ModuleId = am.Id
-WHERE tm.IsIncluded = 1
-ORDER BY st.DisplayName, am.Code;
+SELECT TABLE_NAME FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_TYPE = 'BASE TABLE'
 ```
 
-### Customer Findings Summary
+### Check finding column mapping
 ```sql
-SELECT 
-    c.Name as Customer,
-    cf.ModuleCode,
-    COUNT(*) as TotalFindings,
-    SUM(CASE WHEN cf.Severity = 'High' THEN 1 ELSE 0 END) as High,
-    SUM(CASE WHEN cf.Severity = 'Medium' THEN 1 ELSE 0 END) as Medium,
-    SUM(CASE WHEN cf.Severity = 'Low' THEN 1 ELSE 0 END) as Low
-FROM CustomerFindings cf
-JOIN Customers c ON cf.CustomerId = c.Id
-WHERE cf.Status = 'Open'
-GROUP BY c.Name, cf.ModuleCode
-ORDER BY c.Name, cf.ModuleCode;
+SELECT COLUMN_NAME, DATA_TYPE FROM INFORMATION_SCHEMA.COLUMNS 
+WHERE TABLE_NAME = 'Findings' ORDER BY ORDINAL_POSITION
 ```
 
-### Assessment History with Scores
+### Count findings by module
 ```sql
-SELECT 
-    a.Id,
-    c.Name as Customer,
-    a.Name as AssessmentName,
-    a.Status,
-    a.ScoreOverall,
-    a.FindingsTotal,
-    a.FindingsHigh,
-    a.StartedAt,
-    a.CompletedAt
-FROM Assessments a
-JOIN AzureConnections ac ON a.ConnectionId = ac.Id
-JOIN Customers c ON ac.CustomerId = c.Id
-ORDER BY a.StartedAt DESC;
+SELECT ModuleCode, COUNT(*) as Count 
+FROM Findings 
+GROUP BY ModuleCode
 ```
 
-### Subscriptions by Tier (for Reservations Filtering Reference)
+### Check reservation cache status
 ```sql
--- Get subscriptions that would be included in Reservations view
-SELECT 
-    cs.SubscriptionId,
-    cs.SubscriptionName,
-    st.DisplayName as TierName,
-    c.Name as CustomerName
-FROM CustomerSubscriptions cs
-JOIN AzureConnections ac ON cs.ConnectionId = ac.Id
-JOIN Customers c ON ac.CustomerId = c.Id
-LEFT JOIN ServiceTiers st ON cs.ServiceTierId = st.Id
-WHERE st.DisplayName IN ('Advanced', 'Premium', 'Ad-hoc')
-   OR st.DisplayName IS NULL  -- Unassigned subscriptions
-ORDER BY c.Name, cs.SubscriptionName;
+SELECT c.Name, rc.Status, rc.LastRefreshed, rc.ErrorMessage
+FROM CustomerReservationCache rc
+JOIN Customers c ON rc.CustomerId = c.Id
 ```

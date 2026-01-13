@@ -24,7 +24,7 @@ public class CostAnalysisFunctions
 
     [Function("GetCostAnalysisData")]
     public async Task<HttpResponseData> GetCostAnalysisData(
-        [HttpTrigger(AuthorizationLevel.Function, "get", Route = "cost-analysis/{connectionId}")] HttpRequestData req,
+        [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "cost-analysis/{connectionId}")] HttpRequestData req,
         string connectionId)
     {
         if (!Guid.TryParse(connectionId, out var connId))
@@ -141,7 +141,7 @@ public class CostAnalysisFunctions
 
     [Function("GetCostAnalysisFile")]
     public async Task<HttpResponseData> GetCostAnalysisFile(
-        [HttpTrigger(AuthorizationLevel.Function, "get", Route = "cost-analysis/{connectionId}/file")] HttpRequestData req,
+        [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "cost-analysis/{connectionId}/file")] HttpRequestData req,
         string connectionId)
     {
         if (!Guid.TryParse(connectionId, out var connId))
@@ -201,7 +201,7 @@ public class CostAnalysisFunctions
 
     [Function("GetAllCostAnalysisFiles")]
     public async Task<HttpResponseData> GetAllCostAnalysisFiles(
-        [HttpTrigger(AuthorizationLevel.Function, "get", Route = "cost-analysis/{connectionId}/all-files")] HttpRequestData req,
+        [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "cost-analysis/{connectionId}/all-files")] HttpRequestData req,
         string connectionId)
     {
         if (!Guid.TryParse(connectionId, out var connId))

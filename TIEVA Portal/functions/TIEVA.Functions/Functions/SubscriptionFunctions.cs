@@ -22,7 +22,7 @@ public class SubscriptionFunctions
 
     [Function("GetSubscriptions")]
     public async Task<HttpResponseData> GetSubscriptions(
-        [HttpTrigger(AuthorizationLevel.Function, "get", Route = "subscriptions")] HttpRequestData req)
+        [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "subscriptions")] HttpRequestData req)
     {
         var subscriptions = await _db.CustomerSubscriptions
             .Where(s => s.IsInScope)
@@ -49,7 +49,7 @@ public class SubscriptionFunctions
 
     [Function("UpdateSubscription")]
     public async Task<HttpResponseData> UpdateSubscription(
-        [HttpTrigger(AuthorizationLevel.Function, "put", Route = "subscriptions/{id}")] HttpRequestData req,
+        [HttpTrigger(AuthorizationLevel.Anonymous, "put", Route = "subscriptions/{id}")] HttpRequestData req,
         string id)
     {
         if (!Guid.TryParse(id, out var subId))
@@ -124,7 +124,7 @@ public class SubscriptionFunctions
 
     [Function("BulkUpdateSubscriptions")]
     public async Task<HttpResponseData> BulkUpdateSubscriptions(
-        [HttpTrigger(AuthorizationLevel.Function, "put", Route = "connections/{connectionId}/subscriptions")] HttpRequestData req,
+        [HttpTrigger(AuthorizationLevel.Anonymous, "put", Route = "connections/{connectionId}/subscriptions")] HttpRequestData req,
         string connectionId)
     {
         if (!Guid.TryParse(connectionId, out var connId))
@@ -173,7 +173,7 @@ public class SubscriptionFunctions
 
     [Function("GetAuditSubs")]
     public async Task<HttpResponseData> GetAuditSubs(
-        [HttpTrigger(AuthorizationLevel.Function, "get", Route = "audit-subs/{connectionId}/{moduleCode}")] HttpRequestData req,
+        [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "audit-subs/{connectionId}/{moduleCode}")] HttpRequestData req,
         string connectionId,
         string moduleCode)
     {
@@ -244,7 +244,7 @@ public class SubscriptionFunctions
 
     [Function("DebugAuditSubscriptions")]
     public async Task<HttpResponseData> DebugAuditSubscriptions(
-        [HttpTrigger(AuthorizationLevel.Function, "get", Route = "debug/audit-subs/{connectionId}/{moduleCode}")] HttpRequestData req,
+        [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "debug/audit-subs/{connectionId}/{moduleCode}")] HttpRequestData req,
         string connectionId,
         string moduleCode)
     {

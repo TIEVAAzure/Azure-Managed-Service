@@ -1,6 +1,6 @@
 # TIEVA Portal - API Reference
 
-**Last Updated:** January 2025 (v2.1)
+**Last Updated:** January 2025 (v2.2 - FinOps Enhancements)
 
 ## Base URLs
 
@@ -39,18 +39,25 @@ List all customers.
   {
     "id": "guid",
     "name": "Customer Name",
+    "code": "CUST01",
     "industry": "Technology",
     "primaryContact": "John Smith",
-    "contactEmail": "john@example.com",
+    "email": "john@example.com",
+    "phone": "01onal2345",
     "nextMeetingDate": "2025-02-01T00:00:00Z",
     "schedulingEnabled": true,
+    "finOpsStorageAccount": "stfinopscustomer",
+    "finOpsContainer": "ingestion",
+    "finOpsPowerBIUrl": "https://...",
+    "finOpsSasExpiry": "2025-06-01T00:00:00Z",
+    "isActive": true,
     "createdAt": "2024-12-01T00:00:00Z"
   }
 ]
 ```
 
 #### GET /api/customers/{id}
-Get single customer.
+Get single customer with full details.
 
 #### POST /api/customers
 Create customer.
@@ -59,11 +66,14 @@ Create customer.
 ```json
 {
   "name": "Customer Name",
+  "code": "CUST01",
   "industry": "Technology",
   "primaryContact": "John Smith",
-  "contactEmail": "john@example.com",
+  "email": "john@example.com",
   "nextMeetingDate": "2025-02-01",
-  "schedulingEnabled": true
+  "schedulingEnabled": true,
+  "finOpsStorageAccount": "stfinopscustomer",
+  "finOpsContainer": "ingestion"
 }
 ```
 
@@ -140,19 +150,19 @@ List all connections with subscriptions.
     "id": "guid",
     "customerId": "guid",
     "customerName": "Customer Name",
-    "tenantId": "tenant-guid",
-    "tenantName": "contoso.onmicrosoft.com",
-    "clientId": "app-guid",
-    "status": "Active",
+    "tenantId": "guid",
+    "tenantName": "Customer Tenant",
+    "clientId": "guid",
+    "secretExpiry": "2025-06-01T00:00:00Z",
     "isActive": true,
-    "lastValidated": "2025-01-05T00:00:00Z",
-    "secretExpiry": "2026-12-31T00:00:00Z",
+    "lastValidated": "2025-01-01T00:00:00Z",
+    "lastValidationStatus": "Success",
     "subscriptions": [
       {
         "id": "guid",
-        "subscriptionId": "sub-guid",
+        "subscriptionId": "azure-sub-guid",
         "subscriptionName": "Production",
-        "tierId": "tier-guid",
+        "tierId": "guid",
         "tierName": "Premium",
         "environment": "Production",
         "isInScope": true
@@ -166,34 +176,25 @@ List all connections with subscriptions.
 Get single connection with subscriptions.
 
 #### POST /api/connections
-Create connection (validates credentials, stores secret in Key Vault).
+Create connection.
 
 **Request:**
 ```json
 {
   "customerId": "guid",
-  "tenantId": "tenant-guid",
-  "tenantName": "contoso.onmicrosoft.com",
-  "clientId": "app-guid",
-  "clientSecret": "secret-value"
+  "tenantId": "guid",
+  "tenantName": "Customer Tenant",
+  "clientId": "guid",
+  "clientSecret": "secret-value",
+  "secretExpiry": "2025-06-01"
 }
 ```
 
 #### PUT /api/connections/{id}
-Update connection.
+Update connection (leave clientSecret blank to keep existing).
 
 #### DELETE /api/connections/{id}
-Delete connection (cascades to subscriptions, assessments, findings).
-
-**Response:**
-```json
-{
-  "message": "Connection deleted successfully",
-  "subscriptionsDeleted": 5,
-  "assessmentsDeleted": 10,
-  "findingsDeleted": 156
-}
-```
+Delete connection (cascades to subscriptions, assessments).
 
 #### POST /api/connections/{id}/validate
 Validate connection credentials against Azure.
@@ -201,7 +202,7 @@ Validate connection credentials against Azure.
 **Response:**
 ```json
 {
-  "isValid": true,
+  "success": true,
   "message": "Connection validated successfully",
   "subscriptionCount": 5
 }
@@ -213,19 +214,22 @@ Sync subscriptions from Azure.
 **Response:**
 ```json
 {
-  "message": "Synced 5 subscriptions",
+  "success": true,
   "added": 2,
-  "updated": 3,
-  "removed": 0
+  "removed": 0,
+  "total": 7
 }
 ```
+
+#### GET /api/connections/{connectionId}/audit-subscriptions/{moduleCode}
+Get subscriptions to audit for a specific module (filtered by tier-module mappings).
 
 ---
 
 ### Subscriptions
 
 #### GET /api/subscriptions
-List all subscriptions.
+List all subscriptions across all connections.
 
 #### PUT /api/subscriptions/{id}
 Update subscription (tier, environment, scope).
@@ -233,36 +237,10 @@ Update subscription (tier, environment, scope).
 **Request:**
 ```json
 {
-  "tierId": "tier-guid",
+  "tierId": "guid",
   "environment": "Production",
   "isInScope": true
 }
-```
-
-#### PUT /api/connections/{connectionId}/subscriptions
-Bulk update subscriptions for a connection.
-
-**Request:**
-```json
-{
-  "subscriptions": [
-    { "id": "guid", "tierId": "tier-guid", "environment": "Production", "isInScope": true }
-  ]
-}
-```
-
-#### GET /api/connections/{connectionId}/audit-subscriptions/{moduleCode}
-Get subscriptions eligible for a specific module audit.
-
-**Response:**
-```json
-[
-  {
-    "subscriptionId": "sub-guid",
-    "subscriptionName": "Production",
-    "tierName": "Premium"
-  }
-]
 ```
 
 ---
@@ -270,7 +248,7 @@ Get subscriptions eligible for a specific module audit.
 ### Service Tiers
 
 #### GET /api/tiers
-List all tiers with module configuration.
+List all tiers with module mappings.
 
 **Response:**
 ```json
@@ -279,12 +257,13 @@ List all tiers with module configuration.
     "id": "guid",
     "name": "Premium",
     "displayName": "Premium",
-    "description": "Full managed service",
+    "description": "Full assessment coverage",
+    "color": "#4F46E5",
+    "sortOrder": 1,
     "isActive": true,
-    "tierModules": [
+    "modules": [
       {
         "id": "guid",
-        "moduleId": "mod-guid",
         "moduleCode": "NETWORK",
         "moduleName": "Network Topology",
         "frequency": "Monthly",
@@ -295,33 +274,18 @@ List all tiers with module configuration.
 ]
 ```
 
-#### GET /api/modules
-List all available modules.
-
-**Response:**
-```json
-[
-  {
-    "id": "guid",
-    "code": "NETWORK",
-    "name": "Network Topology",
-    "description": "NSG rules, route tables, VNet peerings",
-    "isActive": true
-  }
-]
-```
-
-#### PUT /api/tiers/{id}
-Update tier details.
-
-#### PUT /api/tiers/{id}/modules
-Update tier module configuration.
+#### PUT /api/tiers/modules
+Update tier-module matrix (bulk update).
 
 **Request:**
 ```json
 {
-  "modules": [
-    { "moduleId": "guid", "frequency": "Monthly", "isIncluded": true }
+  "updates": [
+    {
+      "tierModuleId": "guid",
+      "isIncluded": true,
+      "frequency": "Monthly"
+    }
   ]
 }
 ```
@@ -331,174 +295,68 @@ Update tier module configuration.
 ### Assessments
 
 #### GET /api/assessments
-List all assessments with summary.
+List all assessments.
 
-**Response:**
-```json
-[
-  {
-    "id": "guid",
-    "connectionId": "guid",
-    "customerId": "guid",
-    "customerName": "Customer Name",
-    "name": "Monthly Review - January 2025",
-    "status": "Completed",
-    "scoreOverall": 78.5,
-    "findingsTotal": 45,
-    "findingsHigh": 5,
-    "findingsMedium": 20,
-    "findingsLow": 20,
-    "startedAt": "2025-01-05T10:00:00Z",
-    "completedAt": "2025-01-05T10:15:00Z",
-    "moduleResults": [
-      {
-        "moduleCode": "NETWORK",
-        "status": "Completed",
-        "score": 82,
-        "findingsCount": 15
-      }
-    ]
-  }
-]
-```
+**Query Parameters:**
+- `customerId` - Filter by customer
+- `status` - Filter by status (Pending, Processing, Completed, Failed)
 
 #### GET /api/assessments/{id}
-Get assessment with full details and findings.
+Get assessment with module results and findings.
 
 **Response:**
 ```json
 {
   "id": "guid",
+  "customerId": "guid",
   "customerName": "Customer Name",
   "status": "Completed",
-  "scoreOverall": 78.5,
   "startedAt": "2025-01-05T10:00:00Z",
   "completedAt": "2025-01-05T10:15:00Z",
+  "startedBy": "user@example.com",
+  "triggerType": "Manual",
+  "scoreOverall": 78.5,
+  "findingsTotal": 45,
+  "findingsHigh": 5,
+  "findingsMedium": 20,
+  "findingsLow": 20,
   "moduleResults": [
     {
       "id": "guid",
       "moduleCode": "NETWORK",
       "status": "Completed",
-      "score": 82,
+      "score": 82.0,
       "findingsCount": 15,
-      "highCount": 2,
-      "mediumCount": 8,
-      "lowCount": 5,
-      "blobPath": "assessments/2025-01-05/network-audit.xlsx"
+      "durationSeconds": 120,
+      "blobPath": "assessments/2025/01/05/network.xlsx"
     }
   ],
   "findings": [...]
 }
 ```
 
-#### POST /api/assessments
-Create assessment record.
-
 #### DELETE /api/assessments/{id}
-Delete assessment (cascades to findings).
+Delete assessment (cascades to module results and findings).
 
-#### DELETE /api/assessments/bulk
-Bulk delete assessments.
+#### GET /api/assessments/{id}/changes
+Get change summary compared to previous assessment.
 
-**Request:**
+**Response:**
 ```json
 {
-  "assessmentIds": ["guid1", "guid2", "guid3"]
+  "newCount": 5,
+  "recurringCount": 35,
+  "resolvedCount": 8,
+  "newFindings": [...],
+  "resolvedFindings": [...]
 }
 ```
 
-#### POST /api/assessments/{id}/reparse/{moduleCode}
-Re-parse module results from blob storage.
+#### GET /api/assessments/{id}/resolved
+Get findings resolved since previous assessment.
 
-#### GET /api/assessments/{id}/download/{moduleCode}
-Download module Excel results.
-
----
-
-### Effort Settings (Legacy)
-
-#### GET /api/effort-settings
-List effort settings rules.
-
-**Response:**
-```json
-[
-  {
-    "id": "guid",
-    "matchType": "severity",
-    "severity": "High",
-    "category": null,
-    "recommendationPattern": null,
-    "baseHours": 4.0,
-    "perResourceHours": 0.5,
-    "defaultOwner": "Cloud Ops",
-    "description": "Default for high severity",
-    "matchPriority": 0,
-    "isActive": true
-  },
-  {
-    "id": "guid",
-    "matchType": "category",
-    "severity": null,
-    "category": "Orphaned Resource",
-    "recommendationPattern": null,
-    "baseHours": 0.5,
-    "perResourceHours": 0.1,
-    "defaultOwner": "Cloud Ops",
-    "description": "Quick cleanup tasks",
-    "matchPriority": 10,
-    "isActive": true
-  }
-]
-```
-
-#### POST /api/effort-settings
-Create effort setting.
-
-#### PUT /api/effort-settings/{id}
-Update effort setting.
-
-#### DELETE /api/effort-settings/{id}
-Delete effort setting.
-
----
-
-### Scheduler
-
-#### GET /api/scheduler/status
-Get scheduling status for all customers.
-
-**Response:**
-```json
-[
-  {
-    "customerId": "guid",
-    "customerName": "Customer Name",
-    "schedulingEnabled": true,
-    "nextMeetingDate": "2025-02-01T00:00:00Z",
-    "daysUntilMeeting": 27,
-    "preMeetingDue": false,
-    "totalModulesDue": 2,
-    "subscriptions": [
-      {
-        "subscriptionId": "sub-guid",
-        "subscriptionName": "Production",
-        "tierName": "Premium",
-        "modules": [
-          {
-            "moduleCode": "NETWORK",
-            "frequency": "Monthly",
-            "lastRun": "2024-12-15T00:00:00Z",
-            "daysSinceLastRun": 21,
-            "daysUntilDue": 9,
-            "isDue": false
-          }
-        ]
-      }
-    ]
-  }
-]
-```
+#### POST /api/assessments/modules/{moduleResultId}/reparse
+Re-parse module results from Excel file.
 
 ---
 
@@ -524,10 +382,231 @@ Get dashboard statistics.
 
 ---
 
+## Finding Metadata Endpoints
+
+### GET /api/settings/metadata
+List all finding metadata rules.
+
+**Response:**
+```json
+[
+  {
+    "id": 1,
+    "moduleCode": "NETWORK",
+    "category": "NSG Configuration",
+    "findingPattern": null,
+    "baseHours": 2.0,
+    "perResourceHours": 0.5,
+    "impactOverride": "High",
+    "defaultOwner": "Network Team",
+    "downtimeRequired": "None",
+    "changeControlRequired": true,
+    "complexity": "Medium",
+    "matchPriority": 100,
+    "isActive": true
+  }
+]
+```
+
+### POST /api/settings/metadata
+Create metadata rule.
+
+### PUT /api/settings/metadata/{id}
+Update metadata rule.
+
+### DELETE /api/settings/metadata/{id}
+Delete metadata rule.
+
+### GET /api/settings/effort/categories
+Get list of all finding categories for autocomplete.
+
+---
+
+## Roadmap Plan Endpoints
+
+### GET /api/customers/{id}/roadmap-plan
+Get saved remediation roadmap plan.
+
+**Response:**
+```json
+{
+  "id": 1,
+  "customerId": "guid",
+  "wave1Findings": "[\"finding-id-1\", \"finding-id-2\"]",
+  "wave2Findings": "[\"finding-id-3\"]",
+  "wave3Findings": "[\"finding-id-4\", \"finding-id-5\"]",
+  "skippedFindings": "[\"finding-id-6\"]",
+  "notes": "Focus on security first",
+  "updatedBy": "Portal User",
+  "updatedAt": "2025-01-07T12:00:00Z"
+}
+```
+
+### POST /api/customers/{id}/roadmap-plan
+Save remediation roadmap plan.
+
+**Request:**
+```json
+{
+  "wave1Findings": "[\"id1\", \"id2\"]",
+  "wave2Findings": "[\"id3\"]",
+  "wave3Findings": "[\"id4\"]",
+  "skippedFindings": "[\"id5\"]",
+  "notes": "Updated priorities",
+  "updatedBy": "Portal User"
+}
+```
+
+---
+
+## FinOps Endpoints
+
+### GET /api/customers/{id}/finops/cost-analysis
+Get cost analysis data from FOCUS parquet files.
+
+**Query Parameters:**
+- `period` - Period to analyze: MTD, 30, 60, 90 (default: 30)
+
+**Response:**
+```json
+{
+  "success": true,
+  "data": {
+    "totalCost": 15234.56,
+    "recordCount": 45000,
+    "dateRange": { "start": "2024-12-01", "end": "2025-01-01" },
+    "byService": [
+      { "service": "Virtual Machines", "cost": 8500.00, "percentage": 55.8 }
+    ],
+    "byResourceGroup": [...],
+    "bySubscription": [...],
+    "dailyTrend": [
+      { "date": "2025-01-01", "cost": 450.00 }
+    ],
+    "resources": [...]
+  }
+}
+```
+
+### GET /api/customers/{id}/finops/reservations
+Get live reservation data from Azure APIs with intelligent insights.
+
+**Response:**
+```json
+{
+  "success": true,
+  "reservations": [
+    {
+      "id": "/providers/Microsoft.Capacity/reservationOrders/...",
+      "name": "VM_RI_01",
+      "type": "VirtualMachines",
+      "sku": "Standard_D4s_v3",
+      "quantity": 2,
+      "term": "P1Y",
+      "expiryDate": "2025-06-15",
+      "autoRenew": true,
+      "utilization1Day": 95.5,
+      "utilization7Day": 92.3,
+      "utilization30Day": 88.7,
+      "status": "Active"
+    }
+  ],
+  "insights": [
+    {
+      "type": "renew",
+      "severity": "info",
+      "reservationId": "...",
+      "message": "High utilization reservation expiring soon - recommend renewal",
+      "icon": "✅"
+    },
+    {
+      "type": "cancel",
+      "severity": "critical",
+      "reservationId": "...",
+      "message": "Zero utilization - exchange or cancel immediately",
+      "icon": "🚨"
+    }
+  ],
+  "summary": {
+    "total": 15,
+    "active": 12,
+    "expiring30Days": 2,
+    "averageUtilization": 78.5,
+    "totalMonthlySavings": 2500.00
+  },
+  "purchaseRecommendations": [
+    {
+      "scope": "subscriptions/...",
+      "sku": "Standard_E4s_v3",
+      "term": "P1Y",
+      "quantity": 3,
+      "estimatedSavings": 3600.00,
+      "netSavings": 2800.00
+    }
+  ],
+  "lastRefreshed": "2025-01-13T10:00:00Z"
+}
+```
+
+### POST /api/customers/{id}/finops/reservations/refresh
+Trigger async refresh of reservation data.
+
+**Response:**
+```json
+{
+  "status": "Processing",
+  "message": "Reservation refresh started"
+}
+```
+
+### GET /api/customers/{id}/finops/reservations/status
+Check reservation cache status.
+
+**Response:**
+```json
+{
+  "status": "Completed",
+  "lastRefreshed": "2025-01-13T10:00:00Z"
+}
+```
+
+### POST /api/customers/{id}/finops/sas
+Save SAS token to Key Vault.
+
+**Request:**
+```json
+{
+  "sasToken": "sv=2022-11-02&ss=b&srt=o&sp=rl&se=2025-06-01...",
+  "expiryDate": "2025-06-01"
+}
+```
+
+### POST /api/customers/{id}/finops/run-export
+Trigger Cost Management export (discovers and runs exports across subscriptions).
+
+**Response:**
+```json
+{
+  "success": true,
+  "message": "Exports triggered",
+  "subscriptionResults": [
+    {
+      "subscription": "Production",
+      "subscriptionId": "guid",
+      "status": "OK",
+      "exportsFound": 2,
+      "exportNames": ["tieva-daily-focus-cost", "tieva-monthly-focus-export"]
+    }
+  ]
+}
+```
+
+---
+
 ## Audit API Endpoints
 
 ### POST /api/assessments/start
-Run assessment against customer Azure tenant.
+Queue assessment for processing (async).
 
 **Request:**
 ```json
@@ -542,23 +621,38 @@ Run assessment against customer Azure tenant.
 ```json
 {
   "assessmentId": "guid",
-  "status": "Running",
-  "modules": [
-    { "code": "NETWORK", "status": "Completed", "findingsCount": 15 },
-    { "code": "BACKUP", "status": "Completed", "findingsCount": 12 },
-    { "code": "SECURITY", "status": "Completed", "findingsCount": 8 }
-  ],
-  "totalFindings": 35,
-  "duration": "00:05:23"
+  "status": "Processing",
+  "message": "Assessment queued for processing"
 }
 ```
 
 **Notes:**
-- Runs modules sequentially
-- Stores Excel results in blob storage
-- Parses findings into database
-- Updates assessment scores
-- Updates CustomerFindings table
+- Returns immediately after queuing
+- Assessment runs asynchronously via ProcessAssessment queue trigger
+- Poll GET /api/assessments/{id} for status updates
+
+### POST /api/finops/setup
+Setup FinOps Cost Management exports for a customer tenant.
+
+**Request:**
+```json
+{
+  "connectionId": "guid",
+  "storageAccountName": "stfinopscustomer",
+  "containerName": "ingestion"
+}
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "message": "Cost Management exports configured",
+  "exportsCreated": [
+    { "subscription": "Production", "exportName": "tieva-daily-focus-cost" }
+  ]
+}
+```
 
 ---
 
@@ -586,230 +680,27 @@ All endpoints return standard error format:
 
 ---
 
-## FinOps Endpoints
-
-### GET /api/customers/{id}/finops/cost-analysis
-Get cost analysis data from FOCUS parquet files.
-
-**Query Parameters:**
-- `days` (optional): Number of days to analyze (default: 30)
-
-**Response:**
-```json
-{
-  "success": true,
-  "data": {
-    "totalCost": 15234.56,
-    "recordCount": 45000,
-    "dateRange": { "start": "2024-12-01", "end": "2025-01-01" },
-    "byService": [...],
-    "byResourceGroup": [...],
-    "bySubscription": [...],
-    "dailyTrend": [...],
-    "resources": [...]
-  }
-}
-```
-
-### GET /api/customers/{id}/finops/reservations
-Get live reservation data from Azure APIs with intelligent insights.
-
-**Response:**
-```json
-{
-  "success": true,
-  "hasData": true,
-  "lastUpdated": "2025-01-07T12:00:00Z",
-  "summary": {
-    "TotalReservations": 5,
-    "ActiveReservations": 4,
-    "ExpiringSoon": 1,
-    "LowUtilization": 2,
-    "FullUtilization": 2,
-    "ZeroUtilization": 0,
-    "PurchaseRecommendations": 3,
-    "PotentialAnnualSavings": 12500.00
-  },
-  "reservations": [
-    {
-      "ReservationId": "guid",
-      "DisplayName": "VM Reserved Instance",
-      "ResourceType": "VirtualMachines",
-      "SkuName": "Standard_D4s_v3",
-      "Quantity": 2,
-      "Term": "P1Y",
-      "Status": "Succeeded",
-      "Utilization30Day": 95.5,
-      "Utilization7Day": 98.2,
-      "ExpiryDate": "2025-06-15",
-      "DaysToExpiry": 159,
-      "Renew": true,
-      "Location": "uksouth",
-      "SubscriptionId": "sub-guid",
-      "SubscriptionName": "Production"
-    }
-  ],
-  "insights": [
-    {
-      "Priority": "High",
-      "Type": "RenewHighUtilization",
-      "Icon": "✅",
-      "Title": "VM Reserved Instance expires in 30 days - 100% utilized",
-      "Description": "This reservation is fully utilized and expiring soon. Auto-renew is OFF!",
-      "Recommendation": "ENABLE AUTO-RENEW or manually renew to maintain savings.",
-      "Action": "Enable Auto-Renew",
-      "ReservationId": "guid"
-    },
-    {
-      "Priority": "High",
-      "Type": "LowUtilization",
-      "Icon": "⚠️",
-      "Title": "SQL Database RI only 45% utilized",
-      "Description": "At 45% utilization, you're wasting ~55% of this reservation's value. PAYG would likely be cheaper.",
-      "Recommendation": "Consider exchanging for smaller reservation or switching to PAYG.",
-      "Action": "Exchange to PAYG",
-      "WastePercent": 55
-    },
-    {
-      "Priority": "Medium",
-      "Type": "PurchaseRecommendation",
-      "Icon": "💰",
-      "Title": "Buy Standard_E4s_v5 reservation - save £8,500/year",
-      "Description": "Azure recommends purchasing 3 x Standard_E4s_v5 (P1Y) based on your usage.",
-      "Recommendation": "Review workload stability before purchasing.",
-      "Action": "Purchase RI",
-      "AnnualSavings": 8500
-    }
-  ],
-  "purchaseRecommendations": [...],
-  "errors": []
-}
-```
-
-**Insight Types:**
-- `ZeroUtilization` (Critical): 0% usage - wasting money
-- `RenewHighUtilization` (High): >95% usage, expiring soon - renew
-- `LowUtilization` (High/Medium): <80% usage - consider PAYG
-- `DontRenew` (High/Medium): Low usage + expiring - don't renew
-- `PurchaseRecommendation` (High/Medium): Buy new reservations
-- `HealthySummary` (Info): Count of healthy reservations
-
-**UI Tier Filtering (Client-Side):**
-The portal UI applies tier-based filtering to reservation data before display:
-- **Included Tiers**: Advanced, Premium, Adhoc
-- **Excluded Tiers**: Standard
-- **Scope**: Main tab, presentation mode, and PDF export
-- **Tenant-Level**: Reservations without subscription info are always included
-
-### POST /api/customers/{id}/finops/sas
-Save SAS token for FinOps storage access.
-
-**Request:**
-```json
-{
-  "sasToken": "sv=2022-11-02&ss=b&srt=sco&sp=rl&se=2026-01-01&sig=..."
-}
-```
-
-### POST /api/customers/{id}/finops/run-export
-Trigger Azure Cost Management exports to run immediately.
-
-**Response:**
-```json
-{
-  "success": true,
-  "exports": [
-    { "subscriptionId": "guid", "exportName": "DailyCostExport", "status": "Triggered" }
-  ],
-  "message": "Triggered 2 export(s). Data should appear within 5-15 minutes."
-}
-```
-
----
-
-## Finding Metadata Endpoints
-
-### GET /api/settings/metadata
-List all finding metadata rules.
-
-**Response:**
-```json
-[
-  {
-    "id": "guid",
-    "moduleCode": "NETWORK",
-    "category": "NSG Configuration",
-    "findingPattern": null,
-    "baseHours": 2.0,
-    "perResourceHours": 0.5,
-    "impactOverride": "High",
-    "defaultOwner": "Network Team",
-    "downtimeRequired": "None",
-    "downtimeMinutes": 0,
-    "complexity": "Medium",
-    "riskLevel": "Medium",
-    "costImplication": "None",
-    "changeControlRequired": true,
-    "maintenanceWindowRequired": false,
-    "affectsProduction": true,
-    "matchPriority": 50,
-    "isActive": true,
-    "notes": "NSG changes require CAB approval"
-  }
-]
-```
-
-### POST /api/settings/metadata
-Create metadata rule.
-
-### PUT /api/settings/metadata/{id}
-Update metadata rule.
-
-### DELETE /api/settings/metadata/{id}
-Delete metadata rule.
-
-### GET /api/settings/effort/categories
-Get list of all finding categories for autocomplete.
-
----
-
-## Roadmap Plan Endpoints
-
-### GET /api/customers/{id}/roadmap-plan
-Get saved remediation roadmap plan.
-
-**Response:**
-```json
-{
-  "id": "guid",
-  "customerId": "guid",
-  "wave1Findings": "[\"finding-id-1\", \"finding-id-2\"]",
-  "wave2Findings": "[\"finding-id-3\"]",
-  "wave3Findings": "[\"finding-id-4\", \"finding-id-5\"]",
-  "skippedFindings": "[\"finding-id-6\"]",
-  "updatedBy": "Portal User",
-  "updatedAt": "2025-01-07T12:00:00Z"
-}
-```
-
-### POST /api/customers/{id}/roadmap-plan
-Save remediation roadmap plan.
-
-**Request:**
-```json
-{
-  "wave1Findings": "[\"id1\", \"id2\"]",
-  "wave2Findings": "[\"id3\"]",
-  "wave3Findings": "[\"id4\"]",
-  "skippedFindings": "[\"id5\"]",
-  "updatedBy": "Portal User"
-}
-```
-
----
-
 ## Authentication
 
-The portal uses Azure Static Web Apps built-in authentication with Entra ID. API calls from the portal include authentication headers automatically.
+The portal uses Azure Static Web Apps built-in authentication with Entra ID. API calls from the portal include authentication headers automatically through SWA linking.
 
-For direct API testing, endpoints are currently anonymous but should be secured in production.
+**SWA-Linked Endpoints:**
+- Browser requests to `/api/*` proxy through SWA
+- No API keys needed for portal requests
+- External calls (e.g., Postman, scripts) may need direct function URLs
+
+**Direct Function Access:**
+- Use full function URL: `https://func-tievaportal-6612.azurewebsites.net/api/...`
+- Currently anonymous for testing (should be secured in production)
+
+---
+
+## Rate Limits & Timeouts
+
+| Operation | Timeout | Notes |
+|-----------|---------|-------|
+| SWA proxy | 4 minutes | Azure Static Web App limit |
+| Assessment start | Immediate | Returns after queuing |
+| Assessment processing | 10+ minutes | Runs async via queue |
+| FinOps reservation refresh | 30+ seconds | Poll for completion |
+| Cost analysis | 30 seconds | Depends on data volume |

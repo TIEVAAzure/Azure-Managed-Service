@@ -8,6 +8,7 @@ using Azure.Security.KeyVault.Secrets;
 using Azure.Storage.Blobs;
 using Azure.Storage.Sas;
 using OfficeOpenXml;
+using System.Text.Json;
 using TIEVA.Functions.Models;
 using TIEVA.Functions.Services;
 
@@ -32,7 +33,7 @@ public class FinOpsFunctions
     /// </summary>
     [Function("GenerateFinOpsSas")]
     public async Task<HttpResponseData> GenerateFinOpsSas(
-        [HttpTrigger(AuthorizationLevel.Function, "post", Route = "customers/{customerId:guid}/finops/generate-sas")] HttpRequestData req,
+        [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "customers/{customerId:guid}/finops/generate-sas")] HttpRequestData req,
         Guid customerId)
     {
         try
@@ -139,7 +140,7 @@ public class FinOpsFunctions
     /// </summary>
     [Function("GetFinOpsSas")]
     public async Task<HttpResponseData> GetFinOpsSas(
-        [HttpTrigger(AuthorizationLevel.Function, "get", Route = "customers/{customerId:guid}/finops/sas")] HttpRequestData req,
+        [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "customers/{customerId:guid}/finops/sas")] HttpRequestData req,
         Guid customerId)
     {
         try
@@ -188,7 +189,7 @@ public class FinOpsFunctions
     /// </summary>
     [Function("SaveFinOpsSas")]
     public async Task<HttpResponseData> SaveFinOpsSas(
-        [HttpTrigger(AuthorizationLevel.Function, "put", Route = "customers/{customerId:guid}/finops/sas")] HttpRequestData req,
+        [HttpTrigger(AuthorizationLevel.Anonymous, "put", Route = "customers/{customerId:guid}/finops/sas")] HttpRequestData req,
         Guid customerId)
     {
         try
@@ -317,7 +318,7 @@ public class FinOpsFunctions
     /// </summary>
     [Function("DeleteFinOpsSas")]
     public async Task<HttpResponseData> DeleteFinOpsSas(
-        [HttpTrigger(AuthorizationLevel.Function, "delete", Route = "customers/{customerId:guid}/finops/sas")] HttpRequestData req,
+        [HttpTrigger(AuthorizationLevel.Anonymous, "delete", Route = "customers/{customerId:guid}/finops/sas")] HttpRequestData req,
         Guid customerId)
     {
         try
@@ -366,7 +367,7 @@ public class FinOpsFunctions
     /// </summary>
     [Function("RunFinOpsExport")]
     public async Task<HttpResponseData> RunFinOpsExport(
-        [HttpTrigger(AuthorizationLevel.Function, "post", Route = "customers/{customerId:guid}/finops/run-export")] HttpRequestData req,
+        [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "customers/{customerId:guid}/finops/run-export")] HttpRequestData req,
         Guid customerId)
     {
         try
@@ -413,6 +414,7 @@ public class FinOpsFunctions
 
             var exportResults = new List<object>();
             var errors = new List<string>();
+            var subscriptionResults = new List<object>(); // Track what we found per subscription
 
             // Try to run exports at subscription level for each in-scope subscription
             var subscriptions = connection.Subscriptions.Where(s => s.IsInScope).ToList();
@@ -431,40 +433,82 @@ public class FinOpsFunctions
                 try
                 {
                     // List all exports for this subscription
-                    var listUrl = $"https://management.azure.com/{scope}/providers/Microsoft.CostManagement/exports?api-version=2023-08-01";
+                    var listUrl = $"https://management.azure.com/{scope}/providers/Microsoft.CostManagement/exports?api-version=2025-03-01";
+                    _logger.LogInformation("Calling exports API: {Url}", listUrl);
+                    
                     var listResponse = await httpClient.GetAsync(listUrl);
+                    var listBody = await listResponse.Content.ReadAsStringAsync();
+                    
+                    _logger.LogInformation("Response for {SubName}: Status={Status}, Body={Body}", 
+                        sub.SubscriptionName, listResponse.StatusCode, 
+                        listBody.Length > 500 ? listBody.Substring(0, 500) : listBody);
                     
                     if (!listResponse.IsSuccessStatusCode)
                     {
-                        _logger.LogWarning("Could not list exports for {SubId}: {Status}", sub.SubscriptionId, listResponse.StatusCode);
+                        errors.Add($"{sub.SubscriptionName ?? sub.SubscriptionId}: {listResponse.StatusCode} - {listBody.Substring(0, Math.Min(200, listBody.Length))}");
+                        subscriptionResults.Add(new { 
+                            subscription = sub.SubscriptionName ?? sub.SubscriptionId,
+                            subscriptionId = sub.SubscriptionId,
+                            status = listResponse.StatusCode.ToString(),
+                            exportsFound = 0,
+                            exportNames = new List<string>(),
+                            rawResponse = listBody.Length > 300 ? listBody.Substring(0, 300) : listBody
+                        });
                         continue;
                     }
                     
-                    var listBody = await listResponse.Content.ReadAsStringAsync();
                     var listResult = System.Text.Json.JsonDocument.Parse(listBody);
                     
                     if (listResult.RootElement.TryGetProperty("value", out var exports))
                     {
+                        var exportCount = 0;
+                        var exportNames = new List<string>();
+                        foreach (var export in exports.EnumerateArray())
+                        {
+                            exportCount++;
+                            var name = export.TryGetProperty("name", out var n) ? n.GetString() : "unknown";
+                            exportNames.Add(name ?? "unknown");
+                        }
+                        
+                        subscriptionResults.Add(new { 
+                            subscription = sub.SubscriptionName ?? sub.SubscriptionId,
+                            subscriptionId = sub.SubscriptionId,
+                            status = "OK",
+                            exportsFound = exportCount,
+                            exportNames = exportNames
+                        });
+                        
+                        _logger.LogInformation("Found {Count} exports in subscription {SubName}: {Names}", 
+                            exportCount, sub.SubscriptionName ?? sub.SubscriptionId, string.Join(", ", exportNames));
+                        
                         foreach (var export in exports.EnumerateArray())
                         {
                             var exportName = export.GetProperty("name").GetString();
                             if (string.IsNullOrEmpty(exportName)) continue;
                             
-                            // Check if this export targets our storage account
+                            // Log export details for debugging
+                            string? targetStorage = null;
                             if (export.TryGetProperty("properties", out var props) &&
                                 props.TryGetProperty("deliveryInfo", out var delivery) &&
                                 delivery.TryGetProperty("destination", out var dest) &&
                                 dest.TryGetProperty("resourceId", out var resourceId))
                             {
-                                var storageResourceId = resourceId.GetString() ?? "";
-                                if (!storageResourceId.Contains(customer.FinOpsStorageAccount, StringComparison.OrdinalIgnoreCase))
-                                {
-                                    continue; // Not our export
-                                }
+                                targetStorage = resourceId.GetString() ?? "";
+                            }
+                            
+                            _logger.LogInformation("Export '{ExportName}' targets storage: {Storage}, looking for: {Expected}", 
+                                exportName, targetStorage ?? "unknown", customer.FinOpsStorageAccount);
+                            
+                            // Check if this export targets our storage account
+                            if (!string.IsNullOrEmpty(targetStorage) && 
+                                !targetStorage.Contains(customer.FinOpsStorageAccount, StringComparison.OrdinalIgnoreCase))
+                            {
+                                errors.Add($"Skipped '{exportName}' - targets different storage");
+                                continue; // Not our export
                             }
                             
                             // Run this export
-                            var runUrl = $"https://management.azure.com/{scope}/providers/Microsoft.CostManagement/exports/{exportName}/run?api-version=2023-08-01";
+                            var runUrl = $"https://management.azure.com/{scope}/providers/Microsoft.CostManagement/exports/{exportName}/run?api-version=2025-03-01";
                             var runResponse = await httpClient.PostAsync(runUrl, null);
                             
                             if (runResponse.IsSuccessStatusCode || runResponse.StatusCode == HttpStatusCode.OK || runResponse.StatusCode == HttpStatusCode.Accepted)
@@ -494,9 +538,16 @@ public class FinOpsFunctions
                 success = exportResults.Any(),
                 exports = exportResults,
                 errors = errors,
+                diagnostics = new
+                {
+                    subscriptionsSearched = subscriptions.Select(s => s.SubscriptionName ?? s.SubscriptionId).ToList(),
+                    expectedStorageAccount = customer.FinOpsStorageAccount,
+                    subscriptionCount = subscriptions.Count,
+                    subscriptionResults = subscriptionResults
+                },
                 message = exportResults.Any() 
                     ? $"Triggered {exportResults.Count} export(s). Data should appear within 5-15 minutes."
-                    : "No exports found to run. Exports may be configured at billing account level - check Azure Portal."
+                    : $"No exports found targeting storage account '{customer.FinOpsStorageAccount}'. Searched {subscriptions.Count} subscription(s). The Service Principal may need 'Cost Management Reader' role on subscriptions with exports."
             });
             return response;
         }
@@ -515,13 +566,193 @@ public class FinOpsFunctions
     }
 
     /// <summary>
-    /// Get live reservation data from Azure APIs with utilization and intelligent insights
+    /// Get cached reservation data - returns cached data with refresh status
     /// </summary>
     [Function("GetReservationData")]
     public async Task<HttpResponseData> GetReservationData(
-        [HttpTrigger(AuthorizationLevel.Function, "get", Route = "customers/{customerId:guid}/finops/reservations")] HttpRequestData req,
+        [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "customers/{customerId:guid}/finops/reservations")] HttpRequestData req,
         Guid customerId)
     {
+        try
+        {
+            var customer = await _db.Customers.FirstOrDefaultAsync(c => c.Id == customerId);
+            if (customer == null)
+                return await CreateErrorResponse(req, HttpStatusCode.NotFound, "Customer not found");
+
+            // Get cached data
+            var cache = await _db.CustomerReservationCache.FirstOrDefaultAsync(c => c.CustomerId == customerId);
+            
+            if (cache == null)
+            {
+                // No cache exists - tell frontend to trigger refresh
+                var response = req.CreateResponse(HttpStatusCode.OK);
+                await response.WriteAsJsonAsync(new
+                {
+                    success = true,
+                    status = "NoData",
+                    hasData = false,
+                    message = "No reservation data cached. Click Refresh to load data from Azure."
+                });
+                return response;
+            }
+
+            // Return cached data with status
+            var responseObj = new Dictionary<string, object?>
+            {
+                ["success"] = true,
+                ["status"] = cache.Status,
+                ["lastRefreshed"] = cache.LastRefreshed,
+                ["hasData"] = !string.IsNullOrEmpty(cache.ReservationsJson) || !string.IsNullOrEmpty(cache.PurchaseRecommendationsJson)
+            };
+
+            // If running, just return status
+            if (cache.Status == "Running")
+            {
+                responseObj["message"] = "Reservation data is being refreshed from Azure...";
+            }
+            else if (cache.Status == "Failed")
+            {
+                responseObj["errorMessage"] = cache.ErrorMessage;
+            }
+            else if (cache.Status == "Completed")
+            {
+                // Parse and return cached JSON data
+                if (!string.IsNullOrEmpty(cache.SummaryJson))
+                    responseObj["summary"] = JsonSerializer.Deserialize<object>(cache.SummaryJson);
+                if (!string.IsNullOrEmpty(cache.ReservationsJson))
+                    responseObj["reservations"] = JsonSerializer.Deserialize<object>(cache.ReservationsJson);
+                if (!string.IsNullOrEmpty(cache.InsightsJson))
+                    responseObj["insights"] = JsonSerializer.Deserialize<object>(cache.InsightsJson);
+                if (!string.IsNullOrEmpty(cache.PurchaseRecommendationsJson))
+                    responseObj["purchaseRecommendations"] = JsonSerializer.Deserialize<object>(cache.PurchaseRecommendationsJson);
+                if (!string.IsNullOrEmpty(cache.ErrorsJson))
+                    responseObj["errors"] = JsonSerializer.Deserialize<object>(cache.ErrorsJson);
+                
+                responseObj["lastUpdated"] = cache.LastRefreshed;
+            }
+
+            var httpResponse = req.CreateResponse(HttpStatusCode.OK);
+            await httpResponse.WriteAsJsonAsync(responseObj);
+            return httpResponse;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to get reservation data for customer {CustomerId}", customerId);
+            return await CreateErrorResponse(req, HttpStatusCode.InternalServerError, $"Failed: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// Start reservation data refresh - queues background processing
+    /// </summary>
+    [Function("StartReservationRefresh")]
+    public async Task<ReservationRefreshResult> StartReservationRefresh(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "customers/{customerId:guid}/finops/reservations/refresh")] HttpRequestData req,
+        Guid customerId)
+    {
+        try
+        {
+            var customer = await _db.Customers
+                .Include(c => c.Connections)
+                .FirstOrDefaultAsync(c => c.Id == customerId);
+
+            if (customer == null)
+            {
+                var errorResponse = req.CreateResponse(HttpStatusCode.NotFound);
+                await errorResponse.WriteAsJsonAsync(new { error = "Customer not found" });
+                return new ReservationRefreshResult { HttpResponse = errorResponse, QueueMessage = null };
+            }
+
+            var connection = customer.Connections.FirstOrDefault(c => c.IsActive);
+            if (connection == null)
+            {
+                var errorResponse = req.CreateResponse(HttpStatusCode.BadRequest);
+                await errorResponse.WriteAsJsonAsync(new { error = "No active Azure connection" });
+                return new ReservationRefreshResult { HttpResponse = errorResponse, QueueMessage = null };
+            }
+
+            // Get or create cache record
+            var cache = await _db.CustomerReservationCache.FirstOrDefaultAsync(c => c.CustomerId == customerId);
+            
+            if (cache == null)
+            {
+                cache = new CustomerReservationCache
+                {
+                    Id = Guid.NewGuid(),
+                    CustomerId = customerId,
+                    Status = "Running",
+                    CreatedAt = DateTime.UtcNow,
+                    UpdatedAt = DateTime.UtcNow
+                };
+                _db.CustomerReservationCache.Add(cache);
+            }
+            else
+            {
+                // Don't restart if already running
+                if (cache.Status == "Running")
+                {
+                    var runningResponse = req.CreateResponse(HttpStatusCode.OK);
+                    await runningResponse.WriteAsJsonAsync(new { success = true, status = "Running", message = "Refresh already in progress" });
+                    return new ReservationRefreshResult { HttpResponse = runningResponse, QueueMessage = null };
+                }
+                
+                cache.Status = "Running";
+                cache.ErrorMessage = null;
+                cache.UpdatedAt = DateTime.UtcNow;
+            }
+            
+            await _db.SaveChangesAsync();
+            
+            _logger.LogInformation("Queued reservation refresh for customer {CustomerId}", customerId);
+
+            var httpResponse = req.CreateResponse(HttpStatusCode.Accepted);
+            await httpResponse.WriteAsJsonAsync(new 
+            { 
+                success = true, 
+                status = "Running", 
+                message = "Reservation refresh started. Poll GET endpoint for results." 
+            });
+            
+            // Return both HTTP response and queue message
+            return new ReservationRefreshResult 
+            { 
+                HttpResponse = httpResponse, 
+                QueueMessage = JsonSerializer.Serialize(new { customerId = customerId.ToString() })
+            };
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to start reservation refresh for customer {CustomerId}", customerId);
+            var errorResponse = req.CreateResponse(HttpStatusCode.InternalServerError);
+            await errorResponse.WriteAsJsonAsync(new { error = ex.Message });
+            return new ReservationRefreshResult { HttpResponse = errorResponse, QueueMessage = null };
+        }
+    }
+
+    // Result class for multi-output binding
+    public class ReservationRefreshResult
+    {
+        [HttpResult]
+        public HttpResponseData? HttpResponse { get; set; }
+        
+        [QueueOutput("reservation-refresh", Connection = "AzureWebJobsStorage")]
+        public string? QueueMessage { get; set; }
+    }
+
+    /// <summary>
+    /// Process reservation refresh - queue triggered background job
+    /// </summary>
+    [Function("ProcessReservationRefresh")]
+    public async Task ProcessReservationRefresh(
+        [QueueTrigger("reservation-refresh", Connection = "AzureWebJobsStorage")] string message)
+    {
+        var payload = JsonSerializer.Deserialize<Dictionary<string, string>>(message);
+        var customerId = Guid.Parse(payload!["customerId"]);
+        
+        _logger.LogInformation("Processing reservation refresh for customer {CustomerId}", customerId);
+
+        CustomerReservationCache? cache = null;
+        
         try
         {
             var customer = await _db.Customers
@@ -530,12 +761,29 @@ public class FinOpsFunctions
                 .FirstOrDefaultAsync(c => c.Id == customerId);
 
             if (customer == null)
-                return await CreateErrorResponse(req, HttpStatusCode.NotFound, "Customer not found");
+            {
+                _logger.LogWarning("Customer {CustomerId} not found for reservation refresh", customerId);
+                return;
+            }
+
+            cache = await _db.CustomerReservationCache.FirstOrDefaultAsync(c => c.CustomerId == customerId);
+            if (cache == null)
+            {
+                _logger.LogWarning("Cache record not found for customer {CustomerId}", customerId);
+                return;
+            }
 
             var connection = customer.Connections.FirstOrDefault(c => c.IsActive);
             if (connection == null)
-                return await CreateErrorResponse(req, HttpStatusCode.BadRequest, "No active Azure connection");
+            {
+                cache.Status = "Failed";
+                cache.ErrorMessage = "No active Azure connection";
+                cache.UpdatedAt = DateTime.UtcNow;
+                await _db.SaveChangesAsync();
+                return;
+            }
 
+            // Get Azure credentials
             var kvClient = new SecretClient(new Uri(_keyVaultUrl), new DefaultAzureCredential());
             var secretResponse = await kvClient.GetSecretAsync(connection.SecretKeyVaultRef);
             var credential = new ClientSecretCredential(connection.TenantId, connection.ClientId, secretResponse.Value.Value);
@@ -610,8 +858,6 @@ public class FinOpsFunctions
 
             // Get purchase recommendations
             var subscriptions = connection.Subscriptions.Where(s => s.IsInScope).ToList();
-            var recommendationDiagnostics = new List<object>();
-            string? sampleRawJson = null; // Capture first raw recommendation for diagnostics
             
             _logger.LogInformation("Fetching recommendations for {Count} in-scope subscriptions", subscriptions.Count);
             
@@ -627,39 +873,22 @@ public class FinOpsFunctions
                     {
                         var recBody = await recResponse.Content.ReadAsStringAsync();
                         var recJson = System.Text.Json.JsonDocument.Parse(recBody);
-                        var recCount = 0;
                         
                         if (recJson.RootElement.TryGetProperty("value", out var recs))
                         {
                             foreach (var rec in recs.EnumerateArray())
                             {
-                                // Capture first raw JSON for diagnostics
-                                if (sampleRawJson == null)
-                                {
-                                    sampleRawJson = rec.ToString();
-                                }
-                                
                                 purchaseRecommendations.Add(ParsePurchaseRecommendation(rec, subName));
-                                recCount++;
                             }
                         }
-                        
-                        _logger.LogInformation("Subscription {SubName}: {Count} recommendations found", subName, recCount);
-                        recommendationDiagnostics.Add(new { subscription = subName, status = "OK", count = recCount });
                     }
                     else
                     {
-                        var errorBody = await recResponse.Content.ReadAsStringAsync();
-                        _logger.LogWarning("Subscription {SubName}: Recommendations API returned {Status} - {Error}", 
-                            subName, recResponse.StatusCode, errorBody);
-                        recommendationDiagnostics.Add(new { subscription = subName, status = recResponse.StatusCode.ToString(), error = errorBody.Length > 200 ? errorBody.Substring(0, 200) : errorBody });
                         errors.Add($"Recommendations for {subName}: {recResponse.StatusCode}");
                     }
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogError(ex, "Subscription {SubName}: Exception fetching recommendations", subName);
-                    recommendationDiagnostics.Add(new { subscription = subName, status = "Exception", error = ex.Message });
                     errors.Add($"Recommendations for {subName}: {ex.Message}");
                 }
             }
@@ -674,50 +903,53 @@ public class FinOpsFunctions
             var lowUtil = withUtil.Where(r => GetDouble(r, "Utilization30Day") > 0 && GetDouble(r, "Utilization30Day") < 80).ToList();
             var fullUtil = withUtil.Where(r => GetDouble(r, "Utilization30Day") >= 95).ToList();
             var zeroUtil = withUtil.Where(r => GetDouble(r, "Utilization30Day") == 0).ToList();
-            
-            // Calculate total savings/waste
             var totalEstimatedSavings = active.Sum(r => GetDouble(r, "EstimatedMonthlySavings"));
             var totalWaste = active.Sum(r => GetDouble(r, "MonthlyWaste"));
             
-            _logger.LogInformation("Reservation summary: {Total} total, {Active} active, {WithUtil} with utilization data, {Expiring} expiring soon",
-                reservations.Count, active.Count, withUtil.Count, expiringSoon.Count);
+            _logger.LogInformation("Reservation refresh complete: {Total} total, {Active} active, {Recommendations} recommendations",
+                reservations.Count, active.Count, purchaseRecommendations.Count);
 
-            var response = req.CreateResponse(HttpStatusCode.OK);
-            await response.WriteAsJsonAsync(new
+            // Build summary object
+            var summary = new
             {
-                success = true,
-                hasData = reservations.Any() || purchaseRecommendations.Any(),
-                lastUpdated = DateTime.UtcNow,
-                summary = new
-                {
-                    TotalReservations = reservations.Count,
-                    ActiveReservations = active.Count,
-                    ExpiringSoon = expiringSoon.Count,
-                    LowUtilization = lowUtil.Count,
-                    FullUtilization = fullUtil.Count,
-                    ZeroUtilization = zeroUtil.Count,
-                    PurchaseRecommendations = purchaseRecommendations.Count,
-                    PotentialAnnualSavings = Math.Round(purchaseRecommendations.Sum(r => GetDouble(r, "AnnualSavings")), 2),
-                    EstimatedMonthlySavings = Math.Round(totalEstimatedSavings, 2),
-                    MonthlyWaste = Math.Round(totalWaste, 2)
-                },
-                reservations = reservations.OrderBy(r => GetInt(r, "DaysToExpiry", 9999)),
-                insights = insights,
-                purchaseRecommendations = purchaseRecommendations.OrderByDescending(r => GetDouble(r, "AnnualSavings")),
-                errors = errors,
-                diagnostics = new
-                {
-                    inScopeSubscriptions = subscriptions.Count,
-                    recommendationResults = recommendationDiagnostics,
-                    sampleRawRecommendation = sampleRawJson
-                }
-            });
-            return response;
+                TotalReservations = reservations.Count,
+                ActiveReservations = active.Count,
+                ExpiringSoon = expiringSoon.Count,
+                LowUtilization = lowUtil.Count,
+                FullUtilization = fullUtil.Count,
+                ZeroUtilization = zeroUtil.Count,
+                PurchaseRecommendations = purchaseRecommendations.Count,
+                PotentialAnnualSavings = Math.Round(purchaseRecommendations.Sum(r => GetDouble(r, "AnnualSavings")), 2),
+                EstimatedMonthlySavings = Math.Round(totalEstimatedSavings, 2),
+                MonthlyWaste = Math.Round(totalWaste, 2)
+            };
+
+            // Update cache with results
+            cache.Status = "Completed";
+            cache.LastRefreshed = DateTime.UtcNow;
+            cache.SummaryJson = JsonSerializer.Serialize(summary);
+            cache.ReservationsJson = JsonSerializer.Serialize(reservations.OrderBy(r => GetInt(r, "DaysToExpiry", 9999)));
+            cache.InsightsJson = JsonSerializer.Serialize(insights);
+            cache.PurchaseRecommendationsJson = JsonSerializer.Serialize(purchaseRecommendations.OrderByDescending(r => GetDouble(r, "AnnualSavings")));
+            cache.ErrorsJson = errors.Any() ? JsonSerializer.Serialize(errors) : null;
+            cache.ErrorMessage = null;
+            cache.UpdatedAt = DateTime.UtcNow;
+            
+            await _db.SaveChangesAsync();
+            _logger.LogInformation("Reservation cache updated for customer {CustomerId}", customerId);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to get reservation data for customer {CustomerId}", customerId);
-            return await CreateErrorResponse(req, HttpStatusCode.InternalServerError, $"Failed: {ex.Message}");
+            _logger.LogError(ex, "Failed to process reservation refresh for customer {CustomerId}", customerId);
+            
+            // Update cache with error
+            if (cache != null)
+            {
+                cache.Status = "Failed";
+                cache.ErrorMessage = ex.Message;
+                cache.UpdatedAt = DateTime.UtcNow;
+                await _db.SaveChangesAsync();
+            }
         }
     }
     
@@ -1195,6 +1427,894 @@ public class FinOpsFunctions
         }
         
         return data;
+    }
+
+    /// <summary>
+    /// Get cost analysis data from FOCUS parquet files
+    /// </summary>
+    [Function("GetFinOpsCostAnalysis")]
+    public async Task<HttpResponseData> GetFinOpsCostAnalysis(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "customers/{customerId:guid}/finops/cost-analysis")] HttpRequestData req,
+        Guid customerId)
+    {
+        try
+        {
+            // Parse query parameters
+            var query = System.Web.HttpUtility.ParseQueryString(req.Url.Query);
+            var period = query["period"]?.ToLowerInvariant() ?? "";
+            var daysStr = query["days"];
+            var days = 30;
+            
+            // Period-based date selection (takes precedence over days)
+            // Supported: mtd (month-to-date), lastmonth, last30, last60, last90
+            DateTime startDate;
+            DateTime endDate = DateTime.UtcNow;
+            bool useDailyOnly = false;  // For MTD, only use daily exports
+            bool useMonthlyOnly = false; // For lastmonth, only use monthly exports
+            
+            switch (period)
+            {
+                case "mtd":
+                    startDate = new DateTime(DateTime.UtcNow.Year, DateTime.UtcNow.Month, 1);
+                    useDailyOnly = true;  // MTD = current month only = daily export only
+                    _logger.LogInformation("Period: MTD - {Start} to {End}, daily exports only", startDate.ToString("yyyy-MM-dd"), endDate.ToString("yyyy-MM-dd"));
+                    break;
+                case "lastmonth":
+                    startDate = new DateTime(DateTime.UtcNow.Year, DateTime.UtcNow.Month, 1).AddMonths(-1);
+                    endDate = new DateTime(DateTime.UtcNow.Year, DateTime.UtcNow.Month, 1).AddDays(-1);
+                    useMonthlyOnly = true;  // Last month = completed month = monthly export only
+                    _logger.LogInformation("Period: Last Month - {Start} to {End}, monthly exports only", startDate.ToString("yyyy-MM-dd"), endDate.ToString("yyyy-MM-dd"));
+                    break;
+                case "last60":
+                    startDate = DateTime.UtcNow.AddDays(-60);
+                    useDailyOnly = true;  // Use daily exports only
+                    break;
+                case "last90":
+                    startDate = DateTime.UtcNow.AddDays(-90);
+                    useDailyOnly = true;  // Use daily exports only
+                    break;
+                default:
+                    // Fall back to days parameter (30 days default)
+                    if (!string.IsNullOrEmpty(daysStr) && int.TryParse(daysStr, out var parsedDays))
+                    {
+                        days = Math.Max(1, Math.Min(365, parsedDays));
+                    }
+                    startDate = DateTime.UtcNow.AddDays(-days);
+                    useDailyOnly = true;  // Use daily exports only
+                    break;
+            }
+
+            var customer = await _db.Customers
+                .Include(c => c.Connections)
+                    .ThenInclude(conn => conn.Subscriptions)
+                .FirstOrDefaultAsync(c => c.Id == customerId);
+
+            if (customer == null)
+                return await CreateErrorResponse(req, HttpStatusCode.NotFound, "Customer not found");
+
+            if (string.IsNullOrEmpty(customer.FinOpsStorageAccount))
+                return await CreateErrorResponse(req, HttpStatusCode.BadRequest, "FinOps storage not configured for this customer");
+
+            if (string.IsNullOrEmpty(customer.FinOpsSasKeyVaultRef))
+                return await CreateErrorResponse(req, HttpStatusCode.BadRequest, "FinOps SAS token not configured. Please configure a SAS token first.");
+
+            // Get SAS token from Key Vault
+            var kvClient = new SecretClient(new Uri(_keyVaultUrl), new DefaultAzureCredential());
+            string sasToken;
+            try
+            {
+                var secretResponse = await kvClient.GetSecretAsync(customer.FinOpsSasKeyVaultRef);
+                sasToken = secretResponse.Value.Value;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to retrieve SAS token from Key Vault for customer {CustomerId}", customerId);
+                return await CreateErrorResponse(req, HttpStatusCode.InternalServerError, "Failed to retrieve SAS token from Key Vault");
+            }
+
+            var containerName = customer.FinOpsContainer ?? "ingestion";
+            
+            // Build container URI with SAS token
+            var containerUri = sasToken.StartsWith("http") 
+                ? new Uri(sasToken)  // Full URL stored
+                : new Uri($"https://{customer.FinOpsStorageAccount}.blob.core.windows.net/{containerName}?{sasToken}");
+
+            var containerClient = new BlobContainerClient(containerUri);
+
+            // Check if container is accessible
+            try
+            {
+                await containerClient.GetPropertiesAsync();
+            }
+            catch (Azure.RequestFailedException ex) when (ex.Status == 403 || ex.Status == 401)
+            {
+                _logger.LogWarning("SAS token expired or invalid for customer {CustomerId}", customerId);
+                return await CreateErrorResponse(req, HttpStatusCode.Forbidden, "SAS token has expired or is invalid. Please generate a new SAS token.");
+            }
+
+            // Azure Cost Management exports data into monthly folders:
+            // - tieva-daily-focus-cost/YYYYMMDD-YYYYMMDD/ (current month MTD, updated daily)
+            // - tieva-monthly-focus-export/YYYYMMDD-YYYYMMDD/ (completed months)
+            // We need to read from multiple folders based on the date range requested
+            
+            var allParquetFiles = new List<(string Name, DateTimeOffset? Modified, string FolderPath)>();
+            
+            // DIAGNOSTIC: Parse SAS token to show permissions (NOT the signature)
+            var sasPermissions = "unknown";
+            var sasExpiry = "unknown";
+            var sasResourceType = "unknown";
+            var sasService = "unknown";
+            try
+            {
+                var tokenToAnalyze = sasToken.StartsWith("http") 
+                    ? new Uri(sasToken).Query.TrimStart('?') 
+                    : sasToken;
+                var sasParts = tokenToAnalyze.Split('&');
+                foreach (var part in sasParts)
+                {
+                    if (part.StartsWith("sp=")) sasPermissions = part.Substring(3);
+                    if (part.StartsWith("se=")) sasExpiry = Uri.UnescapeDataString(part.Substring(3));
+                    if (part.StartsWith("srt=")) sasResourceType = part.Substring(4);
+                    if (part.StartsWith("ss=")) sasService = part.Substring(3);
+                }
+                _logger.LogInformation("SAS Token Info: Permissions={Perms}, ResourceTypes={RT}, Services={Svc}, Expiry={Exp}", 
+                    sasPermissions, sasResourceType, sasService, sasExpiry);
+            }
+            catch (Exception ex) 
+            { 
+                _logger.LogWarning("Could not parse SAS token for diagnostics: {Err}", ex.Message);
+            }
+            
+            // List ALL blobs to see what exists in container
+            var allBlobPaths = new List<string>();
+            var blobListingError = "";
+            try
+            {
+                await foreach (var blob in containerClient.GetBlobsAsync())
+                {
+                    allBlobPaths.Add(blob.Name);
+                    if (blob.Name.EndsWith(".parquet", StringComparison.OrdinalIgnoreCase) ||
+                        blob.Name.EndsWith(".snappy.parquet", StringComparison.OrdinalIgnoreCase))
+                    {
+                        var parts = blob.Name.Split('/');
+                        var folderPath = parts.Length >= 3 ? string.Join("/", parts.Take(parts.Length - 2)) : "";
+                        allParquetFiles.Add((blob.Name, blob.Properties.LastModified, folderPath));
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                blobListingError = ex.Message;
+                _logger.LogError(ex, "Error listing blobs from storage");
+            }
+            
+            // Get ALL unique folder paths (3 segments) to see both daily and monthly
+            var allUniqueFolders = allBlobPaths
+                .Where(p => p.Contains('/'))
+                .Select(p => {
+                    var parts = p.Split('/');
+                    // Get up to 3 segments to capture focus-exports/tieva-XXX-focus-cost/YYYYMMDD-YYYYMMDD
+                    return parts.Length >= 3 ? string.Join("/", parts.Take(3)) : string.Join("/", parts);
+                })
+                .Distinct()
+                .OrderBy(x => x)
+                .ToList();
+            
+            // Get unique top-level folders for diagnostics (2 segments)
+            var topLevelFolders = allBlobPaths
+                .Select(p => string.Join("/", p.Split('/').Take(2)))
+                .Distinct()
+                .ToList();
+            
+            // Check if monthly folder is present
+            var hasMonthlyFolder = topLevelFolders.Any(f => f.Contains("monthly", StringComparison.OrdinalIgnoreCase));
+            var hasDailyFolder = topLevelFolders.Any(f => f.Contains("daily", StringComparison.OrdinalIgnoreCase));
+            
+            _logger.LogInformation("Blob listing complete: {Count} blobs, {ParquetCount} parquet files, Monthly folder exists: {HasMonthly}, Daily folder exists: {HasDaily}", 
+                allBlobPaths.Count, allParquetFiles.Count, hasMonthlyFolder, hasDailyFolder);
+            
+            // Sample paths for debugging - get first few from different folders
+            var samplePaths = allBlobPaths
+                .GroupBy(p => string.Join("/", p.Split('/').Take(2)))
+                .SelectMany(g => g.Take(2))
+                .Take(20)
+                .ToList();
+
+            _logger.LogInformation("Found {Count} total parquet files for customer {CustomerId}", allParquetFiles.Count, customerId);
+
+            // Log sample file paths for debugging - include some from different folders
+            var sampleFiles = allParquetFiles
+                .GroupBy(f => f.Name.Split('/').Take(3).LastOrDefault() ?? "unknown")
+                .SelectMany(g => g.Take(2))
+                .Take(10)
+                .ToList();
+            foreach (var sample in sampleFiles)
+            {
+                _logger.LogInformation("Sample parquet file: {Name}", sample.Name);
+            }
+
+            if (!allParquetFiles.Any())
+            {
+                var emptyResponse = req.CreateResponse(HttpStatusCode.OK);
+                await emptyResponse.WriteAsJsonAsync(new
+                {
+                    success = true,
+                    data = new
+                    {
+                        totalCost = 0,
+                        thisMonthCost = 0,
+                        lastMonthCost = 0,
+                        recordCount = 0,
+                        message = "No cost data found. Ensure Cost Management exports are configured and running."
+                    }
+                });
+                return emptyResponse;
+            }
+
+            // Azure Cost Management exports structure:
+            // focus-exports/tieva-daily-focus-cost/20260101-20260131/202601121200/run-guid/part_0.parquet
+            //                                      ^date-range       ^timestamp   ^run-id
+            // 
+            // IMPORTANT: Each subscription runs its own export at slightly different times!
+            // So for 4 subscriptions on Jan 12, you might have:
+            //   202601121200/ (Sub 1), 202601121201/ (Sub 2), 202601121202/ (Sub 3), 202601121203/ (Sub 4)
+            //
+            // Each file contains COMPLETE MTD data for that subscription.
+            // We need to:
+            // 1. Find the most recent DATE (not timestamp) for each date-range
+            // 2. Get ALL files from that date (all subscriptions)
+            // 3. Deduplicate records by unique key
+            
+            var dateRangePattern = new System.Text.RegularExpressions.Regex(@"(\d{8})-(\d{8})");
+            var timestampPattern = new System.Text.RegularExpressions.Regex(@"/(\d{12})/"); // 202601121200 format (YYYYMMDDHHmm)
+            
+            // For "Last Month" comparison, we need data from the previous month regardless of days parameter
+            var lastMonthStart = new DateTime(DateTime.UtcNow.Year, DateTime.UtcNow.Month, 1).AddMonths(-1);
+            
+            // Parse each file to extract date-range, timestamp, timestamp DATE, and export type (daily vs monthly)
+            var parsedFiles = allParquetFiles
+                .Select(f => {
+                    var dateMatch = dateRangePattern.Match(f.Name);
+                    var timestampMatch = timestampPattern.Match(f.Name);
+                    if (dateMatch.Success && timestampMatch.Success)
+                    {
+                        var folderStart = DateTime.ParseExact(dateMatch.Groups[1].Value, "yyyyMMdd", null);
+                        var folderEnd = DateTime.ParseExact(dateMatch.Groups[2].Value, "yyyyMMdd", null);
+                        var dateRangeKey = dateMatch.Value; // e.g. "20260101-20260131"
+                        var timestamp = timestampMatch.Groups[1].Value; // e.g. "202601121200"
+                        var timestampDate = timestamp.Substring(0, 8); // e.g. "20260112" (just the date part)
+                        
+                        // Determine if this is a daily or monthly export based on folder path
+                        var isMonthlyExport = f.Name.Contains("monthly", StringComparison.OrdinalIgnoreCase);
+                        
+                        return new { 
+                            File = f, 
+                            DateRangeKey = dateRangeKey, 
+                            FolderStart = folderStart, 
+                            FolderEnd = folderEnd,
+                            Timestamp = timestamp,
+                            TimestampDate = timestampDate, // Date portion only (YYYYMMDD)
+                            IsMonthlyExport = isMonthlyExport
+                        };
+                    }
+                    return null;
+                })
+                .Where(x => x != null)
+                .ToList();
+            
+            // IMPORTANT: File selection logic:
+            // - Daily exports contain MTD (month-to-date) data for CURRENT MONTH ONLY
+            // - Monthly exports contain COMPLETE data for FINISHED months
+            // 
+            // For date range queries:
+            // - Current month data → Daily export
+            // - Previous month data → Monthly export (if available)
+            // - Older months → Monthly exports only
+            //
+            // This prevents double-counting when both daily and monthly exist for the same period.
+            
+            var thisMonthStart = new DateTime(DateTime.UtcNow.Year, DateTime.UtcNow.Month, 1);
+            
+            // Apply export type filtering based on period selection
+            var dailyExportFilesList = new List<object>();
+            var monthlyExportFilesList = new List<object>();
+            
+            if (useDailyOnly)
+            {
+                // Daily exports only - MTD uses current month, others use startDate
+                var dailyFilterDate = period == "mtd" ? thisMonthStart : startDate;
+                dailyExportFilesList = parsedFiles
+                    .Where(x => !x!.IsMonthlyExport && x.FolderStart >= dailyFilterDate)
+                    .Cast<object>()
+                    .ToList();
+                _logger.LogInformation("Daily exports mode: Using {DailyCount} daily files from {FilterDate}", 
+                    dailyExportFilesList.Count, dailyFilterDate.ToString("yyyy-MM-dd"));
+            }
+            else if (useMonthlyOnly)
+            {
+                // Last Month: Only monthly exports for previous month
+                monthlyExportFilesList = parsedFiles
+                    .Where(x => x!.IsMonthlyExport && x.FolderStart >= startDate && x.FolderEnd <= endDate)
+                    .Cast<object>()
+                    .ToList();
+                _logger.LogInformation("Last Month mode: Using {MonthlyCount} monthly files only", monthlyExportFilesList.Count);
+            }
+            
+            // ALWAYS load monthly files for LastMonth comparison (regardless of period selection)
+            // This is needed for the Month-over-Month comparison section
+            var lastMonthForComparison = thisMonthStart.AddMonths(-1);
+            var lastMonthEndForComparison = thisMonthStart.AddDays(-1);
+            var monthlyFilesForComparison = parsedFiles
+                .Where(x => x!.IsMonthlyExport && 
+                           x.FolderStart >= lastMonthForComparison && 
+                           x.FolderEnd <= lastMonthEndForComparison)
+                .Cast<object>()
+                .ToList();
+            _logger.LogInformation("Monthly files for MoM comparison: {Count} files for {Start} to {End}",
+                monthlyFilesForComparison.Count, lastMonthForComparison.ToString("yyyy-MM-dd"), lastMonthEndForComparison.ToString("yyyy-MM-dd"));
+            
+            // Log all unique date ranges found (before and after filtering) for debugging
+            var allDateRanges = allParquetFiles
+                .Select(f => {
+                    var match = dateRangePattern.Match(f.Name);
+                    return match.Success ? match.Value : null;
+                })
+                .Where(x => x != null)
+                .Distinct()
+                .ToList();
+            _logger.LogInformation("All date ranges found in storage: {Ranges}", string.Join(", ", allDateRanges!));
+            _logger.LogInformation("Parsed files count (after date filter): {Count}, startDate: {Date}", parsedFiles.Count, startDate.ToString("yyyy-MM-dd"));
+            
+            // For each date-range in DAILY exports, find the MOST RECENT DATE and get ALL files from that date
+            // This ensures we get all subscription exports from the same day
+            var dailyFilesToRead = dailyExportFilesList
+                .Cast<dynamic>()
+                .GroupBy(f => (string)f.DateRangeKey)
+                .SelectMany(dateRangeGroup => {
+                    // Find the most recent DATE (not timestamp)
+                    var mostRecentDate = dateRangeGroup
+                        .OrderByDescending(f => (string)f.TimestampDate)
+                        .First().TimestampDate;
+                    
+                    // Return ALL files from that DATE (all subscriptions that ran on that day)
+                    return dateRangeGroup.Where(f => f.TimestampDate == mostRecentDate);
+                })
+                .ToList();
+            
+            // For each date-range in MONTHLY exports, find the MOST RECENT DATE and get ALL files from that date
+            var monthlyFilesToRead = monthlyExportFilesList
+                .Cast<dynamic>()
+                .GroupBy(f => (string)f.DateRangeKey)
+                .SelectMany(dateRangeGroup => {
+                    var mostRecentDate = dateRangeGroup
+                        .OrderByDescending(f => (string)f.TimestampDate)
+                        .First().TimestampDate;
+                    return dateRangeGroup.Where(f => f.TimestampDate == mostRecentDate);
+                })
+                .ToList();
+            
+            // Process monthly files for MoM comparison (always needed, separate from main view)
+            var comparisonMonthlyFilesToRead = monthlyFilesForComparison
+                .Cast<dynamic>()
+                .GroupBy(f => (string)f.DateRangeKey)
+                .SelectMany(dateRangeGroup => {
+                    if (!dateRangeGroup.Any()) return Enumerable.Empty<dynamic>();
+                    var mostRecentDate = dateRangeGroup
+                        .OrderByDescending(f => (string)f.TimestampDate)
+                        .First().TimestampDate;
+                    return dateRangeGroup.Where(f => f.TimestampDate == mostRecentDate);
+                })
+                .ToList();
+            _logger.LogInformation("Comparison monthly files to read: {Count}", comparisonMonthlyFilesToRead.Count);
+            
+            // COMBINE daily and monthly files - both are needed for the full date range
+            var filesToRead = dailyFilesToRead.Concat(monthlyFilesToRead).ToList();
+            
+            _logger.LogInformation("Combined files: {DailyCount} daily + {MonthlyCount} monthly = {TotalCount} total files to read",
+                (int)dailyFilesToRead.Count, (int)monthlyFilesToRead.Count, (int)filesToRead.Count);
+            
+            // Group for logging
+            var folderSummary = filesToRead
+                .GroupBy(f => f!.DateRangeKey)
+                .Select(g => new {
+                    DateRange = g.Key,
+                    Start = g.First()!.FolderStart,
+                    End = g.First()!.FolderEnd,
+                    TimestampDate = g.First()!.TimestampDate,
+                    Timestamps = g.Select(f => f!.Timestamp).Distinct().OrderBy(t => t).ToList(),
+                    FileCount = g.Count()
+                })
+                .OrderByDescending(f => f.Start)
+                .ToList();
+            
+            _logger.LogInformation("Selected {Count} date-range folders, {FileCount} files (most recent date, all subscriptions), covering date range starting {StartDate}", 
+                folderSummary.Count, (int)filesToRead.Count, startDate.ToString("yyyy-MM-dd"));
+            
+            foreach (var folder in folderSummary)
+            {
+                _logger.LogInformation("  {DateRange} ({Start} to {End}) - date {Date}, {TimestampCount} timestamps, {FileCount} files", 
+                    (string)folder.DateRange, ((DateTime)folder.Start).ToString("yyyy-MM-dd"), ((DateTime)folder.End).ToString("yyyy-MM-dd"), 
+                    (string)folder.TimestampDate, folder.Timestamps.Count, folder.FileCount);
+            }
+
+            // Parse parquet files
+            var allRecords = new List<CostRecord>();
+            var availableColumns = new List<string>();
+            var filesProcessed = new List<string>();
+            
+            var sortedFiles = filesToRead.Select(f => f!.File).ToList();
+
+            foreach (var fileInfo in sortedFiles)
+            {
+                try
+                {
+                    // fileInfo is a tuple (Name, Modified, FolderPath) - access via Item1 due to dynamic
+                    var fileName = (string)fileInfo.Item1;
+                    var blobClient = containerClient.GetBlobClient(fileName);
+                    filesProcessed.Add(fileName);
+                    using var stream = new MemoryStream();
+                    await blobClient.DownloadToAsync(stream);
+                    stream.Position = 0;
+
+                    var (records, columns) = await ParseParquetFile(stream);
+                    allRecords.AddRange(records);
+                    
+                    // Capture column names from first file for diagnostics
+                    if (!availableColumns.Any() && columns.Any())
+                    {
+                        availableColumns.AddRange(columns);
+                        _logger.LogInformation("Parquet columns found: {Columns}", string.Join(", ", columns.Take(30)));
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Error parsing parquet file {FileName}", (string)fileInfo.Item1);
+                }
+            }
+
+            _logger.LogInformation("Parsed {Count} cost records from DAILY exports for customer {CustomerId} (before deduplication)", allRecords.Count, customerId);
+
+            // Now read MONTHLY export files separately (for LastMonthCost comparison only)
+            var monthlyRecords = new List<CostRecord>();
+            var monthlyFilesProcessed = new List<string>();
+            
+            var sortedMonthlyFiles = comparisonMonthlyFilesToRead.Select(f => f!.File).ToList();
+            foreach (var fileInfo in sortedMonthlyFiles)
+            {
+                try
+                {
+                    // fileInfo is a tuple (Name, Modified, FolderPath) - access via Item1 due to dynamic
+                    var fileName = (string)fileInfo.Item1;
+                    var blobClient = containerClient.GetBlobClient(fileName);
+                    monthlyFilesProcessed.Add(fileName);
+                    using var stream = new MemoryStream();
+                    await blobClient.DownloadToAsync(stream);
+                    stream.Position = 0;
+
+                    var (records, _) = await ParseParquetFile(stream);
+                    monthlyRecords.AddRange(records);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Error parsing monthly parquet file {FileName}", (string)fileInfo.Item1);
+                }
+            }
+            
+            _logger.LogInformation("Parsed {Count} cost records from MONTHLY exports (for LastMonthCost only)", monthlyRecords.Count);
+
+            // DEDUPLICATION for daily records: When multiple exports run on the same day (manual runs), we may have duplicate records
+            // Deduplicate by unique key: Date + SubscriptionId + ResourceId + ServiceName + BilledCost
+            var recordCountBefore = allRecords.Count;
+            allRecords = allRecords
+                .GroupBy(r => new { 
+                    r.Date, 
+                    r.SubscriptionId, 
+                    ResourceId = r.ResourceName, // ResourceName often contains the resource ID
+                    r.ServiceName,
+                    r.BilledCost // Include cost to handle edge cases where same resource has different line items
+                })
+                .Select(g => g.First()) // Take first occurrence of each unique record
+                .ToList();
+            
+            var duplicatesRemoved = recordCountBefore - allRecords.Count;
+            if (duplicatesRemoved > 0)
+            {
+                _logger.LogInformation("Removed {Count} duplicate records from daily exports (from {Before} to {After})", 
+                    duplicatesRemoved, recordCountBefore, allRecords.Count);
+            }
+            
+            // Also deduplicate monthly records
+            var monthlyCountBefore = monthlyRecords.Count;
+            monthlyRecords = monthlyRecords
+                .GroupBy(r => new { 
+                    r.Date, 
+                    r.SubscriptionId, 
+                    ResourceId = r.ResourceName,
+                    r.ServiceName,
+                    r.BilledCost
+                })
+                .Select(g => g.First())
+                .ToList();
+            var monthlyDuplicatesRemoved = monthlyCountBefore - monthlyRecords.Count;
+
+            // Filter daily records to requested date range
+            // Note: endDate already defined at top of function based on period selection
+            var filteredRecords = allRecords.Where(r => r.Date >= startDate).ToList();
+            
+            // Monthly records are already filtered to last month by file selection
+            // Pass them separately to the aggregation function
+            var result = AggregateCostData(filteredRecords, startDate, endDate, monthlyRecords);
+
+            var response = req.CreateResponse(HttpStatusCode.OK);
+            await response.WriteAsJsonAsync(new
+            {
+                success = true,
+                data = result,
+                diagnostics = new
+                {
+                    // Daily export stats (used for rolling date queries)
+                    dailyFilesProcessed = filesProcessed.Count,
+                    dailyRecordsLoaded = allRecords.Count,
+                    dailyRecordsInDateRange = filteredRecords.Count,
+                    // Monthly export stats (used ONLY for LastMonthCost)
+                    monthlyFilesProcessed = monthlyFilesProcessed.Count,
+                    monthlyRecordsLoaded = monthlyRecords.Count,
+                    monthlyDuplicatesRemoved = monthlyDuplicatesRemoved,
+                    // General stats
+                    totalParquetFilesFound = allParquetFiles.Count,
+                    foldersSelected = folderSummary.Select(f => new { 
+                        folder = f.DateRange, 
+                        dateRange = $"{f.Start:yyyy-MM-dd} to {f.End:yyyy-MM-dd}",
+                        exportDate = f.TimestampDate,
+                        subscriptionCount = f.Timestamps.Count,
+                        fileCount = f.FileCount,
+                        exportType = "daily"
+                    }),
+                    recordsBeforeDeduplication = recordCountBefore,
+                    duplicatesRemoved = duplicatesRemoved,
+                    dateRangeDays = days,
+                    requestedStartDate = startDate.ToString("yyyy-MM-dd"),
+                    allDateRangesInStorage = allDateRanges,
+                    topLevelFolders = topLevelFolders,
+                    totalBlobsInContainer = allBlobPaths.Count,
+                    uniqueFolderPaths = allUniqueFolders,
+                    filesUsed = filesProcessed.Select(f => f.Split('/').Last()).ToList(),
+                    availableColumns = availableColumns.Take(50).ToList(),
+                    // NEW: Enhanced diagnostics for debugging
+                    hasMonthlyFolder = hasMonthlyFolder,
+                    hasDailyFolder = hasDailyFolder,
+                    sasTokenInfo = new {
+                        permissions = sasPermissions,
+                        resourceType = sasResourceType,
+                        service = sasService,
+                        expiry = sasExpiry
+                    },
+                    sampleBlobPaths = samplePaths.Take(10),
+                    blobListingError = blobListingError
+                }
+            });
+            return response;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to get cost analysis for customer {CustomerId}", customerId);
+            return await CreateErrorResponse(req, HttpStatusCode.InternalServerError, $"Failed to get cost analysis: {ex.Message}");
+        }
+    }
+
+    private async Task<(List<CostRecord> Records, List<string> Columns)> ParseParquetFile(Stream stream)
+    {
+        var records = new List<CostRecord>();
+        var columnNames = new List<string>();
+        
+        using var reader = await Parquet.ParquetReader.CreateAsync(stream);
+        
+        for (int i = 0; i < reader.RowGroupCount; i++)
+        {
+            using var rowGroupReader = reader.OpenRowGroupReader(i);
+            var dataFields = reader.Schema.GetDataFields();
+            
+            // Capture column names (only from first row group)
+            if (i == 0)
+            {
+                columnNames = dataFields.Select(f => f.Name).ToList();
+            }
+            
+            // Read columns we need
+            var columns = new Dictionary<string, object[]>();
+            foreach (var field in dataFields)
+            {
+                try
+                {
+                    var column = await rowGroupReader.ReadColumnAsync(field);
+                    columns[field.Name.ToLowerInvariant()] = column.Data.Cast<object>().ToArray();
+                }
+                catch { }
+            }
+
+            var rowCount = columns.Values.FirstOrDefault()?.Length ?? 0;
+            
+            for (int row = 0; row < rowCount; row++)
+            {
+                try
+                {
+                    var record = new CostRecord();
+                    
+                    // FOCUS column names (case-insensitive)
+                    record.BilledCost = GetColumnValue<decimal>(columns, row, "billedcost", "effectivecost", "cost");
+                    record.ServiceName = GetColumnStringValue(columns, row, "servicename", "metercategory", "service");
+                    record.ServiceCategory = GetColumnStringValue(columns, row, "servicecategory", "consumedservice", "category");
+                    record.ResourceName = GetColumnStringValue(columns, row, "resourcename", "resourceid", "resource");
+                    record.ResourceType = GetColumnStringValue(columns, row, "resourcetype", "metersubcategory");
+                    // FOCUS doesn't have ResourceGroup - extract from ResourceId if available
+                    var resourceId = GetColumnStringValue(columns, row, "resourceid");
+                    record.ResourceGroup = ExtractResourceGroupFromId(resourceId);
+                    record.Region = GetColumnStringValue(columns, row, "regionname", "region", "resourcelocation", "location");
+                    record.SubscriptionName = GetColumnStringValue(columns, row, "subaccountname", "subscriptionname", "subscription");
+                    record.SubscriptionId = GetColumnStringValue(columns, row, "subaccountid", "subscriptionid");
+                    
+                    // Parse date
+                    var dateStr = GetColumnStringValue(columns, row, "chargeperiodstart", "billingperiodstartdate", "usagedatetime", "date");
+                    if (DateTime.TryParse(dateStr, out var date))
+                    {
+                        record.Date = date.Date;
+                    }
+                    else
+                    {
+                        record.Date = DateTime.UtcNow.Date;
+                    }
+
+                    // Include all records with non-zero cost
+                    if (record.BilledCost != 0)
+                    {
+                        records.Add(record);
+                    }
+                }
+                catch { }
+            }
+        }
+        
+        return (records, columnNames);
+    }
+
+    private T GetColumnValue<T>(Dictionary<string, object[]> columns, int row, params string[] possibleNames)
+    {
+        foreach (var name in possibleNames)
+        {
+            if (columns.TryGetValue(name, out var col) && row < col.Length && col[row] != null)
+            {
+                try
+                {
+                    return (T)Convert.ChangeType(col[row], typeof(T));
+                }
+                catch { }
+            }
+        }
+        return default!;
+    }
+
+    private string GetColumnStringValue(Dictionary<string, object[]> columns, int row, params string[] possibleNames)
+    {
+        foreach (var name in possibleNames)
+        {
+            if (columns.TryGetValue(name, out var col) && row < col.Length && col[row] != null)
+            {
+                return col[row].ToString() ?? "";
+            }
+        }
+        return "";
+    }
+
+    private string ExtractResourceGroupFromId(string resourceId)
+    {
+        // ResourceId format: /subscriptions/{sub}/resourceGroups/{rg}/providers/{provider}/{type}/{name}
+        if (string.IsNullOrEmpty(resourceId)) return "";
+        
+        var lower = resourceId.ToLowerInvariant();
+        var rgIndex = lower.IndexOf("/resourcegroups/");
+        if (rgIndex < 0) return "";
+        
+        var startIndex = rgIndex + "/resourcegroups/".Length;
+        var endIndex = resourceId.IndexOf('/', startIndex);
+        
+        if (endIndex < 0) return resourceId.Substring(startIndex);
+        return resourceId.Substring(startIndex, endIndex - startIndex);
+    }
+
+    private object AggregateCostData(List<CostRecord> records, DateTime startDate, DateTime endDate, List<CostRecord>? monthlyRecords = null)
+    {
+        // Filter to requested date range for main metrics
+        // 'records' contains ONLY daily export data - used for rolling date queries
+        var rangeRecords = records.Where(r => r.Date >= startDate).ToList();
+        var totalCost = rangeRecords.Sum(r => (double)r.BilledCost);
+        
+        // Calendar month calculations
+        var thisMonthStart = new DateTime(DateTime.UtcNow.Year, DateTime.UtcNow.Month, 1);
+        var lastMonthStart = thisMonthStart.AddMonths(-1);
+        var lastMonthEnd = thisMonthStart.AddDays(-1);
+        
+        // This month cost comes from daily exports (current MTD data)
+        var thisMonthCost = records.Where(r => r.Date >= thisMonthStart).Sum(r => (double)r.BilledCost);
+        
+        // Last month cost: use MONTHLY export if available, otherwise fall back to daily exports
+        // Monthly exports contain complete data for the previous month
+        double lastMonthCost;
+        double lastMonthSamePeriodCost = 0;
+        var currentDayOfMonth = DateTime.UtcNow.Day;
+        
+        if (monthlyRecords != null && monthlyRecords.Any())
+        {
+            // Use monthly export data - this is the authoritative source for completed months
+            lastMonthCost = monthlyRecords.Sum(r => (double)r.BilledCost);
+            
+            // Same period comparison: Dec 1-13 if today is Jan 13
+            var lastMonthSamePeriodEnd = lastMonthStart.AddDays(currentDayOfMonth - 1);
+            lastMonthSamePeriodCost = monthlyRecords
+                .Where(r => r.Date >= lastMonthStart && r.Date <= lastMonthSamePeriodEnd)
+                .Sum(r => (double)r.BilledCost);
+        }
+        else
+        {
+            // Fallback: try to get from daily exports (may be incomplete if daily export doesn't cover last month)
+            lastMonthCost = records.Where(r => r.Date >= lastMonthStart && r.Date <= lastMonthEnd).Sum(r => (double)r.BilledCost);
+            
+            // Same period comparison from daily exports
+            var lastMonthSamePeriodEnd = lastMonthStart.AddDays(currentDayOfMonth - 1);
+            lastMonthSamePeriodCost = records
+                .Where(r => r.Date >= lastMonthStart && r.Date <= lastMonthSamePeriodEnd)
+                .Sum(r => (double)r.BilledCost);
+        }
+
+        // Daily trend - use range records
+        var dailyTrend = rangeRecords
+            .GroupBy(r => r.Date.Date)
+            .Select(g => new { Date = g.Key.ToString("yyyy-MM-dd"), Cost = Math.Round(g.Sum(r => (double)r.BilledCost), 2) })
+            .OrderBy(d => d.Date)
+            .ToList();
+
+        // Top services - use range records
+        var topServices = rangeRecords
+            .GroupBy(r => string.IsNullOrEmpty(r.ServiceName) ? "Other" : r.ServiceName)
+            .Select(g => new { Name = g.Key, Cost = Math.Round(g.Sum(r => (double)r.BilledCost), 2), Count = g.Count() })
+            .OrderByDescending(s => s.Cost)
+            .Take(10)
+            .ToList();
+
+        // Top resource groups - use range records
+        var topResourceGroups = rangeRecords
+            .GroupBy(r => string.IsNullOrEmpty(r.ResourceGroup) ? "Other" : r.ResourceGroup)
+            .Select(g => new { Name = g.Key, Cost = Math.Round(g.Sum(r => (double)r.BilledCost), 2), Count = g.Count() })
+            .OrderByDescending(rg => rg.Cost)
+            .Take(10)
+            .ToList();
+
+        // Top resources - use range records
+        var topResources = rangeRecords
+            .GroupBy(r => string.IsNullOrEmpty(r.ResourceName) ? "Unknown" : r.ResourceName)
+            .Select(g => new { 
+                Name = g.Key, 
+                Cost = Math.Round(g.Sum(r => (double)r.BilledCost), 2), 
+                Count = g.Count(),
+                ResourceType = g.First().ResourceType,
+                ResourceGroup = g.First().ResourceGroup
+            })
+            .OrderByDescending(r => r.Cost)
+            .Take(20)
+            .ToList();
+
+        // By region - use range records
+        var byRegion = rangeRecords
+            .GroupBy(r => string.IsNullOrEmpty(r.Region) ? "Unknown" : r.Region)
+            .Select(g => new { Name = g.Key, Cost = Math.Round(g.Sum(r => (double)r.BilledCost), 2), Count = g.Count() })
+            .OrderByDescending(r => r.Cost)
+            .ToList();
+
+        // By subscription - use range records
+        var bySubscription = rangeRecords
+            .GroupBy(r => string.IsNullOrEmpty(r.SubscriptionName) ? r.SubscriptionId : r.SubscriptionName)
+            .Where(g => !string.IsNullOrEmpty(g.Key))
+            .Select(g => new { Name = g.Key, Cost = Math.Round(g.Sum(r => (double)r.BilledCost), 2), Count = g.Count() })
+            .OrderByDescending(s => s.Cost)
+            .ToList();
+
+        // By service category - use range records
+        var byServiceCategory = rangeRecords
+            .GroupBy(r => string.IsNullOrEmpty(r.ServiceCategory) ? "Other" : r.ServiceCategory)
+            .Select(g => new { Name = g.Key, Cost = Math.Round(g.Sum(r => (double)r.BilledCost), 2), Count = g.Count() })
+            .OrderByDescending(c => c.Cost)
+            .ToList();
+
+        // Weekly comparison
+        var thisWeekStart = DateTime.UtcNow.Date.AddDays(-(int)DateTime.UtcNow.DayOfWeek);
+        var lastWeekStart = thisWeekStart.AddDays(-7);
+        var lastWeekEnd = thisWeekStart.AddDays(-1);
+
+        var thisWeekByCategory = rangeRecords
+            .Where(r => r.Date >= thisWeekStart)
+            .GroupBy(r => string.IsNullOrEmpty(r.ServiceCategory) ? "Other" : r.ServiceCategory)
+            .Select(g => new { Name = g.Key, Cost = Math.Round(g.Sum(r => (double)r.BilledCost), 2), Count = g.Count() })
+            .OrderByDescending(c => c.Cost)
+            .ToList();
+
+        var lastWeekByCategory = rangeRecords
+            .Where(r => r.Date >= lastWeekStart && r.Date <= lastWeekEnd)
+            .GroupBy(r => string.IsNullOrEmpty(r.ServiceCategory) ? "Other" : r.ServiceCategory)
+            .Select(g => new { Name = g.Key, Cost = Math.Round(g.Sum(r => (double)r.BilledCost), 2), Count = g.Count() })
+            .OrderByDescending(c => c.Cost)
+            .ToList();
+
+        var thisWeekByResourceGroup = rangeRecords
+            .Where(r => r.Date >= thisWeekStart)
+            .GroupBy(r => string.IsNullOrEmpty(r.ResourceGroup) ? "Other" : r.ResourceGroup)
+            .Select(g => new { Name = g.Key, Cost = Math.Round(g.Sum(r => (double)r.BilledCost), 2), Count = g.Count() })
+            .OrderByDescending(rg => rg.Cost)
+            .Take(10)
+            .ToList();
+
+        var lastWeekByResourceGroup = rangeRecords
+            .Where(r => r.Date >= lastWeekStart && r.Date <= lastWeekEnd)
+            .GroupBy(r => string.IsNullOrEmpty(r.ResourceGroup) ? "Other" : r.ResourceGroup)
+            .Select(g => new { Name = g.Key, Cost = Math.Round(g.Sum(r => (double)r.BilledCost), 2), Count = g.Count() })
+            .OrderByDescending(rg => rg.Cost)
+            .Take(10)
+            .ToList();
+
+        // All resources (limited) - use range records
+        var allResources = rangeRecords
+            .GroupBy(r => new { r.ResourceName, r.ResourceType, r.ResourceGroup, r.Region, r.SubscriptionName, r.ServiceName, r.ServiceCategory })
+            .Select(g => new {
+                Name = string.IsNullOrEmpty(g.Key.ResourceName) ? "Unknown" : g.Key.ResourceName,
+                ResourceType = g.Key.ResourceType ?? "Unknown",
+                ResourceGroup = g.Key.ResourceGroup ?? "Unknown",
+                Region = g.Key.Region ?? "Unknown",
+                Subscription = g.Key.SubscriptionName ?? "Unknown",
+                ServiceName = g.Key.ServiceName ?? "Unknown",
+                ServiceCategory = g.Key.ServiceCategory ?? "Other",
+                Cost = Math.Round(g.Sum(r => (double)r.BilledCost), 2)
+            })
+            .OrderByDescending(r => r.Cost)
+            .Take(500)
+            .ToList();
+
+        return new
+        {
+            TotalCost = Math.Round(totalCost, 2),
+            ThisMonthCost = Math.Round(thisMonthCost, 2),
+            LastMonthCost = Math.Round(lastMonthCost, 2),
+            LastMonthSamePeriodCost = Math.Round(lastMonthSamePeriodCost, 2),
+            StartDate = startDate.ToString("yyyy-MM-dd"),
+            EndDate = endDate.ToString("yyyy-MM-dd"),
+            RecordCount = rangeRecords.Count,
+            DailyTrend = dailyTrend,
+            TopServices = topServices,
+            TopResourceGroups = topResourceGroups,
+            TopResources = topResources,
+            ByRegion = byRegion,
+            BySubscription = bySubscription,
+            ByServiceCategory = byServiceCategory,
+            AllResources = allResources,
+            UniqueResourceCount = rangeRecords.Select(r => r.ResourceName).Distinct().Count(),
+            UniqueResourceTypes = rangeRecords.Select(r => r.ResourceType).Where(t => !string.IsNullOrEmpty(t)).Distinct().Count(),
+            UniqueResourceGroups = rangeRecords.Select(r => r.ResourceGroup).Where(rg => !string.IsNullOrEmpty(rg)).Distinct().Count(),
+            ThisWeekByCategory = thisWeekByCategory,
+            LastWeekByCategory = lastWeekByCategory,
+            ThisWeekByResourceGroup = thisWeekByResourceGroup,
+            LastWeekByResourceGroup = lastWeekByResourceGroup
+        };
+    }
+
+    private class CostRecord
+    {
+        public decimal BilledCost { get; set; }
+        public string ServiceName { get; set; } = "";
+        public string ServiceCategory { get; set; } = "";
+        public string ResourceName { get; set; } = "";
+        public string ResourceType { get; set; } = "";
+        public string ResourceGroup { get; set; } = "";
+        public string Region { get; set; } = "";
+        public string SubscriptionName { get; set; } = "";
+        public string SubscriptionId { get; set; } = "";
+        public DateTime Date { get; set; }
     }
 
     private List<Dictionary<string, object>> GenerateReservationInsights(List<Dictionary<string, object>> reservations, List<Dictionary<string, object>> purchaseRecs)

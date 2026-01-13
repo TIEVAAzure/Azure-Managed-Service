@@ -287,10 +287,112 @@ Then redeploy function app.
 
 ---
 
+## Frontend Timeout Issues
+
+### Assessment Takes Too Long (>4 minutes)
+
+**Symptom:** Frontend shows error but assessment actually completes in the backend.
+
+**Cause:** Azure Static Web App has ~4 minute timeout limit for proxied requests.
+
+**Solution (Implemented Jan 2025):**
+- Use async queue-based processing
+- StartAssessment queues job and returns immediately
+- ProcessAssessment (queue trigger) runs audits
+- Frontend polls for completion status
+
+---
+
+### Reservation Refresh Timeout
+
+**Symptom:** Clicking "Refresh Data from Azure" shows error but data eventually appears.
+
+**Cause:** Azure Consumption/Reservation APIs can be slow (30+ seconds).
+
+**Solution (Implemented Jan 2025):**
+- CustomerReservationCache table stores async results
+- Refresh triggers async API fetch
+- Frontend polls status until complete
+- Cache refreshed in background
+
+---
+
+## SWA Linking Issues
+
+### External API Calls Blocked
+
+**Symptom:** func-tieva-audit cannot call func-tievaportal-6612 API.
+
+**Cause:** SWA linking blocks external (non-browser) API calls.
+
+**Solution:** 
+- Keep SWA-linked endpoints for browser requests (security benefit)
+- Audit functions write directly to database instead of API callbacks
+- Use direct database operations for backend-to-backend communication
+
+---
+
+## FinOps Issues
+
+### SAS Token Validation Fails
+
+**Symptom:** "Invalid SAS token" error for Azure-generated tokens.
+
+**Cause:** Portal validation expected `sv=` prefix but Azure tokens may start with `sp=`.
+
+**Solution:** Update validation to accept tokens starting with any valid parameter.
+
+---
+
+### Cost Data Shows Wrong Values
+
+**Symptom:** 30-day cost is much higher than expected.
+
+**Cause:** Multiple parquet files being read, causing duplication.
+
+**Solution (Fixed Jan 2025):**
+- Read all files in date range
+- Deduplicate records at row level
+- Use composite key for deduplication
+
+---
+
+### Export Discovery Returns Empty
+
+**Symptom:** "Run Export Now" shows 0 exports found.
+
+**Cause:** Cost Management exports may be at subscription or billing scope level.
+
+**Debug:**
+```powershell
+# Check both subscription and billing scope
+GET https://management.azure.com/subscriptions/{id}/providers/Microsoft.CostManagement/exports
+GET https://management.azure.com/providers/Microsoft.Billing/billingAccounts/{id}/providers/Microsoft.CostManagement/exports
+```
+
+---
+
+## Column Mapping Issues
+
+### Finding Column Name Mismatch
+
+**Symptom:** Findings not appearing in portal after parsing.
+
+**Cause:** Database column is `Finding` but EF property is `FindingText`.
+
+**Solution:**
+- PowerShell scripts must insert into `Finding` column
+- EF mapping in TievaDbContext.cs: `e.Property(x => x.FindingText).HasColumnName("Finding")`
+- Don't change database schema; align code to existing mapping
+
+---
+
 ## Known Limitations
 
 1. **Single-threaded Audit:** Modules run sequentially, not in parallel
-2. **No Real-time Updates:** Portal doesn't auto-refresh during assessment
+2. **Async Polling Required:** Portal must poll for assessment/reservation status
 3. **Basic SQL Tier:** May hit DTU limits with heavy concurrent use
 4. **No Retry Logic:** Failed modules don't automatically retry
 5. **File Size Limit:** Very large Excel files may timeout during parse
+6. **SWA Proxy Timeout:** ~4 minute limit for synchronous requests
+7. **Reservation API Rate Limits:** Azure Consumption APIs may be slow

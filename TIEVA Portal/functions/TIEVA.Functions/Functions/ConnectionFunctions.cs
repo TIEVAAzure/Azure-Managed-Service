@@ -29,7 +29,7 @@ public class ConnectionFunctions
 
     [Function("GetConnections")]
     public async Task<HttpResponseData> GetConnections(
-        [HttpTrigger(AuthorizationLevel.Function, "get", Route = "connections")] HttpRequestData req)
+        [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "connections")] HttpRequestData req)
     {
         var connections = await _db.AzureConnections
             .Where(c => c.IsActive)
@@ -66,7 +66,7 @@ public class ConnectionFunctions
 
     [Function("GetConnection")]
     public async Task<HttpResponseData> GetConnection(
-        [HttpTrigger(AuthorizationLevel.Function, "get", Route = "connections/{id}")] HttpRequestData req,
+        [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "connections/{id}")] HttpRequestData req,
         string id)
     {
         if (!Guid.TryParse(id, out var connectionId))
@@ -118,7 +118,7 @@ public class ConnectionFunctions
 
     [Function("CreateConnection")]
     public async Task<HttpResponseData> CreateConnection(
-        [HttpTrigger(AuthorizationLevel.Function, "post", Route = "connections")] HttpRequestData req)
+        [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "connections")] HttpRequestData req)
     {
         var body = await new StreamReader(req.Body).ReadToEndAsync();
         var input = JsonSerializer.Deserialize<CreateConnectionRequest>(body, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
@@ -206,7 +206,7 @@ public class ConnectionFunctions
 
     [Function("UpdateConnection")]
     public async Task<HttpResponseData> UpdateConnection(
-        [HttpTrigger(AuthorizationLevel.Function, "put", Route = "connections/{id}")] HttpRequestData req,
+        [HttpTrigger(AuthorizationLevel.Anonymous, "put", Route = "connections/{id}")] HttpRequestData req,
         string id)
     {
         if (!Guid.TryParse(id, out var connectionId))
@@ -315,7 +315,7 @@ public class ConnectionFunctions
 
     [Function("ValidateConnection")]
     public async Task<HttpResponseData> ValidateConnection(
-        [HttpTrigger(AuthorizationLevel.Function, "post", Route = "connections/{id}/validate")] HttpRequestData req,
+        [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "connections/{id}/validate")] HttpRequestData req,
         string id)
     {
         if (!Guid.TryParse(id, out var connectionId))
@@ -369,7 +369,7 @@ public class ConnectionFunctions
 
     [Function("SyncSubscriptions")]
     public async Task<HttpResponseData> SyncSubscriptions(
-        [HttpTrigger(AuthorizationLevel.Function, "post", Route = "connections/{id}/sync")] HttpRequestData req,
+        [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "connections/{id}/sync")] HttpRequestData req,
         string id)
     {
         if (!Guid.TryParse(id, out var connectionId))
@@ -451,7 +451,7 @@ public class ConnectionFunctions
 
     [Function("GetAuditSubscriptions")]
     public async Task<HttpResponseData> GetAuditSubscriptions(
-        [HttpTrigger(AuthorizationLevel.Function, "get", Route = "connections/{id}/audit-subscriptions/{moduleCode}")] HttpRequestData req,
+        [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "connections/{id}/audit-subscriptions/{moduleCode}")] HttpRequestData req,
         string id,
         string moduleCode)
     {
@@ -521,7 +521,7 @@ public class ConnectionFunctions
 
     [Function("DeleteConnection")]
     public async Task<HttpResponseData> DeleteConnection(
-        [HttpTrigger(AuthorizationLevel.Function, "delete", Route = "connections/{id}")] HttpRequestData req,
+        [HttpTrigger(AuthorizationLevel.Anonymous, "delete", Route = "connections/{id}")] HttpRequestData req,
         string id)
     {
         if (!Guid.TryParse(id, out var connectionId))
@@ -542,11 +542,14 @@ public class ConnectionFunctions
             return notFound;
         }
 
+        var customerId = connection.CustomerId;
+
         // Track deletion counts
         var subscriptionsDeleted = connection.Subscriptions.Count;
         var assessmentsDeleted = 0;
         var findingsDeleted = 0;
         var moduleResultsDeleted = 0;
+        var customerFindingsDeleted = 0;
 
         // Cascade delete: Find and delete all assessments for this connection
         var assessments = await _db.Assessments
@@ -573,6 +576,21 @@ public class ConnectionFunctions
 
         await _db.SaveChangesAsync();
 
+        // Clean up orphaned CustomerFindings
+        var remainingHashes = await _db.Findings
+            .Where(f => _db.Assessments.Any(a => a.Id == f.AssessmentId && a.CustomerId == customerId))
+            .Select(f => f.Hash)
+            .Distinct()
+            .ToListAsync();
+
+        var orphanedCustomerFindings = await _db.CustomerFindings
+            .Where(cf => cf.CustomerId == customerId && !remainingHashes.Contains(cf.Hash))
+            .ToListAsync();
+
+        customerFindingsDeleted = orphanedCustomerFindings.Count;
+        _db.CustomerFindings.RemoveRange(orphanedCustomerFindings);
+        await _db.SaveChangesAsync();
+
         // Delete KeyVault secret
         try
         {
@@ -584,8 +602,8 @@ public class ConnectionFunctions
             _logger.LogWarning(ex, "Failed to delete secret from Key Vault");
         }
 
-        _logger.LogInformation("Deleted connection {Id} with {Subs} subscriptions, {Assessments} assessments, {Findings} findings",
-            connectionId, subscriptionsDeleted, assessmentsDeleted, findingsDeleted);
+        _logger.LogInformation("Deleted connection {Id} with {Subs} subscriptions, {Assessments} assessments, {Findings} findings, {CustomerFindings} customer findings",
+            connectionId, subscriptionsDeleted, assessmentsDeleted, findingsDeleted, customerFindingsDeleted);
 
         var response = req.CreateResponse(HttpStatusCode.OK);
         await response.WriteAsJsonAsync(new
@@ -594,7 +612,8 @@ public class ConnectionFunctions
             subscriptionsDeleted,
             assessmentsDeleted,
             findingsDeleted,
-            moduleResultsDeleted
+            moduleResultsDeleted,
+            customerFindingsDeleted
         });
         return response;
     }

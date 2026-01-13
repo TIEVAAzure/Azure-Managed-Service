@@ -20,7 +20,7 @@ public class DashboardFunctions
 
     [Function("GetDashboard")]
     public async Task<HttpResponseData> GetDashboard(
-        [HttpTrigger(AuthorizationLevel.Function, "get", Route = "dashboard")] HttpRequestData req)
+        [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "dashboard")] HttpRequestData req)
     {
         var thirtyDaysAgo = DateTime.UtcNow.AddDays(-30);
 
@@ -116,7 +116,7 @@ public class DashboardFunctions
 
     [Function("GetDashboardStats")]
     public async Task<HttpResponseData> GetDashboardStats(
-        [HttpTrigger(AuthorizationLevel.Function, "get", Route = "dashboard/stats")] HttpRequestData req)
+        [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "dashboard/stats")] HttpRequestData req)
     {
         // Get unique findings from CustomerFindings table (deduplicated across all assessments)
         var customerFindingsStats = await _db.CustomerFindings

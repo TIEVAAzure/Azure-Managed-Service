@@ -1,6 +1,6 @@
 # TIEVA Portal - Master Reference
 
-**Last Updated:** January 2025 (v2.1)
+**Last Updated:** January 2025 (v2.2 - Async Processing & FinOps Enhancements)
 
 ## Quick Reference
 
@@ -19,7 +19,7 @@
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
-│                         TIEVA Portal                                │
+│                         TIEVA CloudOps Portal                       │
 ├─────────────────────────────────────────────────────────────────────┤
 │                                                                     │
 │  ┌──────────────┐     ┌──────────────────┐     ┌────────────────┐  │
@@ -27,29 +27,37 @@
 │  │ App (SPA)    │     │ App (API)        │     │ TievaPortal    │  │
 │  │              │     │ func-tievaPortal │     │                │  │
 │  └──────────────┘     └────────┬─────────┘     └────────────────┘  │
-│                                │                                    │
-│                                ▼                                    │
-│                       ┌────────────────┐                           │
-│                       │ Key Vault      │◀──────────────────────┐   │
-│                       │ (SP Secrets)   │                       │   │
-│                       └────────────────┘                       │   │
-│                                                                │   │
-│  ┌──────────────────────────────────────────────────────────┐  │   │
+│         │                      │                                    │
+│         │ SWA-Linked           │                                    │
+│         │ (/api proxy)         ▼                                    │
+│         │             ┌────────────────┐                           │
+│         │             │ Key Vault      │◀──────────────────────┐   │
+│         │             │ (SP Secrets +  │                       │   │
+│         │             │  SAS Tokens)   │                       │   │
+│         │             └────────────────┘                       │   │
+│         │                                                      │   │
+│  ┌──────┴───────────────────────────────────────────────────┐  │   │
 │  │ PowerShell Function App (func-tieva-audit)              │  │   │
 │  │ ┌─────────────────┐    ┌─────────────────────────────┐  │  │   │
-│  │ │ StartAssessment │───▶│ Scripts/                    │  │──┘   │
-│  │ │ (HTTP Trigger)  │    │ - NetworkAudit.ps1          │  │      │
-│  │ └─────────────────┘    │ - BackupAudit.ps1           │  │      │
-│  │         │              │ - CostManagementAudit.ps1   │  │      │
-│  │         ▼              │ - IdentityAudit.ps1         │  │      │
-│  │ ┌─────────────────┐    │ - PolicyAudit.ps1           │  │      │
-│  │ │ Blob Storage    │    │ - ResourceAudit.ps1         │  │      │
-│  │ │ (audit-results) │    │ - ReservationAudit.ps1      │  │      │
+│  │ │ StartAssessment │───▶│ Assessment Queue            │  │──┘   │
+│  │ │ (HTTP Trigger)  │    │ (async processing)          │  │      │
+│  │ └─────────────────┘    └──────────┬──────────────────┘  │      │
+│  │                                   │                      │      │
+│  │ ┌─────────────────┐               ▼                      │      │
+│  │ │ProcessAssessment│    ┌─────────────────────────────┐  │      │
+│  │ │ (Queue Trigger) │───▶│ Scripts/                    │  │      │
+│  │ └─────────────────┘    │ - NetworkAudit.ps1          │  │      │
+│  │         │              │ - BackupAudit.ps1           │  │      │
+│  │         ▼              │ - CostManagementAudit.ps1   │  │      │
+│  │ ┌─────────────────┐    │ - IdentityAudit.ps1         │  │      │
+│  │ │ Blob Storage    │    │ - PolicyAudit.ps1           │  │      │
+│  │ │ (audit-results) │    │ - ResourceAudit.ps1         │  │      │
 │  │ └─────────────────┘    │ - SecurityAudit.ps1         │  │      │
 │  │                        │ - PatchAudit.ps1            │  │      │
-│  │                        │ - PerformanceAudit.ps1      │  │      │
-│  │                        │ - ComplianceAudit.ps1       │  │      │
-│  │                        └─────────────────────────────┘  │      │
+│  │ ┌─────────────────┐    │ - PerformanceAudit.ps1      │  │      │
+│  │ │ SetupFinOps     │    │ - ComplianceAudit.ps1       │  │      │
+│  │ │ (HTTP Trigger)  │    └─────────────────────────────┘  │      │
+│  │ └─────────────────┘                                      │      │
 │  └──────────────────────────────────────────────────────────┘      │
 │                                                                     │
 └─────────────────────────────────────────────────────────────────────┘
@@ -69,13 +77,14 @@
 |---------------|------|---------|
 | SQL Server | sql-tievaPortal-3234.database.windows.net | Entra-only auth |
 | SQL Database | TievaPortal | Basic tier, all data |
-| Key Vault | kv-tievaPortal-874 | Customer SP secrets |
-| Function App (.NET) | func-tievaPortal-6612 | Main API |
-| Function App (PS) | func-tieva-audit | Runs audit scripts |
-| Static Web App | swa-tievaPortal-portal | Portal UI |
+| Key Vault | kv-tievaPortal-874 | SP secrets + FinOps SAS tokens |
+| Function App (.NET) | func-tievaPortal-6612 | Main API + FinOps APIs |
+| Function App (PS) | func-tieva-audit | Audit scripts + FinOps setup |
+| Static Web App | swa-tievaPortal-portal | Portal UI (SWA-linked to API) |
 | Storage Account | sttieva3420 | .NET Function storage |
 | Storage Account | sttievaaudit | Audit results (blob) |
 | Blob Container | audit-results | Excel outputs |
+| Storage Queue | assessment-queue | Async assessment processing |
 
 ### Managed Identities
 
@@ -110,7 +119,7 @@
 | PERFORMANCE | Right-sizing | PerformanceAudit.ps1 | ✅ Working |
 | COMPLIANCE | Regulatory Compliance | ComplianceAudit.ps1 | ✅ Working |
 
-> **Note:** RESERVATION module removed - now uses live Azure API in FinOps tab
+> **Note:** RESERVATION module removed from assessments - now uses live Azure API in FinOps tab. ReservationAudit.ps1 still exists but is not used.
 
 ---
 
@@ -119,8 +128,9 @@
 ```
 C:\VS Code\Azure-Managed-Service\TIEVA Portal\
 ├── portal\                          # Static Web App (GitHub linked)
-│   ├── index.html                   # Main SPA (~180KB, 4000+ lines)
-│   └── staticwebapp.config.json     # Auth config
+│   ├── index.html                   # Main SPA (~200KB, 4000+ lines)
+│   ├── staticwebapp.config.json     # Auth config
+│   └── CHANGELOG.md                 # Portal change history
 ├── functions\
 │   ├── TIEVA.Functions\             # .NET 8 API
 │   │   ├── Functions\
@@ -129,20 +139,56 @@ C:\VS Code\Azure-Managed-Service\TIEVA Portal\
 │   │   │   ├── TierFunctions.cs
 │   │   │   ├── SubscriptionFunctions.cs
 │   │   │   ├── AssessmentFunctions.cs
-│   │   │   ├── FindingsFunctions.cs
-│   │   │   ├── EffortSettingsFunctions.cs
+│   │   │   ├── FinOpsFunctions.cs       # FinOps + Reservations APIs
+│   │   │   ├── SettingsFunctions.cs     # FindingMetadata CRUD
 │   │   │   ├── SchedulerFunctions.cs
-│   │   │   └── DashboardFunctions.cs
+│   │   │   ├── DashboardFunctions.cs
+│   │   │   └── AuditProxyFunctions.cs
 │   │   ├── Models\Entities.cs
 │   │   ├── Services\TievaDbContext.cs
 │   │   └── deploy.ps1               # Deploy script
 │   └── TIEVA.Audit\                 # PowerShell Function App
-│       ├── StartAssessment\run.ps1  # Main assessment trigger
-│       ├── Scripts\                 # All 11 audit scripts
+│       ├── StartAssessment\         # HTTP trigger - queues assessment
+│       │   ├── function.json
+│       │   └── run.ps1
+│       ├── ProcessAssessment\       # Queue trigger - runs audit
+│       │   ├── function.json
+│       │   └── run.ps1
+│       ├── SetupFinOps\             # HTTP trigger - configures Cost Exports
+│       │   ├── function.json
+│       │   └── run.ps1
+│       ├── Scripts\                 # All 11 audit scripts + README
+│       │   ├── README.md            # Module development guide
+│       │   ├── NetworkAudit.ps1
+│       │   ├── BackupAudit.ps1
+│       │   ├── ... (10 more scripts)
+│       │   └── TIEVA_Master_Audit.ps1
 │       └── requirements.psd1        # Az modules + ImportExcel
-├── TIEVA_Portal_*.md                # Documentation (this file)
-└── TIEVA_*.html                     # Analyzer HTML tools
+├── scripts\                         # Utility scripts
+├── PowerBI-storage\                 # Power BI templates
+├── TIEVA_Portal_*.md                # Documentation files
+├── SQLCommands.md                   # SQL reference
+├── tieva-config.json                # Configuration reference
+├── TIEVA-Onboarding.ps1             # Customer onboarding script
+└── Build.ps1                        # Build/deploy helper
 ```
+
+---
+
+## C# Function Files Reference
+
+| File | Purpose |
+|------|---------|
+| CustomerFunctions.cs | Customer CRUD with cascading deletes |
+| ConnectionFunctions.cs | Azure connection management, validation, sync |
+| TierFunctions.cs | Service tier configuration, tier-module matrix |
+| SubscriptionFunctions.cs | Customer subscription management |
+| AssessmentFunctions.cs | Assessment execution, findings, module results |
+| FinOpsFunctions.cs | Cost analysis, reservations, SAS tokens, exports |
+| SettingsFunctions.cs | FindingMetadata CRUD |
+| SchedulerFunctions.cs | Pre-meeting assessment scheduling |
+| DashboardFunctions.cs | Portal dashboard stats |
+| AuditProxyFunctions.cs | Proxy for audit function calls |
 
 ---
 
@@ -151,7 +197,8 @@ C:\VS Code\Azure-Managed-Service\TIEVA Portal\
 ### Deploy .NET API
 ```powershell
 cd "C:\VS Code\Azure-Managed-Service\TIEVA Portal\functions\TIEVA.Functions"
-.\deploy.ps1
+dotnet build
+func azure functionapp publish func-tievaportal-6612
 ```
 
 ### Deploy PowerShell Audit Function
@@ -163,10 +210,12 @@ func azure functionapp publish func-tieva-audit
 ### Deploy Portal (via GitHub)
 ```powershell
 cd "C:\VS Code\Azure-Managed-Service\TIEVA Portal\portal"
-git add .
+git add -A
 git commit -m "message"
 git push
 ```
+
+> **Note:** SWA has aggressive caching. If git shows clean tree but changes aren't showing, add a timestamp comment to index.html to force cache invalidation.
 
 ---
 
@@ -174,15 +223,15 @@ git push
 
 ### Health Check
 ```powershell
-curl https://func-tievaportal-6612.azurewebsites.net/api/health
+Invoke-RestMethod https://func-tievaportal-6612.azurewebsites.net/api/health
 ```
 
 ### List Connections
 ```powershell
-curl https://func-tievaportal-6612.azurewebsites.net/api/connections
+Invoke-RestMethod https://func-tievaportal-6612.azurewebsites.net/api/connections
 ```
 
-### Run Assessment
+### Run Assessment (Async)
 ```powershell
 $body = @{
     connectionId = "e08a13c4-4696-49a9-98e5-d19a67e7caba"
@@ -190,17 +239,17 @@ $body = @{
 } | ConvertTo-Json
 
 Invoke-WebRequest -Uri "https://func-tieva-audit.azurewebsites.net/api/assessments/start" `
-    -Method Post -Body $body -ContentType "application/json" -TimeoutSec 600
+    -Method Post -Body $body -ContentType "application/json"
 ```
 
 ### List Assessments
 ```powershell
-curl https://func-tievaportal-6612.azurewebsites.net/api/assessments
+Invoke-RestMethod https://func-tievaportal-6612.azurewebsites.net/api/assessments
 ```
 
 ### Get Customer Findings
 ```powershell
-curl https://func-tievaportal-6612.azurewebsites.net/api/customers/{customerId}/findings
+Invoke-RestMethod "https://func-tievaportal-6612.azurewebsites.net/api/customers/{customerId}/findings"
 ```
 
 ---
@@ -218,6 +267,7 @@ curl https://func-tievaportal-6612.azurewebsites.net/api/customers/{customerId}/
 
 **Assessments:**
 - Run assessments from portal UI (multi-module)
+- **Async processing** via queue (addresses timeout issues)
 - All 10 audit modules working
 - Results stored in blob storage
 - Findings parsed and stored in database
@@ -235,19 +285,21 @@ curl https://func-tievaportal-6612.azurewebsites.net/api/customers/{customerId}/
 - **Remediation Roadmap** (3-wave with auto-population)
 - **Roadmap plan save/load**
 - Recommendations tab
-- **Finding Metadata** (effort, impact, operational)
+- **Finding Metadata** (effort, impact, operational config)
 
 **FinOps:**
 - Cost Analysis from FOCUS parquet data
-- Daily/weekly cost trends
+- Daily/weekly cost trends (MTD, 30/60/90 days)
 - Service/ResourceGroup/Subscription breakdowns
 - **Live Reservations** via Azure API
+- **Async reservation caching** (CustomerReservationCache)
 - **Intelligent insights** (renew/cancel/PAYG recommendations)
 - Utilization tracking (1/7/30 day)
 - Purchase recommendations
 - **Tier-based filtering** (Advanced/Premium/Adhoc only - Standard excluded)
 - **PDF Export** with professional formatting and tier filtering
 - **Presentation Mode** for customer meetings with tier filtering
+- **SetupFinOps function** for configuring Cost Management exports
 
 **Scheduling:**
 - Customer next meeting date
@@ -263,51 +315,85 @@ curl https://func-tievaportal-6612.azurewebsites.net/api/customers/{customerId}/
 
 ---
 
+## Async Assessment Processing
+
+Assessments use queue-based async processing to avoid frontend timeout issues:
+
+```
+1. Portal calls POST /api/assessments/start
+2. StartAssessment creates assessment record, queues job
+3. Returns immediately with assessmentId + "Processing" status
+4. ProcessAssessment (queue trigger) runs audits
+5. Portal polls GET /api/assessments/{id} for status
+6. UI updates when status = "Completed"
+```
+
+**Queue:** `assessment-queue` in storage account `sttievaaudit`
+
+---
+
 ## Reservations Tier Filtering
 
-The Reservations tab implements tier-based filtering to show only relevant subscription data:
+The Reservations tab implements tier-based filtering:
 
-### Filter Logic
-- **Included Tiers**: Advanced, Premium, Adhoc
-- **Excluded Tiers**: Standard
-- **Tenant-Level Data**: Always included (reservations without subscription info)
+**Filter Logic:**
+- **Included Tiers:** Advanced, Premium, Adhoc
+- **Excluded Tiers:** Standard
+- **Tenant-Level Data:** Always included
 
-### Filtered Views
-All reservation views apply the same tier filtering:
-1. **Main Reservations Tab** - Active reservations table
-2. **Presentation Mode** - Full-screen customer display
-3. **PDF Export** - Professional PDF reports
+**Filtered Views:** Main tab, Presentation Mode, PDF Export
 
-### Filtered Data
-- Active reservations (matched by SubscriptionId or SubscriptionName)
-- Purchase recommendations (matched by scope containing subscription ID/name)
-- Insights (filtered to reference only included reservations)
-- Summary statistics (recalculated from filtered data)
+**Filtered Data:** Active reservations, purchase recommendations, insights, summary statistics
 
 ---
 
 ## Reservations PDF Export
 
-The Reservations tab includes PDF export functionality using jsPDF:
+PDF export using jsPDF includes:
 
-### PDF Contents
-1. **Header** - Customer name, generation date, TIEVA branding
-2. **Summary Section** - Key metrics (total, active, expiring, utilization stats)
-3. **Active Reservations Table** - Name, type, SKU, quantity, term, utilization, expiry, auto-renew
-4. **Purchase Recommendations Table** - Subscription, SKU, term, quantity, savings, net savings
-5. **Insights Section** - Prioritized actionable recommendations with icons
+1. **Header** - Customer name, date, TIEVA branding
+2. **Summary** - Key metrics (total, active, expiring, utilization)
+3. **Active Reservations Table** - Name, type, SKU, quantity, term, utilization, expiry
+4. **Purchase Recommendations** - Subscription, SKU, savings
+5. **Insights Section** - Actionable recommendations with icons
 
-### Features
-- Tier filtering applied (Advanced/Premium/Adhoc only)
-- Professional formatting with color-coded sections
-- Automatic page breaks for large datasets
-- Currency formatting (GBP)
-- Date formatting for readability
+---
+
+## Key Architecture Decisions
+
+### SWA Linking
+- Static Web App is linked to func-tievaportal-6612
+- Browser requests to `/api/*` proxy through SWA (no API keys needed)
+- External API calls (e.g., from func-tieva-audit) blocked by SWA linking
+- Solution: Audit functions write directly to database, not via API callbacks
+
+### Entity Framework Column Mappings
+- `Finding.FindingText` maps to database column `Finding` (not `FindingText`)
+- `CustomerFinding.FindingText` maps to database column `Finding`
+- Always align PowerShell inserts with existing EF mappings
+
+### Findings Worksheet Standard
+Every audit module must have a `Findings` worksheet with columns:
+- SubscriptionName, SubscriptionId, Severity, Category
+- ResourceType, ResourceName, ResourceId, Detail, Recommendation
+
+---
+
+## Known Issues & Workarounds
+
+| Issue | Workaround |
+|-------|------------|
+| SWA caching | Add timestamp comment to force refresh |
+| Frontend timeouts | Use async queue processing |
+| External API calls blocked | Direct database access from audit functions |
+| Column name mismatches | Align with EF mappings in TievaDbContext.cs |
 
 ---
 
 ## 🔜 Potential Enhancements
+
 1. LogicMonitor API integration for alerts/monitoring
-2. PDF report generation for all modules
+2. PDF report generation for all assessment modules
 3. Email notifications for due assessments
-4. Trend analysis across assessments
+4. Trend analysis charts across assessments
+5. Multi-tenant cost comparison dashboards

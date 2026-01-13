@@ -36,27 +36,107 @@ Write-Host "Storage Account:   $storageAccountName"
 Write-Host "========================================"
 
 try {
-    $apiBase = if ($env:TIEVA_API_URL) { $env:TIEVA_API_URL } else { "https://func-tievaportal-6612.azurewebsites.net/api" }
+    # SQL helpers (same pattern as StartAssessment)
+    $sqlServer = "sql-tievaPortal-3234.database.windows.net"
+    $sqlDatabase = "TievaPortal"
     
-    Write-Host "Getting connection details..."
-    $connResponse = Invoke-RestMethod -Uri "$apiBase/connections/$connectionId" -Method Get
+    function Get-SqlConnection {
+        param([string]$ContextName)
+        $token = Get-AzAccessToken -ResourceUrl "https://database.windows.net/" -DefaultProfile (Get-AzContext -Name $ContextName)
+        $connectionString = "Server=tcp:$sqlServer,1433;Database=$sqlDatabase;Encrypt=True;TrustServerCertificate=False;"
+        $connection = New-Object System.Data.SqlClient.SqlConnection($connectionString)
+        $connection.AccessToken = $token.Token
+        $connection.Open()
+        return $connection
+    }
     
-    $tenantId = if ($connResponse.tenantId) { $connResponse.tenantId } else { $connResponse.TenantId }
-    $clientId = if ($connResponse.clientId) { $connResponse.clientId } else { $connResponse.ClientId }
-    $customerName = if ($connResponse.customerName) { $connResponse.customerName } else { $connResponse.CustomerName }
-    $customerId = if ($connResponse.customerId) { $connResponse.customerId } else { $connResponse.CustomerId }
+    function Invoke-SqlQuery {
+        param([System.Data.SqlClient.SqlConnection]$Connection, [string]$Query, [hashtable]$Parameters = @{})
+        $command = $Connection.CreateCommand()
+        $command.CommandText = $Query
+        $command.CommandTimeout = 60
+        foreach ($key in $Parameters.Keys) {
+            $param = $command.CreateParameter()
+            $param.ParameterName = "@$key"
+            $param.Value = if ($null -eq $Parameters[$key]) { [DBNull]::Value } else { $Parameters[$key] }
+            $command.Parameters.Add($param) | Out-Null
+        }
+        $reader = $command.ExecuteReader()
+        $results = @()
+        while ($reader.Read()) {
+            $row = @{}
+            for ($i = 0; $i -lt $reader.FieldCount; $i++) {
+                $row[$reader.GetName($i)] = if ($reader.IsDBNull($i)) { $null } else { $reader.GetValue($i) }
+            }
+            $results += [PSCustomObject]$row
+        }
+        $reader.Close()
+        return $results
+    }
+    
+    function Invoke-SqlNonQuery {
+        param([System.Data.SqlClient.SqlConnection]$Connection, [string]$Query, [hashtable]$Parameters = @{})
+        $command = $Connection.CreateCommand()
+        $command.CommandText = $Query
+        $command.CommandTimeout = 60
+        foreach ($key in $Parameters.Keys) {
+            $param = $command.CreateParameter()
+            $param.ParameterName = "@$key"
+            $param.Value = if ($null -eq $Parameters[$key]) { [DBNull]::Value } else { $Parameters[$key] }
+            $command.Parameters.Add($param) | Out-Null
+        }
+        return $command.ExecuteNonQuery()
+    }
+    
+    # Connect with Managed Identity for SQL access
+    Write-Host "Connecting with Managed Identity..."
+    Connect-AzAccount -Identity -ContextName "$contextName-identity" -Force -WarningAction SilentlyContinue | Out-Null
+    Set-AzContext -Context (Get-AzContext -Name "$contextName-identity") | Out-Null
+    
+    # Get connection details from database directly
+    Write-Host "Getting connection details from database..."
+    $sqlConn = Get-SqlConnection -ContextName "$contextName-identity"
+    
+    $connQuery = @"
+        SELECT c.Id, c.CustomerId, c.TenantId, c.TenantName, c.ClientId, c.SecretKeyVaultRef,
+               cust.Name as CustomerName
+        FROM AzureConnections c
+        INNER JOIN Customers cust ON c.CustomerId = cust.Id
+        WHERE c.Id = @ConnectionId AND c.IsActive = 1
+"@
+    $connResult = Invoke-SqlQuery -Connection $sqlConn -Query $connQuery -Parameters @{ ConnectionId = $connectionId }
+    
+    if (-not $connResult -or $connResult.Count -eq 0) {
+        throw "Connection not found or inactive: $connectionId"
+    }
+    
+    $conn = $connResult[0]
+    $tenantId = $conn.TenantId
+    $clientId = $conn.ClientId
+    $customerName = $conn.CustomerName
+    $customerId = $conn.CustomerId
+    $secretKeyVaultRef = $conn.SecretKeyVaultRef
     
     Write-Host "Customer: $customerName ($customerId), Tenant: $tenantId"
     
     $cleanName = ($customerName -replace '[^a-zA-Z0-9]', '').ToLower()
     if ($cleanName.Length -gt 10) { $cleanName = $cleanName.Substring(0, 10) }
     
-    $allSubs = $connResponse.subscriptions
-    if (-not $allSubs) { throw "No subscriptions found in connection response" }
+    # Get subscriptions from database
+    $subsQuery = @"
+        SELECT s.SubscriptionId, s.SubscriptionName, s.IsInScope, t.DisplayName as TierName
+        FROM CustomerSubscriptions s
+        LEFT JOIN ServiceTiers t ON s.TierId = t.Id
+        WHERE s.ConnectionId = @ConnectionId AND s.IsInScope = 1
+"@
+    $subsResult = Invoke-SqlQuery -Connection $sqlConn -Query $subsQuery -Parameters @{ ConnectionId = $connectionId }
+    $sqlConn.Close()
     
-    $allSubscriptions = @($allSubs | Where-Object { $_.isInScope -or $_.IsInScope })
-    if ($allSubscriptions.Count -eq 0) { throw "No in-scope subscriptions found" }
+    if (-not $subsResult -or $subsResult.Count -eq 0) {
+        throw "No in-scope subscriptions found for connection: $connectionId"
+    }
     
+    $allSubscriptions = @($subsResult)
     Write-Host "In-scope subscriptions: $($allSubscriptions.Count)"
     
     # Filter for Premium and Advanced tiers ONLY - Standard subscriptions excluded from FinOps
@@ -114,11 +194,11 @@ try {
     }
     if (-not $primarySubId) { throw "Could not determine subscription ID" }
     
-    # Get secret from Key Vault
-    $secretName = "sp-$connectionId"
-    Write-Host "Retrieving secret from Key Vault..."
-    Connect-AzAccount -Identity -ContextName "$contextName-identity" -Force -WarningAction SilentlyContinue | Out-Null
-    Set-AzContext -Context (Get-AzContext -Name "$contextName-identity") | Out-Null
+    # Get secret from Key Vault (using SecretKeyVaultRef from database)
+    $secretName = $secretKeyVaultRef
+    if (-not $secretName) { $secretName = "sp-$connectionId" }  # Fallback
+    Write-Host "Retrieving secret '$secretName' from Key Vault..."
+    # Already connected with Managed Identity above
     $secret = Get-AzKeyVaultSecret -VaultName "kv-tievaPortal-874" -Name $secretName -AsPlainText
     if (-not $secret) { throw "Could not retrieve secret from Key Vault" }
     
@@ -422,23 +502,72 @@ try {
     $results.sasExpiry = $sasExpiryTime.ToString("o")
     $results.storageUrl = "https://$storageAccountName.dfs.core.windows.net/ingestion"
     
-    # Step 6: Save to portal
-    Write-Host "Step 6: Saving configuration to portal..."
+    # Step 6: Save to database directly (same pattern as assessments)
+    Write-Host "Step 6: Saving configuration to database..."
     try {
-        $saveBody = @{ finOpsStorageAccount = $storageAccountName; finOpsContainer = "ingestion" } | ConvertTo-Json
-        Invoke-RestMethod -Uri "$apiBase/customers/$customerId" -Method Put -Body $saveBody -ContentType "application/json" | Out-Null
+        # Reconnect with managed identity for SQL access
+        Set-AzContext -Context (Get-AzContext -Name "$contextName-identity") | Out-Null
+        $sqlConn = Get-SqlConnection -ContextName "$contextName-identity"
         
-        $sasBody = @{ sasToken = $sasToken } | ConvertTo-Json
-        Invoke-RestMethod -Uri "$apiBase/customers/$customerId/finops/sas" -Method Put -Body $sasBody -ContentType "application/json" | Out-Null
-        Write-Host "Saved configuration and SAS token to portal"
+        # Update customer with storage account info
+        $updateCustomerQuery = @"
+            UPDATE Customers 
+            SET FinOpsStorageAccount = @StorageAccount, 
+                FinOpsContainer = @Container,
+                UpdatedAt = GETUTCDATE()
+            WHERE Id = @CustomerId
+"@
+        Invoke-SqlNonQuery -Connection $sqlConn -Query $updateCustomerQuery -Parameters @{
+            StorageAccount = $storageAccountName
+            Container = "ingestion"
+            CustomerId = $customerId
+        }
+        Write-Host "  Updated customer storage configuration"
+        
+        # Store SAS token in Key Vault
+        $sasSecretName = "finops-sas-$($customerId.ToString('N'))"
+        Write-Host "  Storing SAS token in Key Vault as '$sasSecretName'..."
+        
+        # Try to recover if soft-deleted, then set
+        try {
+            $deletedSecret = Get-AzKeyVaultSecret -VaultName "kv-tievaPortal-874" -Name $sasSecretName -InRemovedState -ErrorAction SilentlyContinue
+            if ($deletedSecret) {
+                Write-Host "  Secret is in deleted state, recovering..."
+                Undo-AzKeyVaultSecretRemoval -VaultName "kv-tievaPortal-874" -Name $sasSecretName | Out-Null
+                Start-Sleep -Seconds 5  # Wait for recovery
+            }
+        } catch { }
+        
+        Set-AzKeyVaultSecret -VaultName "kv-tievaPortal-874" -Name $sasSecretName -SecretValue (ConvertTo-SecureString $sasToken -AsPlainText -Force) | Out-Null
+        
+        # Update customer with SAS reference
+        $updateSasQuery = @"
+            UPDATE Customers 
+            SET FinOpsSasKeyVaultRef = @SasRef, 
+                FinOpsSasExpiry = @SasExpiry,
+                UpdatedAt = GETUTCDATE()
+            WHERE Id = @CustomerId
+"@
+        Invoke-SqlNonQuery -Connection $sqlConn -Query $updateSasQuery -Parameters @{
+            SasRef = $sasSecretName
+            SasExpiry = $sasExpiryTime
+            CustomerId = $customerId
+        }
+        
+        $sqlConn.Close()
+        Write-Host "  Saved configuration and SAS token successfully"
     }
     catch {
-        Write-Host "Warning: Could not save to portal: $($_.Exception.Message)"
-        $results.errors += "Save to portal: $($_.Exception.Message)"
+        Write-Host "Warning: Could not save to database: $($_.Exception.Message)"
+        $results.errors += "Save to database: $($_.Exception.Message)"
     }
     
     # Step 7: Create Cost Management Exports
     Write-Host "Step 7: Creating cost exports..."
+    
+    # IMPORTANT: Switch back to customer context for ARM API calls
+    Write-Host "  Switching to customer context for export creation..."
+    Set-AzContext -Context (Get-AzContext -Name "$contextName-customer") -ErrorAction Stop | Out-Null
     
     $storageResourceId = "/subscriptions/$primarySubId/resourceGroups/$resourceGroupName/providers/Microsoft.Storage/storageAccounts/$storageAccountName"
     $token = (Get-AzAccessToken -ResourceUrl "https://management.azure.com").Token

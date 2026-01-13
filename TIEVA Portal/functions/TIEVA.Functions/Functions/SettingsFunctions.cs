@@ -25,7 +25,7 @@ public class SettingsFunctions
 
     [Function("GetFindingMetadata")]
     public async Task<HttpResponseData> GetFindingMetadata(
-        [HttpTrigger(AuthorizationLevel.Function, "get", Route = "settings/metadata")] HttpRequestData req)
+        [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "settings/metadata")] HttpRequestData req)
     {
         var metadata = await _db.FindingMetadata
             .OrderByDescending(m => m.MatchPriority)
@@ -40,7 +40,7 @@ public class SettingsFunctions
 
     [Function("GetFindingMetadataById")]
     public async Task<HttpResponseData> GetFindingMetadataById(
-        [HttpTrigger(AuthorizationLevel.Function, "get", Route = "settings/metadata/{id:int}")] HttpRequestData req,
+        [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "settings/metadata/{id:int}")] HttpRequestData req,
         int id)
     {
         var metadata = await _db.FindingMetadata.FindAsync(id);
@@ -58,7 +58,7 @@ public class SettingsFunctions
 
     [Function("CreateFindingMetadata")]
     public async Task<HttpResponseData> CreateFindingMetadata(
-        [HttpTrigger(AuthorizationLevel.Function, "post", Route = "settings/metadata")] HttpRequestData req)
+        [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "settings/metadata")] HttpRequestData req)
     {
         var metadata = await req.ReadFromJsonAsync<FindingMetadata>();
         if (metadata == null)
@@ -83,7 +83,7 @@ public class SettingsFunctions
 
     [Function("UpdateFindingMetadata")]
     public async Task<HttpResponseData> UpdateFindingMetadata(
-        [HttpTrigger(AuthorizationLevel.Function, "put", Route = "settings/metadata/{id:int}")] HttpRequestData req,
+        [HttpTrigger(AuthorizationLevel.Anonymous, "put", Route = "settings/metadata/{id:int}")] HttpRequestData req,
         int id)
     {
         var existing = await _db.FindingMetadata.FindAsync(id);
@@ -142,7 +142,7 @@ public class SettingsFunctions
 
     [Function("DeleteFindingMetadata")]
     public async Task<HttpResponseData> DeleteFindingMetadata(
-        [HttpTrigger(AuthorizationLevel.Function, "delete", Route = "settings/metadata/{id:int}")] HttpRequestData req,
+        [HttpTrigger(AuthorizationLevel.Anonymous, "delete", Route = "settings/metadata/{id:int}")] HttpRequestData req,
         int id)
     {
         var metadata = await _db.FindingMetadata.FindAsync(id);
@@ -163,7 +163,7 @@ public class SettingsFunctions
 
     [Function("GetDistinctModuleCodes")]
     public async Task<HttpResponseData> GetDistinctModuleCodes(
-        [HttpTrigger(AuthorizationLevel.Function, "get", Route = "settings/metadata/modules")] HttpRequestData req)
+        [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "settings/metadata/modules")] HttpRequestData req)
     {
         // Get distinct module codes from AssessmentModules
         var modules = await _db.AssessmentModules
