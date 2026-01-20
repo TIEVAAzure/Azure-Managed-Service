@@ -1,3 +1,8 @@
 {
-    "azureFunctions.projectSubpath": "functions\\TIEVA.Functions"
+    "azureFunctions.projectSubpath": "functions\\TIEVA.Functions",
+    "azureFunctions.deploySubpath": "functions\\TIEVA.Functions/bin/Release/net8.0/publish",
+    "azureFunctions.projectLanguage": "C#",
+    "azureFunctions.projectRuntime": "~4",
+    "debug.internalConsoleOptions": "neverOpen",
+    "azureFunctions.preDeployTask": "publish (functions)"
 }

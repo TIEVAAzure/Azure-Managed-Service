@@ -69,7 +69,10 @@ public class Customer
     public DateTime? FinOpsSasExpiry { get; set; }
     
     // LogicMonitor Integration
-    public int? LogicMonitorGroupId { get; set; }
+    public int? LogicMonitorGroupId { get; set; }  // For filtering within TIEVA's global LM portal
+    public bool LMEnabled { get; set; } = false;   // Enable LM integration for this customer
+    public bool LMHasCustomCredentials { get; set; } = false;  // True if customer has their own LM portal credentials
+    // Note: Per-customer credentials stored in Key Vault as LM-{CustomerId}-Company, LM-{CustomerId}-AccessId, LM-{CustomerId}-AccessKey
     
     public List<AzureConnection> Connections { get; set; } = new();
     public List<Assessment> Assessments { get; set; } = new();
@@ -291,4 +294,445 @@ public class CustomerReservationCache
     
     // Navigation
     public Customer? Customer { get; set; }
+}
+
+// LogicMonitor Device Cache - Cached device data synced from LogicMonitor API
+public class LMDeviceCache
+{
+    public int Id { get; set; }                      // LogicMonitor device ID
+    public Guid CustomerId { get; set; }             // TIEVA customer mapping
+    public int LMGroupId { get; set; }               // LogicMonitor group ID
+    public string DisplayName { get; set; } = string.Empty;
+    public string? HostStatus { get; set; }          // normal, dead, dead-collector, unconfirmed
+    public string? AlertStatus { get; set; }         // none, warning, error, critical
+    public string? SystemProperties { get; set; }    // JSON - optional additional properties
+    public DateTime LastSyncedAt { get; set; }       // When this record was last updated from LM
+    public DateTime CreatedAt { get; set; }
+    
+    // Navigation
+    public Customer? Customer { get; set; }
+}
+
+// LogicMonitor Sync Status - Track sync operations per customer
+public class LMSyncStatus
+{
+    public Guid Id { get; set; }
+    public Guid CustomerId { get; set; }
+    public DateTime? LastSyncStarted { get; set; }
+    public DateTime? LastSyncCompleted { get; set; }
+    public string Status { get; set; } = "Never";   // Never, Running, Completed, Failed, SyncingPerformance
+    public int? DeviceCount { get; set; }
+    public int? AlertCount { get; set; }
+    public string? ErrorMessage { get; set; }
+    
+    // Performance sync tracking
+    public int? PerformanceSyncProgress { get; set; }      // Devices processed so far
+    public int? PerformanceDevicesWithData { get; set; }   // Devices with actual metric data
+    
+    // History sync tracking (90-day data)
+    public int? HistorySyncProgress { get; set; }          // Devices processed so far
+    public int? HistorySyncTotal { get; set; }             // Total devices to process
+    public int? HistorySyncWithData { get; set; }          // Devices with history data
+    public DateTime? HistorySyncStarted { get; set; }
+    public DateTime? HistorySyncCompleted { get; set; }
+    
+    public DateTime CreatedAt { get; set; }
+    public DateTime UpdatedAt { get; set; }
+    
+    // Navigation
+    public Customer? Customer { get; set; }
+}
+
+// LogicMonitor Alert Cache - Cached alert data synced from LogicMonitor API
+public class LMAlertCache
+{
+    public string Id { get; set; } = string.Empty;   // LogicMonitor alert ID (string)
+    public Guid CustomerId { get; set; }             // TIEVA customer mapping
+    public int? DeviceId { get; set; }               // LogicMonitor device ID
+    public string? DeviceDisplayName { get; set; }
+    public string? MonitorObjectName { get; set; }
+    public string? AlertValue { get; set; }
+    public int Severity { get; set; }                // 4=Critical, 3=Error, 2=Warning, 1=Info
+    public string? SeverityText { get; set; }
+    public DateTime StartTime { get; set; }
+    public DateTime? EndTime { get; set; }
+    public bool Cleared { get; set; }
+    public bool Acked { get; set; }
+    public bool InSDT { get; set; }
+    public string? ResourceTemplateName { get; set; }
+    public DateTime LastSyncedAt { get; set; }
+    public DateTime CreatedAt { get; set; }
+    
+    // Navigation
+    public Customer? Customer { get; set; }
+}
+
+// LogicMonitor Device Metrics - Cached performance metrics for right-sizing analysis
+public class LMDeviceMetrics
+{
+    public int Id { get; set; }                      // Auto-generated
+    public Guid CustomerId { get; set; }
+    public int DeviceId { get; set; }                // LogicMonitor device ID
+    public string DeviceName { get; set; } = string.Empty;
+    
+    // CPU Metrics (percentages)
+    public decimal? CpuAvg1Hr { get; set; }
+    public decimal? CpuMax1Hr { get; set; }
+    public decimal? CpuAvg24Hr { get; set; }
+    public decimal? CpuMax24Hr { get; set; }
+    public decimal? CpuAvg7Day { get; set; }
+    public decimal? CpuMax7Day { get; set; }
+    public decimal? CpuAvg30Day { get; set; }
+    public decimal? CpuMax30Day { get; set; }
+    
+    // Memory Metrics (percentages)
+    public decimal? MemAvg1Hr { get; set; }
+    public decimal? MemMax1Hr { get; set; }
+    public decimal? MemAvg24Hr { get; set; }
+    public decimal? MemMax24Hr { get; set; }
+    public decimal? MemAvg7Day { get; set; }
+    public decimal? MemMax7Day { get; set; }
+    public decimal? MemAvg30Day { get; set; }
+    public decimal? MemMax30Day { get; set; }
+    public decimal? MemTotalGB { get; set; }
+    
+    // Disk Metrics (percentages)
+    public decimal? DiskAvg1Hr { get; set; }
+    public decimal? DiskMax1Hr { get; set; }
+    public decimal? DiskAvg24Hr { get; set; }
+    public decimal? DiskMax24Hr { get; set; }
+    public decimal? DiskAvg7Day { get; set; }
+    public decimal? DiskMax7Day { get; set; }
+    public decimal? DiskAvg30Day { get; set; }
+    public decimal? DiskMax30Day { get; set; }
+    public decimal? DiskTotalGB { get; set; }
+    public decimal? DiskUsedGB { get; set; }
+    
+    // Network Metrics (Mbps)
+    public decimal? NetInAvg1Hr { get; set; }
+    public decimal? NetInMax1Hr { get; set; }
+    public decimal? NetOutAvg1Hr { get; set; }
+    public decimal? NetOutMax1Hr { get; set; }
+    public decimal? NetInAvg24Hr { get; set; }
+    public decimal? NetOutAvg24Hr { get; set; }
+    
+    // Right-Sizing Recommendations
+    public string? CpuRecommendation { get; set; }      // Oversized, Right-sized, Undersized, Unknown
+    public string? MemRecommendation { get; set; }
+    public string? DiskRecommendation { get; set; }
+    public string? OverallRecommendation { get; set; }
+    public string? PotentialSavings { get; set; }
+    
+    // Datasource tracking (for debugging and pattern discovery)
+    public string? ResourceType { get; set; }           // Server, AzureVM, AzureSQL, etc.
+    public string? DetectedResourceType { get; set; }   // Auto-detected from datasources
+    public string? MatchedDatasources { get; set; }     // Which datasources we matched (JSON)
+    public string? UnmatchedDatasources { get; set; }   // Datasources we couldn't match (for adding new patterns)
+    public string? AvailableDatasources { get; set; }   // ALL datasources on this device (JSON array)
+    
+    // Metadata
+    public DateTime LastSyncedAt { get; set; }
+    public DateTime CreatedAt { get; set; }
+    public DateTime UpdatedAt { get; set; }
+    
+    // Navigation
+    public Customer? Customer { get; set; }
+    
+    // Helper method to calculate recommendation
+    public void CalculateRecommendations()
+    {
+        // CPU: <20% avg over 7 days = oversized, >80% = undersized
+        CpuRecommendation = CpuAvg7Day switch
+        {
+            null => "Unknown",
+            < 20 => "Oversized",
+            > 80 => "Undersized",
+            _ => "Right-sized"
+        };
+        
+        // Memory: <30% avg = oversized, >85% = undersized
+        MemRecommendation = MemAvg7Day switch
+        {
+            null => "Unknown",
+            < 30 => "Oversized",
+            > 85 => "Undersized",
+            _ => "Right-sized"
+        };
+        
+        // Disk: <30% = oversized, >85% = undersized
+        DiskRecommendation = DiskAvg7Day switch
+        {
+            null => "Unknown",
+            < 30 => "Oversized",
+            > 85 => "Undersized",
+            _ => "Right-sized"
+        };
+        
+        // Overall: Oversized if ANY metric is oversized, Undersized if ANY is undersized
+        var recs = new[] { CpuRecommendation, MemRecommendation, DiskRecommendation };
+        if (recs.Any(r => r == "Undersized"))
+            OverallRecommendation = "Undersized";
+        else if (recs.Any(r => r == "Oversized"))
+            OverallRecommendation = "Oversized";
+        else if (recs.All(r => r == "Unknown"))
+            OverallRecommendation = "Unknown";
+        else
+            OverallRecommendation = "Right-sized";
+    }
+}
+
+// LogicMonitor Datasource Mappings - Data-driven pattern matching
+public class LMDatasourceMapping
+{
+    public int Id { get; set; }
+    
+    // Classification
+    public string ResourceType { get; set; } = "Server";     // Server, AzureVM, AzureSQL, AppService, etc.
+    public string MetricCategory { get; set; } = "CPU";      // CPU, Memory, Disk
+    
+    // Pattern matching
+    public string DatasourcePattern { get; set; } = string.Empty;  // Pattern to match datasource name
+    public string? DatapointPatterns { get; set; }           // Comma-separated datapoint names
+    public string? ExcludePattern { get; set; }              // Pattern to exclude
+    
+    // Metadata
+    public string? Description { get; set; }
+    public int Priority { get; set; } = 100;                 // Higher = matched first
+    public bool IsActive { get; set; } = true;
+    
+    // Audit
+    public DateTime CreatedAt { get; set; }
+    public DateTime UpdatedAt { get; set; }
+    public string? UpdatedBy { get; set; }
+    
+    // Helper to get datapoints as array
+    public string[] GetDatapointArray() => 
+        DatapointPatterns?.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries) 
+        ?? Array.Empty<string>();
+}
+
+// =====================================================
+// PERFORMANCE MONITORING V2 - Data-Driven System
+// =====================================================
+
+/// <summary>
+/// Defines a resource type and how to detect it
+/// </summary>
+public class LMResourceType
+{
+    public int Id { get; set; }
+    public string Code { get; set; } = string.Empty;
+    public string DisplayName { get; set; } = string.Empty;
+    public string Category { get; set; } = "Other";
+    public string? Icon { get; set; }
+    public string DetectionPatternsJson { get; set; } = "[]";
+    public int SortOrder { get; set; } = 100;
+    public bool ShowInDashboard { get; set; } = true;
+    public bool HasPerformanceMetrics { get; set; } = true;
+    public bool IsActive { get; set; } = true;
+    public DateTime CreatedAt { get; set; }
+    public DateTime UpdatedAt { get; set; }
+    public string? UpdatedBy { get; set; }
+    
+    // Navigation
+    public List<LMMetricMapping> MetricMappings { get; set; } = new();
+    
+    // Helper
+    public string[] GetDetectionPatterns()
+    {
+        try { return System.Text.Json.JsonSerializer.Deserialize<string[]>(DetectionPatternsJson ?? "[]") ?? Array.Empty<string>(); }
+        catch { return Array.Empty<string>(); }
+    }
+}
+
+/// <summary>
+/// Defines which metrics to extract for a resource type
+/// </summary>
+public class LMMetricMapping
+{
+    public int Id { get; set; }
+    public int ResourceTypeId { get; set; }
+    public string MetricName { get; set; } = string.Empty;
+    public string DisplayName { get; set; } = string.Empty;
+    public string Unit { get; set; } = "%";
+    public string DatasourcePatternsJson { get; set; } = "[]";
+    public string DatapointPatternsJson { get; set; } = "[]";
+    public decimal? WarningThreshold { get; set; }
+    public decimal? CriticalThreshold { get; set; }
+    public bool InvertThreshold { get; set; }
+    public decimal? OversizedBelow { get; set; }
+    public decimal? UndersizedAbove { get; set; }
+    public int SortOrder { get; set; } = 100;
+    public bool IsActive { get; set; } = true;
+    public DateTime CreatedAt { get; set; }
+    public DateTime UpdatedAt { get; set; }
+    
+    // Navigation
+    public LMResourceType? ResourceType { get; set; }
+    
+    // Helpers
+    public string[] GetDatasourcePatterns()
+    {
+        try { return System.Text.Json.JsonSerializer.Deserialize<string[]>(DatasourcePatternsJson ?? "[]") ?? Array.Empty<string>(); }
+        catch { return Array.Empty<string>(); }
+    }
+    
+    public string[] GetDatapointPatterns()
+    {
+        try { return System.Text.Json.JsonSerializer.Deserialize<string[]>(DatapointPatternsJson ?? "[]") ?? Array.Empty<string>(); }
+        catch { return Array.Empty<string>(); }
+    }
+}
+
+/// <summary>
+/// Device metrics storage with flexible JSON
+/// </summary>
+public class LMDeviceMetricsV2
+{
+    public int Id { get; set; }
+    public Guid CustomerId { get; set; }
+    public int DeviceId { get; set; }
+    public string DeviceName { get; set; } = string.Empty;
+    public int? ResourceTypeId { get; set; }
+    public string? ResourceTypeCode { get; set; }
+    public string? DetectedTypeCode { get; set; }
+    public string? MetricsJson { get; set; }
+    public string? OverallStatus { get; set; }
+    public string? Recommendation { get; set; }
+    public string? StatusDetails { get; set; }
+    public string? AvailableDatasourcesJson { get; set; }
+    public string? RawDataJson { get; set; }
+    public DateTime LastSyncedAt { get; set; }
+    public DateTime? LastMetricDataAt { get; set; }
+    public string? SyncErrorMessage { get; set; }
+    public DateTime CreatedAt { get; set; }
+    public DateTime UpdatedAt { get; set; }
+    
+    // SKU-based recommendations (new)
+    public string? CurrentSku { get; set; }             // Current Azure SKU (e.g., Standard_D4s_v5)
+    public string? SkuFamily { get; set; }              // SKU family (e.g., Dsv5)
+    public string? RecommendedSku { get; set; }         // Suggested SKU based on 90-day analysis
+    public string? SkuRecommendationReason { get; set; }// Why this SKU is recommended
+    public decimal? PotentialMonthlySavings { get; set; }// Estimated savings from right-sizing
+    public string? Metrics90DayJson { get; set; }       // 90-day aggregate metrics for recommendations
+    
+    // Navigation
+    public Customer? Customer { get; set; }
+    public LMResourceType? ResourceType { get; set; }
+    
+    // Helpers
+    public Dictionary<string, MetricValue> GetMetrics()
+    {
+        try { return System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, MetricValue>>(MetricsJson ?? "{}") ?? new(); }
+        catch { return new(); }
+    }
+    
+    public void SetMetrics(Dictionary<string, MetricValue> metrics)
+    {
+        MetricsJson = System.Text.Json.JsonSerializer.Serialize(metrics);
+    }
+    
+    public List<string> GetAvailableDatasources()
+    {
+        try { return System.Text.Json.JsonSerializer.Deserialize<List<string>>(AvailableDatasourcesJson ?? "[]") ?? new(); }
+        catch { return new(); }
+    }
+    
+    public Metrics90Day? GetMetrics90Day()
+    {
+        try { return System.Text.Json.JsonSerializer.Deserialize<Metrics90Day>(Metrics90DayJson ?? "{}"); }
+        catch { return null; }
+    }
+    
+    public void SetMetrics90Day(Metrics90Day metrics)
+    {
+        Metrics90DayJson = System.Text.Json.JsonSerializer.Serialize(metrics);
+    }
+}
+
+/// <summary>
+/// Metric value (stored in JSON)
+/// </summary>
+public class MetricValue
+{
+    public decimal? Avg { get; set; }
+    public decimal? Max { get; set; }
+    public decimal? Min { get; set; }
+    public string? Status { get; set; }
+    public string? Recommendation { get; set; }
+}
+
+// =====================================================
+// PERFORMANCE GRAPHS & SKU RECOMMENDATIONS
+// =====================================================
+
+/// <summary>
+/// Daily metric history for performance graphs (90-day retention)
+/// </summary>
+public class LMDeviceMetricHistory
+{
+    public int Id { get; set; }
+    public Guid CustomerId { get; set; }
+    public int DeviceId { get; set; }
+    public string MetricName { get; set; } = string.Empty;  // CPU, Memory, Disk
+    public DateTime MetricDate { get; set; }
+    public decimal? AvgValue { get; set; }
+    public decimal? MaxValue { get; set; }
+    public decimal? MinValue { get; set; }
+    public decimal? P95Value { get; set; }
+    public int SampleCount { get; set; }
+    public DateTime CreatedAt { get; set; }
+    
+    // Navigation
+    public Customer? Customer { get; set; }
+}
+
+/// <summary>
+/// Azure SKU family definitions for right-sizing recommendations
+/// </summary>
+public class AzureSkuFamily
+{
+    public int Id { get; set; }
+    public string ResourceType { get; set; } = string.Empty;  // VirtualMachine, ManagedDisk, AppServicePlan
+    public string SkuFamily { get; set; } = string.Empty;     // Dsv5, Esv5, Premium_LRS
+    public string SkuName { get; set; } = string.Empty;       // Standard_D2s_v5
+    public string? DisplayName { get; set; }
+    public int SizeOrder { get; set; }                        // 1=smallest within family
+    
+    // Capacity specs
+    public int? vCPUs { get; set; }
+    public decimal? MemoryGB { get; set; }
+    public int? MaxDataDisks { get; set; }
+    public int? MaxIOPS { get; set; }
+    public int? MaxThroughputMBps { get; set; }
+    public int? TempStorageGB { get; set; }
+    
+    // Cost
+    public decimal? HourlyCostEstimate { get; set; }
+    public decimal? MonthlyCostEstimate { get; set; }
+    
+    // Metadata
+    public string? Notes { get; set; }
+    public bool IsActive { get; set; } = true;
+    public DateTime CreatedAt { get; set; }
+    public DateTime UpdatedAt { get; set; }
+}
+
+/// <summary>
+/// 90-day metric aggregates (stored in JSON)
+/// </summary>
+public class Metrics90Day
+{
+    public decimal? CpuAvg { get; set; }
+    public decimal? CpuMax { get; set; }
+    public decimal? CpuP95 { get; set; }
+    public decimal? MemAvg { get; set; }
+    public decimal? MemMax { get; set; }
+    public decimal? MemP95 { get; set; }
+    public decimal? DiskAvg { get; set; }
+    public decimal? DiskMax { get; set; }
+    public decimal? DiskP95 { get; set; }
+    public int DataPoints { get; set; }
+    public DateTime? PeriodStart { get; set; }
+    public DateTime? PeriodEnd { get; set; }
 }

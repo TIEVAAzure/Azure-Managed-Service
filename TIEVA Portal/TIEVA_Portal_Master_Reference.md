@@ -1,6 +1,6 @@
 # TIEVA Portal - Master Reference
 
-**Last Updated:** January 2025 (v2.2 - Async Processing & FinOps Enhancements)
+**Last Updated:** January 2026 (v2.4 - Performance V2 Metrics Fix)
 
 ## Quick Reference
 
@@ -123,6 +123,59 @@
 
 ---
 
+## Performance Monitoring V2 - LogicMonitor Integration
+
+### Overview
+
+Performance V2 provides real-time metrics from LogicMonitor with intelligent SKU recommendations. It replaces the static Performance audit module with live data.
+
+### Database Tables
+
+| Table | Purpose |
+|-------|--------|
+| `LMResourceTypes` | 22 pre-seeded resource type definitions |
+| `LMMetricMappings` | Which metrics to fetch per resource type |
+| `LMDeviceMetricsV2` | Actual device metrics with flexible JSON storage |
+| `LMDeviceMetricHistory` | Daily aggregates for 90-day graphs |
+| `AzureSkuFamilies` | SKU family definitions for recommendations |
+
+### API Endpoints
+
+| Method | Route | Purpose |
+|--------|-------|--------|
+| GET | `/v2/performance/customers/{id}/summary` | Summary by resource type |
+| GET | `/v2/performance/customers/{id}/devices/{deviceId}` | Single device metrics |
+| GET | `/v2/performance/customers/{id}/devices/{deviceId}/history` | 90-day history |
+| POST | `/v2/performance/customers/{id}/sync/run` | Run sync synchronously |
+| GET | `/v2/performance/customers/{id}/sync/status` | Check sync progress |
+
+### Metrics Calculation Logic
+
+**Windows Server (Working)**:
+- **CPU**: Uses `CPUBusyPercent` datapoint with percentage validation (0-100 range)
+- **Memory**: Tries `MemoryUtilizationPercent` first, falls back to `100 - (FreePhysicalMemory / TotalVisibleMemorySize * 100)`
+- **Disk**: Processes ALL disk instances via `FetchAllDiskMetricsAsync()`
+  - Auto-detects unit mismatch (Capacity in bytes, FreeSpace in GB)
+  - Converts bytes to GB when `capacity > 1 billion && free < 100,000`
+  - Stores each drive: `Disk (C:)`, `Disk (D:)`, etc.
+  - Overall `Disk` shows worst (highest usage) drive
+
+**Known Limitations (Azure PaaS)**:
+- Storage latency metrics are milliseconds, not percentages
+- Azure Disk IOPS%/Bandwidth% datapoints don't exist in LogicMonitor
+- Some Azure VM metrics exceed 0-100 range (raw counters)
+- See `ISSUES_TRACKER.md` for details
+
+### Frontend Display
+
+Device modal shows:
+1. **Main cards**: CPU, Memory, Disk (overall)
+2. **Individual Disks section**: All drives with color-coded status
+3. **90-day trend charts** (if history data available)
+4. **SKU recommendation** badge
+
+---
+
 ## Local File Structure
 
 ```
@@ -189,6 +242,8 @@ C:\VS Code\Azure-Managed-Service\TIEVA Portal\
 | SchedulerFunctions.cs | Pre-meeting assessment scheduling |
 | DashboardFunctions.cs | Portal dashboard stats |
 | AuditProxyFunctions.cs | Proxy for audit function calls |
+| LogicMonitorFunctions.cs | LM alerts, devices, sync (V1) |
+| LMPerformanceV2Functions.cs | Performance V2 sync, metrics, admin endpoints |
 
 ---
 

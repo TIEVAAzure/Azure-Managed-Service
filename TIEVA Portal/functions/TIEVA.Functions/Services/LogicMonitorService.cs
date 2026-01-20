@@ -95,6 +95,7 @@ public class LogicMonitorService
 
         try
         {
+            _logger.LogInformation("LM API Request: {Method} {Uri}", method, uri);
             var response = await _httpClient.SendAsync(request);
             
             // Update rate limit tracking from response headers
@@ -113,7 +114,7 @@ public class LogicMonitorService
             if (!response.IsSuccessStatusCode)
             {
                 var errorContent = await response.Content.ReadAsStringAsync();
-                _logger.LogError("LM API error: {StatusCode} - {Error}", response.StatusCode, errorContent);
+                _logger.LogError("LM API error: {StatusCode} - {Error} for {Uri}", response.StatusCode, errorContent, uri);
                 return null;
             }
 
@@ -125,7 +126,7 @@ public class LogicMonitorService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error calling LogicMonitor API: {Path}", resourcePath);
+            _logger.LogError(ex, "Exception calling LogicMonitor API: {Path} - {Message}", resourcePath, ex.Message);
             return null;
         }
     }
@@ -135,7 +136,7 @@ public class LogicMonitorService
     #region Device Operations
 
     /// <summary>
-    /// Get all devices for a specific device group (customer)
+    /// Get all devices for a specific device group (customer) - direct children only
     /// </summary>
     public async Task<LMDeviceListResponse?> GetDevicesForGroupAsync(int groupId, int size = 100, int offset = 0)
     {
@@ -144,6 +145,68 @@ public class LogicMonitorService
             $"/device/groups/{groupId}/devices",
             $"size={size}&offset={offset}&fields=id,displayName,hostStatus,alertStatus,currentCollectorId,systemProperties,customProperties"
         );
+    }
+
+    /// <summary>
+    /// Get all devices in a group INCLUDING subgroups by recursively fetching from all subgroups
+    /// </summary>
+    public async Task<LMDeviceListResponse?> GetAllDevicesInGroupAsync(int groupId, int size = 1000, int offset = 0)
+    {
+        // Get all subgroup IDs recursively
+        var allGroupIds = new List<int> { groupId };
+        await CollectSubgroupIdsAsync(groupId, allGroupIds);
+        
+        _logger.LogInformation("Found {Count} groups (including subgroups) for group {GroupId}", allGroupIds.Count, groupId);
+        
+        // Fetch devices from all groups in parallel (batch of 5 at a time to avoid rate limits)
+        var allDevices = new List<LMDevice>();
+        
+        foreach (var batch in allGroupIds.Chunk(5))
+        {
+            var tasks = batch.Select(gid => ExecuteRequestAsync<LMDeviceListResponse>(
+                "GET",
+                $"/device/groups/{gid}/devices",
+                "size=1000&fields=id,displayName,hostStatus,alertStatus"
+            ));
+            
+            var results = await Task.WhenAll(tasks);
+            foreach (var result in results)
+            {
+                if (result?.Items != null)
+                {
+                    allDevices.AddRange(result.Items);
+                }
+            }
+        }
+        
+        _logger.LogInformation("Found {Count} total devices across all groups", allDevices.Count);
+        
+        return new LMDeviceListResponse
+        {
+            Total = allDevices.Count,
+            Items = allDevices.Skip(offset).Take(size).ToList()
+        };
+    }
+    
+    /// <summary>
+    /// Recursively collect all subgroup IDs
+    /// </summary>
+    private async Task CollectSubgroupIdsAsync(int parentGroupId, List<int> collected)
+    {
+        var subgroups = await ExecuteRequestAsync<LMDeviceGroupListResponse>(
+            "GET",
+            "/device/groups",
+            $"size=100&filter=parentId:{parentGroupId}&fields=id,name"
+        );
+        
+        if (subgroups?.Items != null)
+        {
+            foreach (var group in subgroups.Items)
+            {
+                collected.Add(group.Id);
+                await CollectSubgroupIdsAsync(group.Id, collected);
+            }
+        }
     }
 
     /// <summary>
@@ -159,7 +222,7 @@ public class LogicMonitorService
     }
 
     /// <summary>
-    /// Get all device groups under the Customers root (ID: 406)
+    /// Get all device groups under the Customers root (ID: 406) - for TIEVA shared portal
     /// </summary>
     public async Task<LMDeviceGroupListResponse?> GetCustomerGroupsAsync()
     {
@@ -168,6 +231,31 @@ public class LogicMonitorService
             "GET",
             "/device/groups",
             "size=100&filter=parentId:406&fields=id,name,fullPath,numOfHosts,customProperties"
+        );
+    }
+
+    /// <summary>
+    /// Get all device groups - for customer's own portal (no parentId filter)
+    /// </summary>
+    public async Task<LMDeviceGroupListResponse?> GetAllGroupsAsync()
+    {
+        // Get all groups (no filter) - useful for customer's own LM portal
+        return await ExecuteRequestAsync<LMDeviceGroupListResponse>(
+            "GET",
+            "/device/groups",
+            "size=300&fields=id,name,fullPath,numOfHosts,customProperties"
+        );
+    }
+
+    /// <summary>
+    /// Get subgroups of a specific group by parentId
+    /// </summary>
+    public async Task<LMDeviceGroupListResponse?> GetSubgroupsAsync(int parentGroupId)
+    {
+        return await ExecuteRequestAsync<LMDeviceGroupListResponse>(
+            "GET",
+            "/device/groups",
+            $"size=100&filter=parentId:{parentGroupId}&fields=id,name,fullPath,numOfHosts"
         );
     }
 
@@ -206,22 +294,34 @@ public class LogicMonitorService
     #region Alert Operations
 
     /// <summary>
-    /// Get active alerts, optionally filtered by device group
+    /// Get active alerts filtered by device group path (including subgroups)
     /// </summary>
     public async Task<LMAlertListResponse?> GetActiveAlertsAsync(int? groupId = null, int size = 100)
     {
-        var queryParams = $"size={size}&filter=cleared:false&fields=id,monitorObjectName,alertValue,severity,startEpoch,resourceTemplateName,inSDT,acked";
+        var filter = "cleared:false";
         
         if (groupId.HasValue)
         {
-            queryParams += $",deviceId,deviceDisplayName&filter=cleared:false,deviceGroups~{groupId}";
+            // Get the group path first
+            var groupInfo = await GetDeviceGroupAsync(groupId.Value);
+            if (groupInfo != null)
+            {
+                var groupPath = groupInfo.FullPath; // e.g. "Customers/Ovarro"
+                // Use monitorObjectGroups filter with * to include subgroups
+                filter = $"cleared:false,monitorObjectGroups:\"{groupPath}*\"";
+                _logger.LogInformation("Getting alerts for group path: {GroupPath}*", groupPath);
+            }
         }
 
-        return await ExecuteRequestAsync<LMAlertListResponse>("GET", "/alert/alerts", queryParams);
+        return await ExecuteRequestAsync<LMAlertListResponse>(
+            "GET", 
+            "/alert/alerts", 
+            $"size={size}&filter={Uri.EscapeDataString(filter)}&fields=id,monitorObjectName,alertValue,severity,startEpoch,resourceTemplateName,inSDT,acked,deviceId,deviceDisplayName"
+        );
     }
 
     /// <summary>
-    /// Get alert history for a time period
+    /// Get alert history for a time period, filtered by device group path (including subgroups)
     /// </summary>
     public async Task<LMAlertListResponse?> GetAlertHistoryAsync(
         int? groupId = null, 
@@ -231,14 +331,24 @@ public class LogicMonitorService
         var sinceEpoch = since?.ToUniversalTime().Subtract(DateTime.UnixEpoch).TotalSeconds 
             ?? DateTimeOffset.UtcNow.AddDays(-7).ToUnixTimeSeconds();
         
-        var queryParams = $"size={size}&filter=startEpoch>:{sinceEpoch}&fields=id,monitorObjectName,alertValue,severity,startEpoch,endEpoch,cleared,acked,deviceId,deviceDisplayName,resourceTemplateName";
+        var filter = $"startEpoch>:{sinceEpoch}";
 
         if (groupId.HasValue)
         {
-            queryParams += $",deviceGroups~{groupId}";
+            // Get the group path first
+            var groupInfo = await GetDeviceGroupAsync(groupId.Value);
+            if (groupInfo != null)
+            {
+                var groupPath = groupInfo.FullPath;
+                filter = $"startEpoch>:{sinceEpoch},monitorObjectGroups:\"{groupPath}*\"";
+            }
         }
 
-        return await ExecuteRequestAsync<LMAlertListResponse>("GET", "/alert/alerts", queryParams);
+        return await ExecuteRequestAsync<LMAlertListResponse>(
+            "GET", 
+            "/alert/alerts", 
+            $"size={size}&filter={Uri.EscapeDataString(filter)}&fields=id,monitorObjectName,alertValue,severity,startEpoch,endEpoch,cleared,acked,deviceId,deviceDisplayName,resourceTemplateName"
+        );
     }
 
     /// <summary>
@@ -314,6 +424,111 @@ public class LogicMonitorService
             $"/device/devices/{deviceId}/devicedatasources",
             "size=100&fields=id,dataSourceId,dataSourceName,dataSourceDisplayName,instanceNumber"
         );
+    }
+
+    /// <summary>
+    /// Get instances for a device datasource (e.g., individual disks, network interfaces)
+    /// </summary>
+    public async Task<LMDatasourceInstanceListResponse?> GetDatasourceInstancesAsync(int deviceId, int hdsId)
+    {
+        return await ExecuteRequestAsync<LMDatasourceInstanceListResponse>(
+            "GET",
+            $"/device/devices/{deviceId}/devicedatasources/{hdsId}/instances",
+            "size=100&fields=id,displayName,wildValue,wildValue2"
+        );
+    }
+
+    /// <summary>
+    /// Get data for a specific instance of a datasource
+    /// </summary>
+    public async Task<LMInstanceDataResponse?> GetInstanceDataAsync(
+        int deviceId, 
+        int hdsId, 
+        int instanceId,
+        DateTime? start = null, 
+        DateTime? end = null)
+    {
+        var startEpoch = (long)(start?.ToUniversalTime().Subtract(DateTime.UnixEpoch).TotalSeconds 
+            ?? DateTimeOffset.UtcNow.AddHours(-1).ToUnixTimeSeconds());
+        var endEpoch = (long)(end?.ToUniversalTime().Subtract(DateTime.UnixEpoch).TotalSeconds 
+            ?? DateTimeOffset.UtcNow.ToUnixTimeSeconds());
+
+        return await ExecuteRequestAsync<LMInstanceDataResponse>(
+            "GET",
+            $"/device/devices/{deviceId}/devicedatasources/{hdsId}/instances/{instanceId}/data",
+            $"start={startEpoch}&end={endEpoch}"
+        );
+    }
+
+    /// <summary>
+    /// Get aggregated device metrics data using LM's built-in aggregation
+    /// </summary>
+    public async Task<LMGraphDataResponse?> GetDeviceGraphDataAsync(
+        int deviceId,
+        int hdsId,
+        int instanceId,
+        string dataPointName,
+        DateTime start,
+        DateTime end)
+    {
+        var startEpoch = (long)start.ToUniversalTime().Subtract(DateTime.UnixEpoch).TotalSeconds;
+        var endEpoch = (long)end.ToUniversalTime().Subtract(DateTime.UnixEpoch).TotalSeconds;
+        
+        return await ExecuteRequestAsync<LMGraphDataResponse>(
+            "GET",
+            $"/device/devices/{deviceId}/devicedatasources/{hdsId}/instances/{instanceId}/graphs/{dataPointName}/data",
+            $"start={startEpoch}&end={endEpoch}"
+        );
+    }
+
+    /// <summary>
+    /// Get complete device details including system properties
+    /// </summary>
+    public async Task<LMDeviceDetailResponse?> GetDeviceDetailsAsync(int deviceId)
+    {
+        return await ExecuteRequestAsync<LMDeviceDetailResponse>(
+            "GET",
+            $"/device/devices/{deviceId}",
+            "fields=id,displayName,hostStatus,alertStatus,systemProperties,customProperties,inheritedProperties"
+        );
+    }
+
+    /// <summary>
+    /// Get device performance metrics using device/devicedatasourceinstances endpoint
+    /// This is more efficient for getting metrics across multiple datasources
+    /// </summary>
+    public async Task<LMDeviceInstancesResponse?> GetDeviceAllInstancesAsync(int deviceId)
+    {
+        return await ExecuteRequestAsync<LMDeviceInstancesResponse>(
+            "GET",
+            $"/device/devices/{deviceId}/devicedatasourceinstances",
+            "size=200&fields=id,displayName,deviceDataSourceId,dataSourceName,dataSourceDisplayName"
+        );
+    }
+
+    #endregion
+
+    #region Debug Methods
+
+    /// <summary>
+    /// Get raw JSON response from instance data endpoint for debugging
+    /// </summary>
+    public async Task<string> GetRawInstanceDataAsync(int deviceId, int hdsId, int instanceId)
+    {
+        var startEpoch = DateTimeOffset.UtcNow.AddHours(-1).ToUnixTimeSeconds();
+        var endEpoch = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+        var resourcePath = $"/device/devices/{deviceId}/devicedatasources/{hdsId}/instances/{instanceId}/data";
+        var queryParams = $"start={startEpoch}&end={endEpoch}";
+        
+        var authHeader = GenerateAuthHeader("GET", resourcePath, "");
+        var uri = $"{_baseUrl}{resourcePath}?{queryParams}";
+        
+        using var request = new HttpRequestMessage(HttpMethod.Get, uri);
+        request.Headers.Add("Authorization", authHeader);
+        request.Headers.Add("X-Version", "3");
+        
+        var response = await _httpClient.SendAsync(request);
+        return await response.Content.ReadAsStringAsync();
     }
 
     #endregion
@@ -450,6 +665,199 @@ public class LMDataValue
 {
     public long Time { get; set; }
     public List<double?>? Values { get; set; }
+}
+
+// Additional response models for performance metrics
+public class LMDatasourceInstanceListResponse : LMBaseResponse
+{
+    public List<LMDatasourceInstance> Items { get; set; } = new();
+}
+
+public class LMDatasourceInstance
+{
+    public int Id { get; set; }
+    public string? DisplayName { get; set; }
+    public string? WildValue { get; set; }      // e.g., "C:" for disk, "eth0" for network
+    public string? WildValue2 { get; set; }
+    public int DeviceDataSourceId { get; set; }
+}
+
+public class LMInstanceDataResponse
+{
+    public List<string>? DataPoints { get; set; }  // e.g., ["CPUBusyPercent", "CPUIdlePercent"]
+    
+    // Values is an array of arrays: [[timestamp, val1, val2], [timestamp, val1, val2], ...]
+    // Using JsonElement to handle mixed types (long timestamps, double/null values)
+    public System.Text.Json.JsonElement? Values { get; set; }
+    
+    // Time can be various formats - using JsonElement
+    public System.Text.Json.JsonElement? Time { get; set; }
+    
+    /// <summary>
+    /// Get all values for a specific datapoint index
+    /// </summary>
+    public List<double> GetDatapointValues(int datapointIndex)
+    {
+        var result = new List<double>();
+        if (!Values.HasValue || DataPoints == null) return result;
+        
+        try
+        {
+            if (Values.Value.ValueKind != System.Text.Json.JsonValueKind.Array) return result;
+            
+            // Values format: [[timestamp, dp0, dp1, ...], [timestamp, dp0, dp1, ...]]
+            // datapointIndex 0 = first datapoint (index 1 in the array since index 0 is timestamp)
+            var valueIndex = datapointIndex + 1;
+            
+            foreach (var row in Values.Value.EnumerateArray())
+            {
+                if (row.ValueKind != System.Text.Json.JsonValueKind.Array) continue;
+                if (row.GetArrayLength() <= valueIndex) continue;
+                
+                var element = row[valueIndex];
+                if (element.ValueKind == System.Text.Json.JsonValueKind.Number)
+                {
+                    var val = element.GetDouble();
+                    // Accept any non-NaN numeric value
+                    if (!double.IsNaN(val) && !double.IsInfinity(val))
+                    {
+                        result.Add(val);
+                    }
+                }
+            }
+        }
+        catch
+        {
+            // Silently handle parsing errors
+        }
+        
+        return result;
+    }
+
+    /// <summary>
+    /// Get the actual number of data columns in the values array (excluding timestamp)
+    /// </summary>
+    public int GetActualDataColumnCount()
+    {
+        if (!Values.HasValue) return 0;
+        
+        try
+        {
+            if (Values.Value.ValueKind != System.Text.Json.JsonValueKind.Array) return 0;
+            
+            foreach (var row in Values.Value.EnumerateArray())
+            {
+                if (row.ValueKind == System.Text.Json.JsonValueKind.Array)
+                {
+                    // Row length minus 1 (for timestamp) = number of data columns
+                    return row.GetArrayLength() - 1;
+                }
+            }
+        }
+        catch { }
+        
+        return 0;
+    }
+
+    /// <summary>
+    /// Debug method: Get raw sample values for a datapoint to diagnose filtering issues
+    /// </summary>
+    public List<object> GetRawDatapointSamples(int datapointIndex, int maxSamples = 5)
+    {
+        var result = new List<object>();
+        if (!Values.HasValue || DataPoints == null) return result;
+        
+        try
+        {
+            if (Values.Value.ValueKind != System.Text.Json.JsonValueKind.Array) return result;
+            
+            var valueIndex = datapointIndex + 1;
+            var count = 0;
+            
+            foreach (var row in Values.Value.EnumerateArray())
+            {
+                if (count >= maxSamples) break;
+                
+                if (row.ValueKind != System.Text.Json.JsonValueKind.Array)
+                {
+                    result.Add(new { issue = "row_not_array", kind = row.ValueKind.ToString() });
+                    count++;
+                    continue;
+                }
+                
+                var rowLength = row.GetArrayLength();
+                if (rowLength <= valueIndex)
+                {
+                    result.Add(new { issue = "row_too_short", length = rowLength, needed = valueIndex + 1 });
+                    count++;
+                    continue;
+                }
+                
+                var element = row[valueIndex];
+                result.Add(new { 
+                    kind = element.ValueKind.ToString(), 
+                    rawValue = element.ValueKind == System.Text.Json.JsonValueKind.Number 
+                        ? element.GetDouble() 
+                        : element.ValueKind == System.Text.Json.JsonValueKind.Null 
+                            ? (object)"null" 
+                            : element.ToString()
+                });
+                count++;
+            }
+        }
+        catch (Exception ex)
+        {
+            result.Add(new { error = ex.Message });
+        }
+        
+        return result;
+    }
+}
+
+public class LMGraphDataResponse
+{
+    public string? Timestamps { get; set; }
+    public List<LMGraphLine>? Lines { get; set; }
+}
+
+public class LMGraphLine
+{
+    public string? Label { get; set; }
+    public string? ColorName { get; set; }
+    public List<double?>? Data { get; set; }
+}
+
+public class LMDeviceDetailResponse
+{
+    public int Id { get; set; }
+    public string DisplayName { get; set; } = string.Empty;
+    public string? HostStatus { get; set; }
+    public string? AlertStatus { get; set; }
+    public List<LMProperty>? SystemProperties { get; set; }
+    public List<LMProperty>? CustomProperties { get; set; }
+    public List<LMProperty>? InheritedProperties { get; set; }
+    
+    // Helper to get property value
+    public string? GetProperty(string name)
+    {
+        return SystemProperties?.FirstOrDefault(p => p.Name == name)?.Value
+            ?? CustomProperties?.FirstOrDefault(p => p.Name == name)?.Value
+            ?? InheritedProperties?.FirstOrDefault(p => p.Name == name)?.Value;
+    }
+}
+
+public class LMDeviceInstancesResponse : LMBaseResponse
+{
+    public List<LMDeviceInstance> Items { get; set; } = new();
+}
+
+public class LMDeviceInstance
+{
+    public int Id { get; set; }
+    public string? DisplayName { get; set; }
+    public int DeviceDataSourceId { get; set; }
+    public string? DataSourceName { get; set; }           // e.g., "WinCPU"
+    public string? DataSourceDisplayName { get; set; }    // e.g., "Windows CPU"
 }
 
 #endregion

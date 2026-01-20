@@ -49,6 +49,8 @@ public class CustomerFunctions
                 c.FinOpsSasExpiry,
                 HasFinOpsSas = !string.IsNullOrEmpty(c.FinOpsSasKeyVaultRef),
                 c.LogicMonitorGroupId,
+                c.LMEnabled,
+                c.LMHasCustomCredentials,
                 ConnectionCount = c.Connections.Count(x => x.IsActive),
                 SubscriptionCount = c.Connections.Where(x => x.IsActive).SelectMany(x => x.Subscriptions).Count(s => s.IsInScope),
                 LastAssessment = c.Assessments.OrderByDescending(a => a.CompletedAt).Select(a => a.CompletedAt).FirstOrDefault(),
@@ -95,6 +97,8 @@ public class CustomerFunctions
                 c.FinOpsSasExpiry,
                 HasFinOpsSas = !string.IsNullOrEmpty(c.FinOpsSasKeyVaultRef),
                 c.LogicMonitorGroupId,
+                c.LMEnabled,
+                c.LMHasCustomCredentials,
                 Connections = c.Connections.Where(x => x.IsActive).Select(conn => new
                 {
                     conn.Id,
@@ -215,6 +219,12 @@ public class CustomerFunctions
                 customer.FinOpsContainer = string.IsNullOrWhiteSpace(input.FinOpsContainer) ? null : input.FinOpsContainer;
             if (input.FinOpsPowerBIUrl != null) 
                 customer.FinOpsPowerBIUrl = string.IsNullOrWhiteSpace(input.FinOpsPowerBIUrl) ? null : input.FinOpsPowerBIUrl;
+            
+            // LogicMonitor fields
+            if (input.LogicMonitorGroupId.HasValue || input.LogicMonitorGroupId == null)
+                customer.LogicMonitorGroupId = input.LogicMonitorGroupId;
+            if (input.LMEnabled.HasValue)
+                customer.LMEnabled = input.LMEnabled.Value;
             
             customer.UpdatedAt = DateTime.UtcNow;
         }
@@ -535,4 +545,8 @@ public class CreateCustomerRequest
     public string? FinOpsStorageAccount { get; set; }
     public string? FinOpsContainer { get; set; }
     public string? FinOpsPowerBIUrl { get; set; }
+    
+    // LogicMonitor Configuration (basic - credentials via separate API)
+    public int? LogicMonitorGroupId { get; set; }
+    public bool? LMEnabled { get; set; }
 }

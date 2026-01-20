@@ -1,6 +1,6 @@
 # TIEVA Portal - API Reference
 
-**Last Updated:** January 2025 (v2.2 - FinOps Enhancements)
+**Last Updated:** January 2026 (v2.3 - Performance V2 Endpoints)
 
 ## Base URLs
 
@@ -8,6 +8,209 @@
 |-----|-----|
 | Main API | https://func-tievaportal-6612.azurewebsites.net/api |
 | Audit API | https://func-tieva-audit.azurewebsites.net/api |
+
+---
+
+## Performance V2 Endpoints (NEW)
+
+### Summary & Device Data
+
+#### GET /api/v2/performance/customers/{customerId}/summary
+Get performance summary grouped by resource type.
+
+**Response:**
+```json
+{
+  "customerId": "guid",
+  "totalDevices": 268,
+  "lastSyncedAt": "2026-01-19T10:00:00Z",
+  "syncStatus": "Completed",
+  "resourceTypes": [
+    {
+      "code": "WindowsServer",
+      "displayName": "Windows Server",
+      "category": "Compute",
+      "icon": "🖥️",
+      "totalDevices": 23,
+      "healthyCount": 20,
+      "warningCount": 2,
+      "criticalCount": 1,
+      "unknownCount": 0
+    }
+  ]
+}
+```
+
+#### GET /api/v2/performance/customers/{customerId}/types/{typeCode}
+Get all devices of a specific resource type with metrics.
+
+**Response:**
+```json
+{
+  "resourceType": {
+    "code": "WindowsServer",
+    "displayName": "Windows Server",
+    "metrics": ["CPU", "Memory", "DiskSpace"]
+  },
+  "devices": [
+    {
+      "deviceId": 12345,
+      "deviceName": "server01.contoso.com",
+      "healthStatus": "Warning",
+      "metrics": {
+        "CPU": { "value": 45.2, "unit": "%", "status": "Healthy" },
+        "Memory": { "value": 82.1, "unit": "%", "status": "Warning" }
+      },
+      "lastSyncedAt": "2026-01-19T10:00:00Z"
+    }
+  ]
+}
+```
+
+### Sync Operations
+
+#### GET /api/v2/performance/customers/{customerId}/sync/status
+Check sync progress.
+
+**Response:**
+```json
+{
+  "status": "Running",
+  "devicesProcessed": 150,
+  "totalDevices": 268,
+  "startedAt": "2026-01-19T10:00:00Z"
+}
+```
+
+#### POST /api/v2/performance/customers/{customerId}/sync/run
+Run sync synchronously (returns when complete).
+
+**Response:**
+```json
+{
+  "status": "Completed",
+  "devicesProcessed": 268,
+  "duration": "00:02:15"
+}
+```
+
+### Admin: Resource Types
+
+#### GET /api/v2/performance/resource-types
+Get all resource types with their metric mappings.
+
+**Response:**
+```json
+[
+  {
+    "id": 1,
+    "code": "WindowsServer",
+    "displayName": "Windows Server",
+    "category": "Compute",
+    "icon": "🖥️",
+    "detectionPatterns": ["WinCPU", "WinMemory", "WinOS"],
+    "sortOrder": 10,
+    "hasPerformanceMetrics": true,
+    "isActive": true,
+    "metrics": [
+      {
+        "id": 1,
+        "metricName": "CPU",
+        "displayName": "CPU",
+        "unit": "%",
+        "datasourcePatterns": ["WinCPU"],
+        "datapointPatterns": ["CPUBusyPercent"],
+        "warningThreshold": 70,
+        "criticalThreshold": 90,
+        "invertThreshold": false
+      }
+    ]
+  }
+]
+```
+
+#### PUT /api/v2/performance/resource-types/{id}
+Update resource type properties.
+
+**Request:**
+```json
+{
+  "displayName": "Windows Server",
+  "detectionPatterns": ["WinCPU", "WinMemory", "WinOS", "WinDisk"],
+  "hasPerformanceMetrics": true,
+  "isActive": true
+}
+```
+
+### Admin: Metric Mappings
+
+#### POST /api/v2/performance/resource-types/{resourceTypeId}/mappings
+Create new metric mapping.
+
+**Request:**
+```json
+{
+  "metricName": "DiskIOPS",
+  "displayName": "Disk IOPS",
+  "unit": "IOPS",
+  "datasourcePatterns": ["Microsoft_Azure_Disk"],
+  "datapointPatterns": ["DiskIOPSConsumedPercentage"],
+  "warningThreshold": 70,
+  "criticalThreshold": 90,
+  "invertThreshold": false
+}
+```
+
+#### PUT /api/v2/performance/mappings/{id}
+Update existing metric mapping.
+
+#### DELETE /api/v2/performance/mappings/{id}
+Delete metric mapping.
+
+### Admin: Discovery Tools
+
+#### GET /api/v2/performance/customers/{customerId}/devices/{deviceId}/discover
+Discover all datasources and datapoints for a device.
+
+**Response:**
+```json
+{
+  "deviceId": 12345,
+  "datasourceCount": 15,
+  "datasources": [
+    {
+      "datasourceId": 101,
+      "datasourceName": "Microsoft_Azure_Disk",
+      "datapoints": [
+        { "name": "DiskIOPSConsumedPercentage" },
+        { "name": "DiskBandwidthConsumedPercentage" }
+      ]
+    }
+  ]
+}
+```
+
+#### GET /api/v2/performance/customers/{customerId}/bulk-discover
+Bulk discover datapoints for all resource types and generate SQL.
+
+**Response:**
+```json
+{
+  "summary": "Discovered datapoints for 12 resource types",
+  "generatedSqlStatements": 45,
+  "resourceTypes": [
+    {
+      "resourceType": "AzureDisk",
+      "resourceTypeId": 5,
+      "displayName": "Azure Managed Disk",
+      "existingMappings": 0,
+      "sampleDevice": "disk-server01",
+      "datasources": [...]
+    }
+  ],
+  "sql": "-- Auto-generated metric mappings...\nINSERT INTO LMMetricMappings..."
+}
+```
 
 ---
 

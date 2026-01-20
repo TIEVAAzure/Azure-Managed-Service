@@ -1,6 +1,6 @@
 # TIEVA Portal - Database Schema
 
-**Last Updated:** January 2025 (v2.2 - CustomerReservationCache & FinOps Enhancements)
+**Last Updated:** January 2026 (v2.3 - Performance V2 Tables)
 
 ## Connection Details
 
@@ -26,42 +26,131 @@
          │ TierModules  │
          └──────────────┘
 
-┌─────────────────┐
-│   Customers     │◄─────────────────────────────────────┐
-└────────┬────────┘                                      │
-         │                                               │
-         ├──────────────┐                                │
-         ▼              ▼                                │
-┌─────────────────┐ ┌──────────────────────────┐         │
-│AzureConnections │ │ CustomerRoadmapPlans (1:1)│         │
-└────────┬────────┘ └──────────────────────────┘         │
-         │                                               │
-         ▼                                               │
-┌──────────────────────┐                                 │
-│ CustomerSubscriptions │──────┐                        │
-└──────────────────────┘       │                        │
-                               ▼                        │
-                      ┌──────────────┐                  │
-                      │ ServiceTiers │                  │
-                      └──────────────┘                  │
-                                                        │
-┌─────────────────┐     ┌────────────────────────┐      │
-│  Assessments    │────▶│AssessmentModuleResults │      │
-└────────┬────────┘     └────────────────────────┘      │
-         │                                              │
-         ▼                                              │
-┌─────────────────┐     ┌────────────────────────┐      │
-│    Findings     │     │  CustomerFindings (1:N) │◄────┘
-└─────────────────┘     └────────────────────────┘
-
-┌─────────────────────┐   ┌──────────────────────────┐
-│ FindingMetadata     │   │ CustomerReservationCache │
-└─────────────────────┘   └──────────────────────────┘
-
-┌─────────────────────┐
-│ EffortSettings      │ (deprecated - replaced by FindingMetadata)
-└─────────────────────┘
+┌─────────────────┐                                            ┌─────────────────┐
+│   Customers     │◄───────────────────────────────────────────┤ LMResourceTypes │
+└────────┬────────┘                                            └────────┬────────┘
+         │                                                            │
+         ├──────────────┐                                             │
+         ▼              ▼                                             ▼
+┌─────────────────┐ ┌──────────────────────────┐         ┌──────────────────┐
+│AzureConnections │ │ CustomerRoadmapPlans (1:1)│         │ LMMetricMappings │
+└────────┬────────┘ └──────────────────────────┘         └──────────────────┘
+         │                                          
+         ▼                                          ┌──────────────────┐
+┌──────────────────────┐                          │ LMDeviceMetricsV2│
+│ CustomerSubscriptions │                          └──────────────────┘
+└──────────────────────┘
 ```
+
+---
+
+## Performance V2 Tables (NEW)
+
+### LMResourceTypes
+Resource type definitions for LogicMonitor device categorization.
+
+| Column | Type | Description |
+|--------|------|-------------|
+| Id | int | PK (identity) |
+| Code | nvarchar(50) | Unique identifier (WindowsServer, AzureVM, etc.) |
+| DisplayName | nvarchar(100) | UI display name |
+| Category | nvarchar(50) | Grouping: Compute, Database, Storage, Network, Platform, Container, Identity, Monitoring, Other |
+| Icon | nvarchar(20) | Emoji icon (🖥️, 🗄️, etc.) |
+| DetectionPatternsJson | nvarchar(max) | JSON array of datasource patterns for matching |
+| SortOrder | int | Priority for matching (lower = checked first) |
+| ShowInDashboard | bit | Include in summary dashboard |
+| HasPerformanceMetrics | bit | Has performance metrics to fetch |
+| IsActive | bit | Active flag |
+| CreatedAt | datetime2 | Created timestamp |
+| UpdatedAt | datetime2 | Updated timestamp |
+
+**Key Points:**
+- **DetectionPatternsJson**: `["WinCPU", "WinMemory"]` - device matches if ANY datasource contains ANY pattern
+- **SortOrder**: Lower values checked first. MetadataOnly (900) should be last fallback
+- 22 pre-seeded types covering Windows, Linux, Azure VMs, SQL, Storage, Network, etc.
+
+**Sample Data:**
+| Code | DisplayName | Category | SortOrder | DetectionPatterns |
+|------|-------------|----------|-----------|-------------------|
+| WindowsServer | Windows Server | Compute | 10 | WinCPU, WinMemory, WinOS |
+| AzureVM | Azure Virtual Machine | Compute | 30 | Microsoft_Azure_VirtualMachine |
+| AzureSQL | Azure SQL Database | Database | 30 | Microsoft_Azure_Sql |
+| AzureDisk | Azure Managed Disk | Storage | 35 | Microsoft_Azure_Disk |
+| MetadataOnly | Metadata Only | Other | 900 | Whois_TTL_Expiry |
+
+---
+
+### LMMetricMappings
+Metric definitions per resource type - which datapoints to fetch and how to evaluate them.
+
+| Column | Type | Description |
+|--------|------|-------------|
+| Id | int | PK (identity) |
+| ResourceTypeId | int | FK to LMResourceTypes |
+| MetricName | nvarchar(100) | Internal name (CPU, Memory, IOPS) |
+| DisplayName | nvarchar(100) | UI display name |
+| Unit | nvarchar(20) | Unit of measurement (%, IOPS, MB, ms) |
+| DatasourcePatternsJson | nvarchar(max) | JSON array of datasource name patterns |
+| DatapointPatternsJson | nvarchar(max) | JSON array of datapoint name patterns |
+| WarningThreshold | decimal(10,2) | Warning threshold value |
+| CriticalThreshold | decimal(10,2) | Critical threshold value |
+| InvertThreshold | bit | True = lower is worse (availability), False = higher is worse (CPU) |
+| OversizedBelow | decimal(10,2) | Below this = oversized (for rightsizing) |
+| UndersizedAbove | decimal(10,2) | Above this = undersized (for rightsizing) |
+| SortOrder | int | Display order |
+| IsActive | bit | Active flag |
+| CreatedAt | datetime2 | Created timestamp |
+| UpdatedAt | datetime2 | Updated timestamp |
+
+**Key Points:**
+- **Pattern Matching**: Datasource name must contain ANY DatasourcePattern AND datapoint name must contain ANY DatapointPattern
+- **InvertThreshold**: For availability metrics where 99% is good and 50% is bad, set InvertThreshold=true
+- Metrics can be added via UI without code changes
+
+**Sample Data:**
+| ResourceType | MetricName | DatasourcePatterns | DatapointPatterns | Thresholds |
+|--------------|------------|-------------------|-------------------|------------|
+| WindowsServer | CPU | WinCPU | CPUBusyPercent | W:70, C:90 |
+| AzureVM | CPU | Microsoft_Azure_VirtualMachine | Percentage_CPU | W:70, C:90 |
+| AzureStorage | Availability | Microsoft_Azure_StorageAccount | Availability | W:99, C:95 (inv) |
+
+---
+
+### LMDeviceMetricsV2
+Actual device metrics - flexible JSON storage for any metric combination.
+
+| Column | Type | Description |
+|--------|------|-------------|
+| Id | int | PK (identity) |
+| CustomerId | uniqueidentifier | FK to Customers |
+| DeviceId | int | LogicMonitor device ID |
+| DeviceName | nvarchar(255) | Device display name |
+| ResourceTypeCode | nvarchar(50) | Matched resource type code |
+| MetricsJson | nvarchar(max) | JSON object of metric values |
+| HealthStatus | nvarchar(20) | Healthy, Warning, Critical, Unknown |
+| AvailableDatasourcesJson | nvarchar(max) | JSON array of device's datasources |
+| LastSyncedAt | datetime2 | Last sync timestamp |
+| CreatedAt | datetime2 | Created timestamp |
+| UpdatedAt | datetime2 | Updated timestamp |
+
+**MetricsJson Format:**
+```json
+{
+  "CPU": { "value": 45.2, "unit": "%", "status": "Healthy" },
+  "Memory": { "value": 72.1, "unit": "%", "status": "Warning" },
+  "DiskIOPS": { "value": 85.5, "unit": "IOPS", "status": "Healthy" }
+}
+```
+
+**HealthStatus Calculation:**
+- If ANY metric is Critical → "Critical"
+- Else if ANY metric is Warning → "Warning"
+- Else if ALL metrics are Healthy → "Healthy"
+- Else → "Unknown"
+
+**Indexes:**
+- (CustomerId, DeviceId) - Unique per customer/device
+- (CustomerId, ResourceTypeCode) - For filtering by type
 
 ---
 
@@ -162,8 +251,19 @@ Customer records with scheduling and FinOps configuration.
 | **FinOpsPowerBIUrl** | nvarchar(500) | Power BI report URL |
 | **FinOpsSasKeyVaultRef** | nvarchar(200) | Key Vault secret name for SAS token |
 | **FinOpsSasExpiry** | datetime2 | SAS token expiry date |
+| **LogicMonitorGroupId** | int | LM device group ID (for TIEVA shared portal) |
+| **LMEnabled** | bit | Enable LM integration for this customer |
+| **LMHasCustomCredentials** | bit | True if customer has their own LM portal credentials |
 | CreatedAt | datetime2 | Created timestamp |
 | UpdatedAt | datetime2 | Updated timestamp |
+
+**LogicMonitor Configuration Modes:**
+
+| Mode | LMHasCustomCredentials | LogicMonitorGroupId | Credentials Source |
+|------|------------------------|---------------------|--------------------|
+| Customer Portal | true | optional | Key Vault: `LM-{CustomerId}-*` |
+| TIEVA Shared | false | required | Key Vault: `LM-Company`, `LM-AccessId`, `LM-AccessKey` |
+| Not Configured | false | null | N/A |
 
 ---
 

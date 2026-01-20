@@ -1,0 +1,219 @@
+{
+  "device": {
+    "deviceId": 517,
+    "deviceName": "MHGAADSYNC01",
+    "currentResourceType": "WindowsServer",
+    "currentMetricsJson": "{\"CPU\":{\"Avg\":3.38877755511022,\"Max\":37,\"Min\":null,\"Status\":\"Healthy\",\"Recommendation\":\"Oversized\"},\"Disk\":{\"Avg\":99.999999996607,\"Max\":99.9999999981804,\"Min\":null,\"Status\":\"Critical\",\"Recommendation\":\"Undersized\"}}",
+    "overallStatus": "Critical",
+    "statusDetails": null,
+    "lastSyncedAt": "2026-01-20T14:10:24.2906111"
+  },
+  "availableDatasources": [
+    "SSL_Certificates",
+    "Whois_TTL_Expiry",
+    "Port-",
+    "HTTPS",
+    "HostStatus",
+    "HTTP-",
+    "dns",
+    "Ping",
+    "HTTP_Page-",
+    "WinIf-",
+    "Win2k12_HyperV_HypervisorStats",
+    "CommVault_Windows_Services",
+    "WinProcessStats-",
+    "WinPhysicalDrive-",
+    "Windows_WMITimeOffset",
+    "WinTCP",
+    "WinExchange Processes",
+    "UNC Monitor-",
+    "Microsoft_Windows_Services",
+    "Microsoft_Windows_CPU",
+    "Nginx-",
+    "Apache-",
+    "3ware_RAID_Drives",
+    "3ware_RAID_Controller",
+    "3ware_RAID_Battery",
+    "WinSystemUptime",
+    "Win2k12_HyperV_HypervisorMemory",
+    "Memcached-",
+    "Lighttpd-",
+    "Win2k8r2_HyperV_HypervisorStats"
+  ],
+  "matchedResourceType": {
+    "code": "WindowsServer",
+    "displayName": "Windows Server",
+    "hasPerformanceMetrics": true,
+    "activeMappings": 3,
+    "detectionPatterns": [
+      "WinCPU",
+      "Microsoft_Windows_CPU",
+      "WinOS"
+    ]
+  },
+  "metricDiagnostics": [
+    {
+      "metricName": "CPU",
+      "datasourcePatterns": [
+        "WinCPU",
+        "Microsoft_Windows_CPU"
+      ],
+      "datapointPatterns": [
+        "CPUBusyPercent",
+        "PercentProcessorTime"
+      ],
+      "matchedDatasource": {
+        "id": 4644,
+        "name": "Microsoft_Windows_CPU"
+      },
+      "instanceCount": 1,
+      "instances": [
+        {
+          "Id": 179868,
+          "DisplayName": "",
+          "WildValue": ""
+        }
+      ],
+      "availableDatapoints": [
+        "CPUBusyPercent",
+        "PercentProcessorTime",
+        "ProcessorQueueLength"
+      ],
+      "actualDataColumns": 2,
+      "datapointsWithData": [
+        "CPUBusyPercent",
+        "PercentProcessorTime"
+      ],
+      "valueArrayLength": 500,
+      "matchedDatapoint": {
+        "index": 0,
+        "name": "CPUBusyPercent"
+      },
+      "status": "SUCCESS",
+      "valueCount": 496,
+      "avg": 8302396.87,
+      "max": 9729044.73,
+      "min": 409375,
+      "sampleValues": [
+        9588541.67,
+        9473177.08,
+        9631250,
+        9631061.87,
+        9091050.66
+      ]
+    },
+    {
+      "metricName": "Memory",
+      "datasourcePatterns": [
+        "WinOS",
+        "WinMemory",
+        "WinMemory64"
+      ],
+      "datapointPatterns": [
+        "CALC:MEMORY"
+      ],
+      "matchedDatasource": {
+        "id": 4670,
+        "name": "WinOS"
+      },
+      "instanceCount": 1,
+      "instances": [
+        {
+          "Id": 179873,
+          "DisplayName": "",
+          "WildValue": ""
+        }
+      ],
+      "availableDatapoints": [
+        "NumberOfProcesses",
+        "PercentVirtualMemoryInUse",
+        "SizeStoredInPagingFiles",
+        "TotalVirtualMemorySize",
+        "TotalVisibleMemorySize",
+        "FreePhysicalMemory",
+        "FreeSpaceInPagingFiles",
+        "FreeVirtualMemory",
+        "MemoryUtilizationPercent"
+      ],
+      "actualDataColumns": 8,
+      "datapointsWithData": [
+        "NumberOfProcesses",
+        "PercentVirtualMemoryInUse",
+        "SizeStoredInPagingFiles",
+        "TotalVirtualMemorySize",
+        "TotalVisibleMemorySize",
+        "FreePhysicalMemory",
+        "FreeSpaceInPagingFiles",
+        "FreeVirtualMemory"
+      ],
+      "valueArrayLength": 500,
+      "status": "NO_DATAPOINT_MATCH",
+      "patternsTried": [
+        "CALC:MEMORY"
+      ],
+      "datapointsAvailable": [
+        "NumberOfProcesses",
+        "PercentVirtualMemoryInUse",
+        "SizeStoredInPagingFiles",
+        "TotalVirtualMemorySize",
+        "TotalVisibleMemorySize",
+        "FreePhysicalMemory",
+        "FreeSpaceInPagingFiles",
+        "FreeVirtualMemory",
+        "MemoryUtilizationPercent"
+      ]
+    },
+    {
+      "metricName": "Disk",
+      "datasourcePatterns": [
+        "WinVolumeUsage",
+        "WinLogicalDisk"
+      ],
+      "datapointPatterns": [
+        "CALC:DISK"
+      ],
+      "matchedDatasource": {
+        "id": 4663,
+        "name": "WinVolumeUsage-"
+      },
+      "instanceCount": 2,
+      "instances": [
+        {
+          "Id": 179904,
+          "DisplayName": "D:\\",
+          "WildValue": "D:\\"
+        },
+        {
+          "Id": 179905,
+          "DisplayName": "C:\\",
+          "WildValue": "C:\\"
+        }
+      ],
+      "availableDatapoints": [
+        "Capacity",
+        "FreeSpace",
+        "PercentUsed"
+      ],
+      "actualDataColumns": 2,
+      "datapointsWithData": [
+        "Capacity",
+        "FreeSpace"
+      ],
+      "valueArrayLength": 500,
+      "status": "NO_DATAPOINT_MATCH",
+      "patternsTried": [
+        "CALC:DISK"
+      ],
+      "datapointsAvailable": [
+        "Capacity",
+        "FreeSpace",
+        "PercentUsed"
+      ]
+    }
+  ],
+  "summary": {
+    "totalMappings": 3,
+    "successful": 1,
+    "failed": 2
+  }
+}
