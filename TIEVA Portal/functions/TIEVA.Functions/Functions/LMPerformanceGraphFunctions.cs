@@ -441,6 +441,7 @@ public class LMPerformanceGraphFunctions
             var start = end.AddDays(-90);
             var daysProcessed = 0;
             var recordsCreated = 0;
+            var debugInfo = new List<object>(); // Debug tracking
 
             // Get datasources for this device
             var datasources = await lmService.GetDeviceDatasourcesAsync(devId);
@@ -451,9 +452,13 @@ public class LMPerformanceGraphFunctions
                 return noData;
             }
 
+            debugInfo.Add(new { step = "datasources", count = datasources.Items.Count, names = datasources.Items.Select(d => d.DataSourceName).ToList() });
+
             // For each metric type (CPU, Memory, Disk), fetch 90 days of data
             var metricMappings = device.ResourceType?.MetricMappings?.Where(m => m.IsActive).ToList() ?? new();
-            
+
+            debugInfo.Add(new { step = "mappings", resourceType = device.ResourceType?.Code, count = metricMappings.Count, mappings = metricMappings.Select(m => new { m.MetricName, dsPatterns = m.GetDatasourcePatterns(), dpPatterns = m.GetDatapointPatterns() }).ToList() });
+
             foreach (var mapping in metricMappings)
             {
                 var dsPatterns = mapping.GetDatasourcePatterns();
@@ -463,13 +468,22 @@ public class LMPerformanceGraphFunctions
                 var matchedDs = datasources.Items.FirstOrDefault(ds =>
                     dsPatterns.Any(p => ds.DataSourceName?.Contains(p, StringComparison.OrdinalIgnoreCase) == true));
 
-                if (matchedDs == null) continue;
+                if (matchedDs == null)
+                {
+                    debugInfo.Add(new { step = "no_match", metric = mapping.MetricName, dsPatterns, availableDs = datasources.Items.Select(d => d.DataSourceName).ToList() });
+                    continue;
+                }
 
                 // Fetch instances
                 var instances = await lmService.GetDatasourceInstancesAsync(devId, matchedDs.Id);
-                if (instances?.Items == null || !instances.Items.Any()) continue;
+                if (instances?.Items == null || !instances.Items.Any())
+                {
+                    debugInfo.Add(new { step = "no_instances", metric = mapping.MetricName, datasource = matchedDs.DataSourceName });
+                    continue;
+                }
 
                 var instance = instances.Items.First();
+                debugInfo.Add(new { step = "matched", metric = mapping.MetricName, datasource = matchedDs.DataSourceName, instanceId = instance.Id, instanceName = instance.DisplayName });
 
                 // Fetch 90-day data in chunks (LM may have limits)
                 var chunkDays = 30;
@@ -483,19 +497,76 @@ public class LMPerformanceGraphFunctions
                     try
                     {
                         var data = await lmService.GetInstanceDataAsync(devId, matchedDs.Id, instance.Id, currentStart, chunkEnd);
-                        
+
+                        if (data?.DataPoints == null || !data.Values.HasValue)
+                        {
+                            debugInfo.Add(new { step = "no_data", metric = mapping.MetricName, chunkStart = currentStart.ToString("yyyy-MM-dd"), hasDataPoints = data?.DataPoints != null, hasValues = data?.Values.HasValue });
+                        }
+
                         if (data?.DataPoints != null && data.Values.HasValue)
                         {
+                            // Check if Time is separate from Values
+                            var hasTimeArray = data.Time.HasValue && data.Time.Value.ValueKind == JsonValueKind.Array;
+                            var timeCount = hasTimeArray ? data.Time.Value.GetArrayLength() : 0;
+                            string? firstTime = null;
+                            if (hasTimeArray)
+                            {
+                                var firstTimeEl = data.Time.Value.EnumerateArray().FirstOrDefault();
+                                firstTime = firstTimeEl.ToString();
+                            }
+
+                            debugInfo.Add(new { step = "got_data", metric = mapping.MetricName, chunkStart = currentStart.ToString("yyyy-MM-dd"), dataPoints = data.DataPoints, valuesCount = data.Values.Value.GetArrayLength(), hasTimeArray, timeCount, firstTime });
+
                             // Find matching datapoint index
+                            // Handle CALC: patterns by mapping to actual LM datapoint names
+                            var effectiveDpPatterns = dpPatterns.SelectMany(p =>
+                            {
+                                if (p.StartsWith("CALC:", StringComparison.OrdinalIgnoreCase))
+                                {
+                                    // Map CALC patterns to actual LM datapoints
+                                    return p.ToUpperInvariant() switch
+                                    {
+                                        "CALC:MEMORY" => new[] { "MemoryUtilizationPercent", "PercentMemoryUsed" },
+                                        "CALC:DISK" => new[] { "PercentUsed", "UsedPercent" },
+                                        _ => new[] { p }
+                                    };
+                                }
+                                return new[] { p };
+                            }).ToArray();
+
+                            var matchedDp = false;
                             for (int dpIdx = 0; dpIdx < data.DataPoints.Count; dpIdx++)
                             {
                                 var dpName = data.DataPoints[dpIdx];
-                                if (!dpPatterns.Any(p => dpName.Contains(p, StringComparison.OrdinalIgnoreCase)))
+                                if (!effectiveDpPatterns.Any(p => dpName.Contains(p, StringComparison.OrdinalIgnoreCase)))
                                     continue;
+
+                                matchedDp = true;
 
                                 // Process values into daily aggregates
                                 var dailyData = ProcessDailyAggregates(data, dpIdx, currentStart, chunkEnd);
-                                
+
+                                debugInfo.Add(new { step = "processed", metric = mapping.MetricName, dpIdx, dpName, dailyCount = dailyData.Count });
+
+                                // If no daily data, log sample of raw values for debugging
+                                if (dailyData.Count == 0 && data.Values.HasValue)
+                                {
+                                    var sampleValues = new List<object>();
+                                    var rowCount = 0;
+                                    foreach (var row in data.Values.Value.EnumerateArray())
+                                    {
+                                        if (rowCount++ >= 3) break;
+                                        if (row.ValueKind == JsonValueKind.Array && row.GetArrayLength() > dpIdx + 1)
+                                        {
+                                            sampleValues.Add(new {
+                                                timestamp = row[0].ToString(),
+                                                value = row[dpIdx + 1].ToString()
+                                            });
+                                        }
+                                    }
+                                    debugInfo.Add(new { step = "sample_values", metric = mapping.MetricName, samples = sampleValues });
+                                }
+
                                 foreach (var daily in dailyData)
                                 {
                                     // Upsert into history table
@@ -535,10 +606,16 @@ public class LMPerformanceGraphFunctions
 
                                 break; // Found matching datapoint, move to next mapping
                             }
+
+                            if (!matchedDp)
+                            {
+                                debugInfo.Add(new { step = "no_dp_match", metric = mapping.MetricName, dpPatterns, effectiveDpPatterns, availableDps = data.DataPoints });
+                            }
                         }
                     }
                     catch (Exception ex)
                     {
+                        debugInfo.Add(new { step = "error", metric = mapping.MetricName, chunkStart = currentStart.ToString("yyyy-MM-dd"), error = ex.Message });
                         _logger.LogWarning(ex, "Error fetching chunk {Start} to {End}", currentStart, chunkEnd);
                     }
 
@@ -565,7 +642,8 @@ public class LMPerformanceGraphFunctions
                 daysProcessed,
                 recordsCreated,
                 currentSku = device.CurrentSku,
-                recommendedSku = device.RecommendedSku
+                recommendedSku = device.RecommendedSku,
+                debug = debugInfo // Include debug info in response
             });
             return response;
         }
@@ -580,43 +658,86 @@ public class LMPerformanceGraphFunctions
 
     /// <summary>
     /// Process raw LM data into daily aggregates
+    /// LM returns Time[] as separate array from Values[]
     /// </summary>
     private List<(DateTime Date, decimal? Avg, decimal? Max, decimal? Min, decimal? P95, int SampleCount)> ProcessDailyAggregates(
         LMInstanceDataResponse data, int datapointIndex, DateTime start, DateTime end)
     {
         var result = new List<(DateTime Date, decimal? Avg, decimal? Max, decimal? Min, decimal? P95, int SampleCount)>();
-        
+
         if (!data.Values.HasValue || data.Values.Value.ValueKind != JsonValueKind.Array)
             return result;
 
+        // LM returns timestamps in a separate Time array, not embedded in Values
+        // Time[] = [timestamp1, timestamp2, ...] (epoch milliseconds)
+        // Values[] = [[dp0val, dp1val, dp2val], [dp0val, dp1val, dp2val], ...]
+        var hasTimeArray = data.Time.HasValue && data.Time.Value.ValueKind == JsonValueKind.Array;
+        if (!hasTimeArray)
+            return result;
+
+        // Build list of timestamps
+        var timestamps = new List<DateTime>();
+        foreach (var timeEl in data.Time.Value.EnumerateArray())
+        {
+            try
+            {
+                if (timeEl.ValueKind != JsonValueKind.Number)
+                {
+                    timestamps.Add(DateTime.MinValue);
+                    continue;
+                }
+
+                var epochMs = timeEl.GetInt64();
+                var timestamp = DateTimeOffset.FromUnixTimeMilliseconds(epochMs).UtcDateTime;
+                timestamps.Add(timestamp);
+            }
+            catch
+            {
+                timestamps.Add(DateTime.MinValue);
+            }
+        }
+
         // Group values by date
         var dailyValues = new Dictionary<DateTime, List<decimal>>();
+        var rowIndex = 0;
 
         foreach (var row in data.Values.Value.EnumerateArray())
         {
-            if (row.ValueKind != JsonValueKind.Array || row.GetArrayLength() <= datapointIndex + 1)
+            try
+            {
+                if (rowIndex >= timestamps.Count)
+                    break;
+
+                var timestamp = timestamps[rowIndex];
+                rowIndex++;
+
+                if (timestamp == DateTime.MinValue)
+                    continue;
+
+                var date = timestamp.Date;
+
+                // Values array: each row is [dp0, dp1, dp2, ...] - NO timestamp prefix
+                if (row.ValueKind != JsonValueKind.Array || row.GetArrayLength() <= datapointIndex)
+                    continue;
+
+                var valueElement = row[datapointIndex];
+                if (valueElement.ValueKind != JsonValueKind.Number)
+                    continue;
+
+                var value = valueElement.GetDecimal();
+                if (value < 0 || value > 100) // Skip invalid percentages
+                    continue;
+
+                if (!dailyValues.ContainsKey(date))
+                    dailyValues[date] = new List<decimal>();
+
+                dailyValues[date].Add(value);
+            }
+            catch
+            {
+                rowIndex++;
                 continue;
-
-            // First element is timestamp (epoch ms)
-            var timestampElement = row[0];
-            if (timestampElement.ValueKind != JsonValueKind.Number)
-                continue;
-
-            var timestamp = DateTimeOffset.FromUnixTimeMilliseconds(timestampElement.GetInt64()).UtcDateTime;
-            var date = timestamp.Date;
-
-            var valueElement = row[datapointIndex + 1];
-            if (valueElement.ValueKind != JsonValueKind.Number)
-                continue;
-
-            var value = valueElement.GetDecimal();
-            if (value < 0 || value > 100) // Skip invalid percentages
-                continue;
-
-            if (!dailyValues.ContainsKey(date))
-                dailyValues[date] = new List<decimal>();
-            
-            dailyValues[date].Add(value);
+            }
         }
 
         // Calculate aggregates for each day
