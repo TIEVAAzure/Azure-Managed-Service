@@ -87,18 +87,26 @@ public class LogicMonitorService
         {
             for (int attempt = 0; attempt <= MaxRetries; attempt++)
             {
-                // Thread-safe rate limit check
+                // Thread-safe rate limit check - cap wait to 10 seconds max to avoid Azure scale-down
+                TimeSpan waitTime = TimeSpan.Zero;
                 lock (_rateLimitLock)
                 {
                     if (_remainingRequests <= 5 && DateTime.UtcNow < _rateLimitReset)
                     {
-                        var waitTime = _rateLimitReset - DateTime.UtcNow;
-                        if (waitTime.TotalSeconds > 0)
+                        waitTime = _rateLimitReset - DateTime.UtcNow;
+                        // Cap wait time to 10 seconds to prevent Azure from thinking we're idle
+                        if (waitTime.TotalSeconds > 10)
                         {
-                            _logger.LogWarning("Rate limit approaching ({Remaining} left), waiting {WaitSeconds}s", _remainingRequests, waitTime.TotalSeconds);
-                            Thread.Sleep(waitTime); // Use sync sleep inside lock for short waits
+                            waitTime = TimeSpan.FromSeconds(10);
                         }
                     }
+                }
+
+                // Wait outside the lock
+                if (waitTime.TotalSeconds > 0)
+                {
+                    _logger.LogWarning("Rate limit approaching ({Remaining} left), waiting {WaitSeconds}s", _remainingRequests, waitTime.TotalSeconds);
+                    await Task.Delay(waitTime);
                 }
 
                 var bodyJson = body != null ? JsonSerializer.Serialize(body) : "";
