@@ -1,219 +1,545 @@
-{
-  "device": {
-    "deviceId": 517,
-    "deviceName": "MHGAADSYNC01",
-    "currentResourceType": "WindowsServer",
-    "currentMetricsJson": "{\"CPU\":{\"Avg\":3.38877755511022,\"Max\":37,\"Min\":null,\"Status\":\"Healthy\",\"Recommendation\":\"Oversized\"},\"Disk\":{\"Avg\":99.999999996607,\"Max\":99.9999999981804,\"Min\":null,\"Status\":\"Critical\",\"Recommendation\":\"Undersized\"}}",
-    "overallStatus": "Critical",
-    "statusDetails": null,
-    "lastSyncedAt": "2026-01-20T14:10:24.2906111"
-  },
-  "availableDatasources": [
-    "SSL_Certificates",
-    "Whois_TTL_Expiry",
-    "Port-",
-    "HTTPS",
-    "HostStatus",
-    "HTTP-",
-    "dns",
-    "Ping",
-    "HTTP_Page-",
-    "WinIf-",
-    "Win2k12_HyperV_HypervisorStats",
-    "CommVault_Windows_Services",
-    "WinProcessStats-",
-    "WinPhysicalDrive-",
-    "Windows_WMITimeOffset",
-    "WinTCP",
-    "WinExchange Processes",
-    "UNC Monitor-",
-    "Microsoft_Windows_Services",
-    "Microsoft_Windows_CPU",
-    "Nginx-",
-    "Apache-",
-    "3ware_RAID_Drives",
-    "3ware_RAID_Controller",
-    "3ware_RAID_Battery",
-    "WinSystemUptime",
-    "Win2k12_HyperV_HypervisorMemory",
-    "Memcached-",
-    "Lighttpd-",
-    "Win2k8r2_HyperV_HypervisorStats"
-  ],
-  "matchedResourceType": {
-    "code": "WindowsServer",
-    "displayName": "Windows Server",
-    "hasPerformanceMetrics": true,
-    "activeMappings": 3,
-    "detectionPatterns": [
-      "WinCPU",
-      "Microsoft_Windows_CPU",
-      "WinOS"
-    ]
-  },
-  "metricDiagnostics": [
-    {
-      "metricName": "CPU",
-      "datasourcePatterns": [
-        "WinCPU",
-        "Microsoft_Windows_CPU"
-      ],
-      "datapointPatterns": [
-        "CPUBusyPercent",
-        "PercentProcessorTime"
-      ],
-      "matchedDatasource": {
-        "id": 4644,
-        "name": "Microsoft_Windows_CPU"
-      },
-      "instanceCount": 1,
-      "instances": [
-        {
-          "Id": 179868,
-          "DisplayName": "",
-          "WildValue": ""
-        }
-      ],
-      "availableDatapoints": [
-        "CPUBusyPercent",
-        "PercentProcessorTime",
-        "ProcessorQueueLength"
-      ],
-      "actualDataColumns": 2,
-      "datapointsWithData": [
-        "CPUBusyPercent",
-        "PercentProcessorTime"
-      ],
-      "valueArrayLength": 500,
-      "matchedDatapoint": {
-        "index": 0,
-        "name": "CPUBusyPercent"
-      },
-      "status": "SUCCESS",
-      "valueCount": 496,
-      "avg": 8302396.87,
-      "max": 9729044.73,
-      "min": 409375,
-      "sampleValues": [
-        9588541.67,
-        9473177.08,
-        9631250,
-        9631061.87,
-        9091050.66
-      ]
-    },
-    {
-      "metricName": "Memory",
-      "datasourcePatterns": [
-        "WinOS",
-        "WinMemory",
-        "WinMemory64"
-      ],
-      "datapointPatterns": [
-        "CALC:MEMORY"
-      ],
-      "matchedDatasource": {
-        "id": 4670,
-        "name": "WinOS"
-      },
-      "instanceCount": 1,
-      "instances": [
-        {
-          "Id": 179873,
-          "DisplayName": "",
-          "WildValue": ""
-        }
-      ],
-      "availableDatapoints": [
-        "NumberOfProcesses",
-        "PercentVirtualMemoryInUse",
-        "SizeStoredInPagingFiles",
-        "TotalVirtualMemorySize",
-        "TotalVisibleMemorySize",
-        "FreePhysicalMemory",
-        "FreeSpaceInPagingFiles",
-        "FreeVirtualMemory",
-        "MemoryUtilizationPercent"
-      ],
-      "actualDataColumns": 8,
-      "datapointsWithData": [
-        "NumberOfProcesses",
-        "PercentVirtualMemoryInUse",
-        "SizeStoredInPagingFiles",
-        "TotalVirtualMemorySize",
-        "TotalVisibleMemorySize",
-        "FreePhysicalMemory",
-        "FreeSpaceInPagingFiles",
-        "FreeVirtualMemory"
-      ],
-      "valueArrayLength": 500,
-      "status": "NO_DATAPOINT_MATCH",
-      "patternsTried": [
-        "CALC:MEMORY"
-      ],
-      "datapointsAvailable": [
-        "NumberOfProcesses",
-        "PercentVirtualMemoryInUse",
-        "SizeStoredInPagingFiles",
-        "TotalVirtualMemorySize",
-        "TotalVisibleMemorySize",
-        "FreePhysicalMemory",
-        "FreeSpaceInPagingFiles",
-        "FreeVirtualMemory",
-        "MemoryUtilizationPercent"
-      ]
-    },
-    {
-      "metricName": "Disk",
-      "datasourcePatterns": [
-        "WinVolumeUsage",
-        "WinLogicalDisk"
-      ],
-      "datapointPatterns": [
-        "CALC:DISK"
-      ],
-      "matchedDatasource": {
-        "id": 4663,
-        "name": "WinVolumeUsage-"
-      },
-      "instanceCount": 2,
-      "instances": [
-        {
-          "Id": 179904,
-          "DisplayName": "D:\\",
-          "WildValue": "D:\\"
-        },
-        {
-          "Id": 179905,
-          "DisplayName": "C:\\",
-          "WildValue": "C:\\"
-        }
-      ],
-      "availableDatapoints": [
-        "Capacity",
-        "FreeSpace",
-        "PercentUsed"
-      ],
-      "actualDataColumns": 2,
-      "datapointsWithData": [
-        "Capacity",
-        "FreeSpace"
-      ],
-      "valueArrayLength": 500,
-      "status": "NO_DATAPOINT_MATCH",
-      "patternsTried": [
-        "CALC:DISK"
-      ],
-      "datapointsAvailable": [
-        "Capacity",
-        "FreeSpace",
-        "PercentUsed"
-      ]
-    }
-  ],
-  "summary": {
-    "totalMappings": 3,
-    "successful": 1,
-    "failed": 2
-  }
-}
+📋 Found 3 LM-enabled customers
+VM2190:12 📊 37 resource types configured
+VM2190:19 
+🔍 Scanning: Moorhouse...
+VM2190:24   📊 Types: 15, Total Devices: 269
+VM2190:33     Fetching devices for WindowsServer...
+VM2190:39       Sample device: 517 (MHGAADSYNC01)
+VM2190:45       ✅ Found 57 datasources
+VM2190:33     Fetching devices for AzureVM...
+VM2190:39       Sample device: 376 (UK-S1:vm:MHGAADSYNC01)
+VM2190:45       ✅ Found 5 datasources
+VM2190:33     Fetching devices for AppService...
+VM2190:39       Sample device: 1310 (UK-S1:appserviceplan:lmlogsmoorhouseuksouth1-service-plan)
+VM2190:45       ✅ Found 3 datasources
+VM2190:33     Fetching devices for AzureStorage...
+VM2190:39       Sample device: 1374 (UK-S1:blobstorage:f32jwjsiterecovasrcache)
+VM2190:45       ✅ Found 3 datasources
+VM2190:33     Fetching devices for LogUsage...
+VM2190:39       Sample device: 1319 (UK-S1:ApplicationInsights:lmlogsmoorhouseuksouth1)
+VM2190:45       ✅ Found 3 datasources
+VM2190:33     Fetching devices for AzureFileStorage...
+VM2190:39       Sample device: 1345 (UK-S1:filestorage:jcnth5siterecovasrcache)
+VM2190:45       ✅ Found 3 datasources
+VM2190:33     Fetching devices for AzureIntegrationAuthentication...
+VM2190:39       Sample device: 89 (AZURE_Moorhouse_Env Account)
+VM2190:45       ✅ Found 9 datasources
+VM2190:33     Fetching devices for AzureQueueStorage...
+VM2190:39       Sample device: 1342 (UK-S1:queuestorage:jcnth5siterecovasrcache)
+VM2190:45       ✅ Found 3 datasources
+VM2190:33     Fetching devices for AzureTableStorage...
+VM2190:39       Sample device: 1344 (UK-S1:tablestorage:jcnth5siterecovasrcache)
+VM2190:45       ✅ Found 3 datasources
+VM2190:33     Fetching devices for AzureAutomationAccountCertificates...
+VM2190:39       Sample device: 552 (UK-S1:automationaccount:aa-moorhouse-prd-uksouth-001)
+VM2190:45       ✅ Found 3 datasources
+VM2190:33     Fetching devices for AzureDisk...
+VM2190:39       Sample device: 422 (UK-S1:disks:MHGAADSYNC01-OSdisk-00)
+VM2190:45       ✅ Found 2 datasources
+VM2190:33     Fetching devices for AzureNetwork...
+VM2190:39       Sample device: 1423 (UK-S1:networkinterface:mhgazdc01663_z1)
+VM2190:45       ✅ Found 2 datasources
+VM2190:33     Fetching devices for AppInsights...
+VM2190:39       Sample device: 1361 (UK-S1:ApplicationInsights:updatefa)
+VM2190:45       ✅ Found 2 datasources
+VM2190:33     Fetching devices for AzureBackup...
+VM2190:39       Sample device: 1288 (UK-S1:recoveryprotecteditems:rsv-asr-workload-uksouth-001:MHGAADSYNC01)
+VM2190:45       ✅ Found 4 datasources
+VM2190:33     Fetching devices for MetadataOnly...
+VM2190:39       Sample device: 545 (UK-S1:expressroutecircuit:erc-prd-uksouth-001)
+VM2190:45       ✅ Found 3 datasources
+VM2190:19 
+🔍 Scanning: Ovarro Ltd...
+VM2190:24   📊 Types: 15, Total Devices: 587
+VM2190:33     Fetching devices for WindowsServer...
+VM2190:39       Sample device: 1325 (VMADDS01)
+VM2190:45       ✅ Found 97 datasources
+VM2190:33     Fetching devices for AzureVM...
+VM2190:39       Sample device: 708 (AS-SE1:vm:vm-stream-backend-apac)
+VM2190:45       ✅ Found 4 datasources
+VM2190:33     Fetching devices for AppService...
+VM2190:39       Sample device: 1206 (UK-S1:appserviceplan:appplan-api-leakvision-prod-uks-001)
+VM2190:45       ✅ Found 2 datasources
+VM2190:33     Fetching devices for AzureStorage...
+VM2190:39       Sample device: 1000 (EU-W1:blobstorage:csb1003200046dafc1c)
+VM2190:45       ✅ Found 3 datasources
+VM2190:33     Fetching devices for LogUsage...
+VM2190:39       Sample device: 767 (UK-S1:applicationGateway:agw-waf-rmbd-prd-uks-002)
+VM2190:45       ✅ Found 3 datasources
+VM2190:33     Fetching devices for AzurePublicIPStandard...
+VM2190:39       Sample device: 766 (UK-S1:publicIP:pip-appgw-ems-platform-prd-uksouth)
+VM2190:45       ✅ Found 3 datasources
+VM2190:33     Fetching devices for AzurePublicIP...
+VM2190:39       Sample device: 762 (UK-S1:publicIP:pip-rmbd-prd-uks-001)
+VM2190:45       ✅ Found 2 datasources
+VM2190:33     Fetching devices for AzureFileStorage...
+VM2190:39       Sample device: 961 (EU-W1:filestorage:csb1003200046dafc1c)
+VM2190:45       ✅ Found 3 datasources
+VM2190:33     Fetching devices for AzureBackupProtectedItemHealth...
+VM2190:39       Sample device: 729 (UK-S1:backupprotecteditems:backup-sec-uks-001:iaasvmcontainerv2:rg-adds-sec-uks-001:vm-adds-dc-sec-uks-01)
+VM2190:45       ✅ Found 3 datasources
+VM2190:33     Fetching devices for AzureIntegrationAuthentication...
+VM2190:39       Sample device: 727 (Ovarro-Advanced Account)
+VM2190:45       ✅ Found 10 datasources
+VM2190:33     Fetching devices for AzureDisk...
+VM2190:39       Sample device: 932 (UK-S1:disks:vm-adds-dc-pioneer-prd-01_disk1_cfe7fa2a643e4b96b3b7b330a8bff765)
+VM2190:45       ✅ Found 2 datasources
+VM2190:33     Fetching devices for AzureNetwork...
+VM2190:39       Sample device: 1167 (UK-S1:networkinterface:nic-vmaddsdcsecuks01)
+VM2190:45       ✅ Found 2 datasources
+VM2190:33     Fetching devices for AppInsights...
+VM2190:39       Sample device: 855 (UK-S1:ApplicationInsights:func-dmalookup-leakvision-prod-uks-01)
+VM2190:45       ✅ Found 2 datasources
+VM2190:33     Fetching devices for AzureBackup...
+VM2190:39       Sample device: 721 (AS-SE1:recoveryservices:rsv-stream-prd-apac)
+VM2190:45       ✅ Found 5 datasources
+VM2190:33     Fetching devices for MetadataOnly...
+VM2190:39       Sample device: 1078 (EU-W1:queuestorage:csb1003200046dafc1c)
+VM2190:45       ✅ Found 3 datasources
+VM2190:19 
+🔍 Scanning: TIEVA Dev...
+VM2190:24   📊 Types: 0, Total Devices: 0
+VM2190:82 
+================================================================================
+VM2190:83 RESULTS - DATASOURCES FOUND FROM LOGICMONITOR
+VM2190:84 ================================================================================
+VM2190:86 
+📊 Discovered 141 unique datasources across 18 resource types
+VM2190:89 
+📦 .NetCLRMemory:
+VM2190:90    [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object]
+VM2190:89 
+📦 3ware_RAID_Battery:
+VM2190:90    
+VM2190:89 
+📦 3ware_RAID_Controller:
+VM2190:90    
+VM2190:89 
+📦 3ware_RAID_Drives:
+VM2190:90    
+VM2190:89 
+📦 Apache-:
+VM2190:90    
+VM2190:89 
+📦 Application Pools-:
+VM2190:90    
+VM2190:89 
+📦 Blackberry Services-:
+VM2190:90    
+VM2190:89 
+📦 CitrixSGS-:
+VM2190:90    
+VM2190:89 
+📦 CommVault_Windows_Services:
+VM2190:90    
+VM2190:89 
+📦 dns:
+VM2190:90    [object Object], [object Object]
+VM2190:89 
+📦 HostStatus:
+VM2190:90    [object Object], [object Object], [object Object], [object Object]
+VM2190:89 
+📦 HTTP_Page-:
+VM2190:90    
+VM2190:89 
+📦 HTTP-:
+VM2190:90    
+VM2190:89 
+📦 HTTPS:
+VM2190:90    
+VM2190:89 
+📦 Lighttpd-:
+VM2190:90    
+VM2190:89 
+📦 LogUsage:
+VM2190:90    [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object]
+VM2190:89 
+📦 Memcached-:
+VM2190:90    
+VM2190:89 
+📦 Microsoft_Windows_CPU:
+VM2190:90    [object Object], [object Object], [object Object], [object Object], [object Object], [object Object]
+VM2190:89 
+📦 Microsoft_Windows_Services:
+VM2190:90    
+VM2190:89 
+📦 MSMQ Service-:
+VM2190:90    
+VM2190:89 
+📦 MSMQ-:
+VM2190:90    
+VM2190:89 
+📦 Nginx-:
+VM2190:90    
+VM2190:89 
+📦 Ping:
+VM2190:90    [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object]
+VM2190:89 
+📦 PingMulti-:
+VM2190:90    
+VM2190:89 
+📦 Port-:
+VM2190:90    
+VM2190:89 
+📦 SSL_Certificates:
+VM2190:90    
+VM2190:89 
+📦 Terminal Services:
+VM2190:90    [object Object], [object Object], [object Object], [object Object], [object Object], [object Object]
+VM2190:89 
+📦 UNC Monitor-:
+VM2190:90    
+VM2190:89 
+📦 Watchguard_Services-:
+VM2190:90    
+VM2190:89 
+📦 Whois_TTL_Expiry:
+VM2190:90    
+VM2190:89 
+📦 Win SMTP:
+VM2190:90    
+VM2190:89 
+📦 Win SMTP Server:
+VM2190:90    
+VM2190:89 
+📦 Win_HyperV_CPU:
+VM2190:90    
+VM2190:89 
+📦 Win_HyperV_Snapshots:
+VM2190:90    
+VM2190:89 
+📦 Win_HyperV_VirtualNetworkAdapter:
+VM2190:90    
+VM2190:89 
+📦 Win_HyperV_VirtualSwitchPorts:
+VM2190:90    
+VM2190:89 
+📦 Win2k12_HyperV_HypervisorMemory:
+VM2190:90    
+VM2190:89 
+📦 Win2k12_HyperV_HypervisorStats:
+VM2190:90    
+VM2190:89 
+📦 Win2k8_HyperV_HypervisorStats:
+VM2190:90    
+VM2190:89 
+📦 Win2k8r2_HyperV_HypervisorStats:
+VM2190:90    
+VM2190:89 
+📦 Windows DNS Server-:
+VM2190:90    [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object]
+VM2190:89 
+📦 Windows Stuck Print Jobs-:
+VM2190:90    
+VM2190:89 
+📦 Windows_WMITimeOffset:
+VM2190:90    [object Object], [object Object], [object Object], [object Object]
+VM2190:89 
+📦 WinExchange Processes:
+VM2190:90    
+VM2190:89 
+📦 WinExchangeServices:
+VM2190:90    
+VM2190:89 
+📦 WinIf-:
+VM2190:90    [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object]
+VM2190:89 
+📦 WinLogicalDrivePerformance-:
+VM2190:90    [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object]
+VM2190:89 
+📦 WinMemory64:
+VM2190:90    [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object]
+VM2190:89 
+📦 WinOS:
+VM2190:90    [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object]
+VM2190:89 
+📦 WinPhysicalDrive-:
+VM2190:90    [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object]
+VM2190:89 
+📦 WinProcessStats-:
+VM2190:90    
+VM2190:89 
+📦 WinServer:
+VM2190:90    [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object]
+VM2190:89 
+📦 WinSystemUptime:
+VM2190:90    [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object]
+VM2190:89 
+📦 WinTCP:
+VM2190:90    [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object]
+VM2190:89 
+📦 WinUDP:
+VM2190:90    [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object]
+VM2190:89 
+📦 WinVolumeUsage-:
+VM2190:90    [object Object], [object Object], [object Object], [object Object], [object Object], [object Object]
+VM2190:89 
+📦 XenServer Windows VM If-:
+VM2190:90    
+VM2190:89 
+📦 Microsoft_Azure_ResourceHealth:
+VM2190:90    [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object]
+VM2190:89 
+📦 Microsoft_Azure_VMBackupStatus:
+VM2190:90    [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object]
+VM2190:89 
+📦 Microsoft_Azure_VMs:
+VM2190:90    [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object]
+VM2190:89 
+📦 Microsoft_Azure_AppServicePlan:
+VM2190:90    [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object]
+VM2190:89 
+📦 Microsoft_Azure_BlobStorage:
+VM2190:90    [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object]
+VM2190:89 
+📦 Microsoft_Azure_BlobStorage_Capacity:
+VM2190:90    [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object]
+VM2190:89 
+📦 Microsoft_Azure_ApplicationInsights:
+VM2190:90    [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object]
+VM2190:89 
+📦 Microsoft_Azure_FileStorage:
+VM2190:90    [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object]
+VM2190:89 
+📦 Microsoft_Azure_FileStorage_Capacity:
+VM2190:90    [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object]
+VM2190:89 
+📦 Azure_Network_ServiceLimits:
+VM2190:90    [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object]
+VM2190:89 
+📦 Azure_Storage_ServiceLimits:
+VM2190:90    [object Object], [object Object], [object Object], [object Object], [object Object], [object Object]
+VM2190:89 
+📦 Azure_VM_ServiceLimits:
+VM2190:90    [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object]
+VM2190:89 
+📦 Microsoft_Azure_ActiveDirectoryApplicationSecrets:
+VM2190:90    [object Object], [object Object], [object Object]
+VM2190:89 
+📦 Microsoft_Azure_ActiveDirectorySync:
+VM2190:90    [object Object], [object Object]
+VM2190:89 
+📦 Microsoft_Azure_ActiveDirectoryUsers:
+VM2190:90    [object Object], [object Object], [object Object]
+VM2190:89 
+📦 Microsoft_Azure_Integration_Authentication:
+VM2190:90    [object Object], [object Object]
+VM2190:89 
+📦 Microsoft_Azure_UpdateManager:
+VM2190:90    [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object]
+VM2190:89 
+📦 Microsoft_Azure_QueueStorage:
+VM2190:90    [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object]
+VM2190:89 
+📦 Microsoft_Azure_QueueStorage_Capacity:
+VM2190:90    [object Object], [object Object], [object Object], [object Object], [object Object], [object Object]
+VM2190:89 
+📦 Microsoft_Azure_TableStorage:
+VM2190:90    [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object]
+VM2190:89 
+📦 Microsoft_Azure_TableStorage_Capacity:
+VM2190:90    [object Object], [object Object], [object Object]
+VM2190:89 
+📦 Microsoft_Azure_AutomationAccount:
+VM2190:90    [object Object], [object Object], [object Object]
+VM2190:89 
+📦 Microsoft_Azure_AutomationAccountCertificates:
+VM2190:90    
+VM2190:89 
+📦 Microsoft_Azure_Disk:
+VM2190:90    [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object]
+VM2190:89 
+📦 Microsoft_Azure_NetworkInterface:
+VM2190:90    [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object]
+VM2190:89 
+📦 Microsoft_Azure_LogAnalyticsReplicationJobs:
+VM2190:90    
+VM2190:89 
+📦 Microsoft_Azure_RecoveryServiceRTO:
+VM2190:90    
+VM2190:89 
+📦 Microsoft_Azure_ReplicationDisasterRecovery:
+VM2190:90    [object Object], [object Object], [object Object], [object Object], [object Object]
+VM2190:89 
+📦 Microsoft_Azure_ExpressRouteCircuit:
+VM2190:90    [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object]
+VM2190:89 
+📦 Microsoft_Azure_ExpressRouteCircuitPeering:
+VM2190:90    
+VM2190:89 
+📦 LogicMonitor_Collector_ActiveDiscoveryTasks:
+VM2190:90    [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object]
+VM2190:89 
+📦 LogicMonitor_Collector_BufferDataConsumers:
+VM2190:90    
+VM2190:89 
+📦 LogicMonitor_Collector_BufferDataReporter:
+VM2190:90    [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object]
+VM2190:89 
+📦 LogicMonitor_Collector_BufferDataReporterLatencyJMX:
+VM2190:90    [object Object], [object Object], [object Object], [object Object], [object Object], [object Object]
+VM2190:89 
+📦 LogicMonitor_Collector_ConfigCollectingTask:
+VM2190:90    
+VM2190:89 
+📦 LogicMonitor_Collector_CredentialVault:
+VM2190:90    [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object]
+VM2190:89 
+📦 LogicMonitor_Collector_DataCollectingTasks:
+VM2190:90    [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object]
+VM2190:89 
+📦 LogicMonitor_Collector_Directory:
+VM2190:90    [object Object]
+VM2190:89 
+📦 LogicMonitor_Collector_DNSResolving:
+VM2190:90    [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object]
+VM2190:89 
+📦 LogicMonitor_Collector_EventSourceCollectionTasks:
+VM2190:90    [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object]
+VM2190:89 
+📦 LogicMonitor_Collector_ExecutorQueue:
+VM2190:90    [object Object], [object Object], [object Object], [object Object]
+VM2190:89 
+📦 LogicMonitor_Collector_GetConfPerformance:
+VM2190:90    [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object]
+VM2190:89 
+📦 LogicMonitor_Collector_GlobalStats:
+VM2190:90    [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object]
+VM2190:89 
+📦 LogicMonitor_Collector_Heartbeat:
+VM2190:90    [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object]
+VM2190:89 
+📦 LogicMonitor_Collector_InternalServiceFetcher:
+VM2190:90    [object Object], [object Object], [object Object], [object Object], [object Object], [object Object]
+VM2190:89 
+📦 LogicMonitor_Collector_JVMGarbageCollection:
+VM2190:90    [object Object], [object Object], [object Object], [object Object], [object Object]
+VM2190:89 
+📦 LogicMonitor_Collector_JVMMemoryPools:
+VM2190:90    [object Object], [object Object], [object Object], [object Object]
+VM2190:89 
+📦 LogicMonitor_Collector_JVMStatus:
+VM2190:90    [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object]
+VM2190:89 
+📦 LogicMonitor_Collector_LMLogs:
+VM2190:90    [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object]
+VM2190:89 
+📦 LogicMonitor_Collector_LoggerDaemon:
+VM2190:90    [object Object], [object Object], [object Object]
+VM2190:89 
+📦 LogicMonitor_Collector_NetflowMetrics:
+VM2190:90    [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object]
+VM2190:89 
+📦 LogicMonitor_Collector_Netscan:
+VM2190:90    [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object]
+VM2190:89 
+📦 LogicMonitor_Collector_NetScanTasks:
+VM2190:90    [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object]
+VM2190:89 
+📦 LogicMonitor_Collector_NIOBufferPool:
+VM2190:90    [object Object], [object Object], [object Object]
+VM2190:89 
+📦 LogicMonitor_Collector_PerfmonSystemCounterSize:
+VM2190:90    [object Object]
+VM2190:89 
+📦 LogicMonitor_Collector_PollNow:
+VM2190:90    [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object]
+VM2190:89 
+📦 LogicMonitor_Collector_PropertySourceScriptExecution:
+VM2190:90    [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object]
+VM2190:89 
+📦 LogicMonitor_Collector_Publisher:
+VM2190:90    [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object]
+VM2190:89 
+📦 LogicMonitor_Collector_ReporterTask:
+VM2190:90    [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object]
+VM2190:89 
+📦 LogicMonitor_Collector_SBProxyServiceProcessStat:
+VM2190:90    [object Object], [object Object], [object Object], [object Object]
+VM2190:89 
+📦 LogicMonitor_Collector_ScriptCache_JMX:
+VM2190:90    [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object]
+VM2190:89 
+📦 LogicMonitor_Collector_Snippets:
+VM2190:90    [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object]
+VM2190:89 
+📦 LogicMonitor_Collector_SPSE:
+VM2190:90    [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object]
+VM2190:89 
+📦 LogicMonitor_Collector_SSEJVM:
+VM2190:90    
+VM2190:89 
+📦 LogicMonitor_Collector_ThreadCPUUsage:
+VM2190:90    [object Object], [object Object], [object Object], [object Object], [object Object], [object Object]
+VM2190:89 
+📦 LogicMonitor_Collector_ThreadUsage:
+VM2190:90    [object Object], [object Object], [object Object]
+VM2190:89 
+📦 LogicMonitor_Collector_Throttler:
+VM2190:90    [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object]
+VM2190:89 
+📦 LogicMonitor_Collector_TLSVersion:
+VM2190:90    [object Object]
+VM2190:89 
+📦 LogicMonitor_Collector_TotalCPUMemory:
+VM2190:90    [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object]
+VM2190:89 
+📦 Microsoft_Windows_AD:
+VM2190:90    [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object]
+VM2190:89 
+📦 SSL_Certificate_Chains:
+VM2190:90    [object Object], [object Object], [object Object]
+VM2190:89 
+📦 Microsoft_Azure_ApplicationGateway_v2:
+VM2190:90    [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object]
+VM2190:89 
+📦 Microsoft_Azure_PublicIP:
+VM2190:90    [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object]
+VM2190:89 
+📦 Microsoft_Azure_PublicIPStandard:
+VM2190:90    [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object], [object Object]
+VM2190:89 
+📦 Microsoft_Azure_BackupProtectedItemBackupJob:
+VM2190:90    [object Object], [object Object], [object Object]
+VM2190:89 
+📦 Microsoft_Azure_BackupProtectedItemHealth:
+VM2190:90    [object Object], [object Object], [object Object], [object Object]
+VM2190:89 
+📦 Microsoft_Azure_CostManagementByRegion:
+VM2190:90    [object Object]
+VM2190:89 
+📦 Microsoft_Azure_CostManagementByService:
+VM2190:90    [object Object]
+VM2190:89 
+📦 Microsoft_Azure_CostManagementBySubscription:
+VM2190:90    [object Object]
+VM2190:89 
+📦 Microsoft_Azure_CostManagementByTag:
+VM2190:90    [object Object]
+VM2190:89 
+📦 Microsoft_Azure_BackupJobStatus:
+VM2190:90    [object Object], [object Object]
+VM2190:89 
+📦 Microsoft_Azure_RecoveryServices:
+VM2190:90    [object Object], [object Object]
+VM2190:89 
+📦 Microsoft_Azure_ReplicationJobs:
+VM2190:90    
+VM2190:89 
+📦 Microsoft_Azure_VaultAgents:
+VM2190:90    [object Object]
+VM2190:94 
+================================================================================
+VM2190:95 COVERAGE ANALYSIS
+VM2190:96 ================================================================================
+VM2190:120  Uncaught (in promise) TypeError: d.datapoint.toLowerCase is not a function
+    at <anonymous>:120:55
+    at Array.some (<anonymous>)
+    at <anonymous>:120:33
+    at Array.filter (<anonymous>)
+    at runFullMetricAnalysis (<anonymous>:119:58)
+(anonymous) @ VM2190:120
+(anonymous) @ VM2190:120
+runFullMetricAnalysis @ VM2190:119
+await in runFullMetricAnalysis
+(anonymous) @ VM2190:173

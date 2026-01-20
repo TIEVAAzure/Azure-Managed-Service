@@ -1,6 +1,34 @@
 # TIEVA Portal - Project Status
 
-## Last Updated: 2026-01-20 (Performance V2 - Metrics Calculation Fixes)
+## Last Updated: 2026-01-20 (Issue #3 - History Sync Tab Fix)
+
+---
+
+## Recent Changes (2026-01-20 - Late Afternoon Session)
+
+### Issue #3: 90-Day History - Missing Tab Button Fix
+
+**Status:** ✅ Tab Button Fixed - Pending Data Population
+
+**Investigation Findings:**
+1. **Missing Tab Button** - The History Sync tab content existed in HTML (line 1577) but no tab button to access it
+2. **Empty Database** - `LMDeviceMetricHistory` table has 0 records because History Sync was never run
+3. **SQL Verification**:
+   - `LMDeviceMetricHistory`: 0 records
+   - `LMSyncStatuses`: Shows "Completed" for V2 sync, but `HistorySyncProgress` is NULL (never ran)
+
+**Fix Applied:**
+- Added missing tab button: `<div class="tab" onclick="showPerfAdminTab('history-sync',this)">📈 History Sync</div>`
+- Location: `portal/index.html` line 1419
+
+**Next Steps:**
+1. Deploy frontend: `git add -A && git commit -m "Fix: Add missing History Sync tab button" && git push`
+2. Run History Sync from Performance Admin > History Sync tab
+3. Verify 90-day charts display correctly (may need additional frontend fix for data format)
+
+**Security Review:** ✅ No security impact - UI-only change
+
+**Best Practices Review:** ✅ Minimal surgical fix - single line addition
 
 ---
 

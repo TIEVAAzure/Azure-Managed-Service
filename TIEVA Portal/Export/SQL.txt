@@ -1,0 +1,57 @@
+-- Check if any history data exists
+SELECT 
+    COUNT(*) AS TotalRecords,
+    COUNT(DISTINCT DeviceId) AS UniqueDevices,
+    COUNT(DISTINCT CustomerId) AS UniqueCustomers,
+    MIN(MetricDate) AS OldestRecord,
+    MAX(MetricDate) AS NewestRecord
+FROM LMDeviceMetricHistory;
+
+-- If records exist, see breakdown by metric type
+SELECT 
+    MetricName,
+    COUNT(*) AS RecordCount,
+    COUNT(DISTINCT DeviceId) AS Devices,
+    MIN(MetricDate) AS Earliest,
+    MAX(MetricDate) AS Latest
+FROM LMDeviceMetricHistory
+GROUP BY MetricName
+ORDER BY MetricName;
+
+-- Check a specific customer (replace with your test customer ID)
+-- e.g., e08a13c4-4696-49a9-98e5-d19a67e7caba
+SELECT TOP 20
+    h.DeviceId,
+    d.DeviceName,
+    h.MetricName,
+    h.MetricDate,
+    h.AvgValue,
+    h.MaxValue,
+    h.P95Value
+FROM LMDeviceMetricHistory h
+LEFT JOIN LMDeviceMetricsV2 d ON h.CustomerId = d.CustomerId AND h.DeviceId = d.DeviceId
+WHERE h.CustomerId = 'e08a13c4-4696-49a9-98e5-d19a67e7caba'
+ORDER BY h.MetricDate DESC;
+
+
+
+Query succeeded: Affected rows: 1Affected rows: 0Affected rows: 0
+
+
+
+
+
+CustomerName
+Status
+HistorySyncProgress
+HistorySyncTotal
+HistorySyncWithData
+HistorySyncStarted
+HistorySyncCompleted
+ErrorMessage
+Moorhouse
+Completed
+Ovarro Ltd
+Completed
+TIEVA Dev
+Completed
