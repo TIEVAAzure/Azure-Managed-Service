@@ -6,31 +6,57 @@
 
 ## 🔴 OPEN ISSUES
 
-### Issue #3: Move 90-Day Performance to Customer Level
-**Status**: ✅ CHANGES READY - NEEDS TESTING  
-**Reported**: 2026-01-20  
-**Updated**: 2026-01-20 18:30 UTC  
+### Issue #3: Historical Performance Data Sync
+**Status**: ✅ FIXED - PARTIALLY WORKING
+**Reported**: 2026-01-20
+**Updated**: 2026-01-20
 
-**Problem**: 90-day history sync was in Performance Admin (global), but should be at **Customer** level
+**Problem**: Historical history sync wasn't working - "No 90-day history data available" shown
 
-**Root Cause Found**:
-1. Backend APIs were already at customer level but frontend had field name mismatches
-2. Orphaned History Sync tab in Performance Admin was confusing
+**Root Causes Found & Fixed**:
+1. ✅ **LM API data format wrong** - `ProcessDailyAggregates` assumed timestamps embedded in Values array, but LM returns separate `Time[]` array
+2. ✅ **CALC: patterns not mapped** - `CALC:MEMORY` and `CALC:DISK` needed mapping to actual LM datapoints (`MemoryUtilizationPercent`, `PercentUsed`)
+3. ✅ **Frontend data transform** - API returns `{ cpu: [], memory: [], disk: [] }` but frontend expected flat array
 
-**Changes Made** (2026-01-20 18:30 UTC):
-1. ✅ Fixed field name mappings in `syncPerformanceV2()` function:
-   - `devicesQueued` → `totalDevices`
-   - `devicesProcessed` → `progress`
-   - `devicesTotal` → `totalDevices`
-   - `devicesWithData` → `devicesWithHistory`
-2. ✅ Removed orphaned History Sync tab content from Performance Admin
-3. ✅ Removed orphaned `showPerfAdminTab` references to history-sync
-4. ✅ Removed orphaned functions: `loadHistorySyncTab`, `startHistorySync`, `refreshHistorySyncStatus`, etc.
+**Changes Made**:
+1. ✅ `LMPerformanceGraphFunctions.cs` - Fixed `ProcessDailyAggregates` to use separate `Time[]` array (epoch milliseconds)
+2. ✅ `LMPerformanceGraphFunctions.cs` - Added CALC: pattern mapping to actual LM datapoint names
+3. ✅ `portal/index.html` - Transform history API response to flat array format for charts
 
-**Testing Required**:
-- ⏳ Deploy frontend and run "Sync All Data" from Customer > Monitoring > Performance
-- ⏳ Verify `LMDeviceMetricHistory` table has data populated
-- ⏳ Verify 90-day charts display data in device modal
+**Current Status**:
+- ✅ Sync creates records (tested: 27 records for device 519)
+- ✅ API returns history data correctly
+- ⚠️ Only 9 days showing (not full 90 days) - see Issue #11
+
+**Remaining**:
+- ✅ Changed "No 90-day history data available" → "No historical data available"
+- ✅ Changed "90-Day History" tab → "Historical Data"
+- ✅ Changed "90-Day Trends" → "Historical Trends"
+- ✅ Changed "90-Day Historical Metrics" → "Historical Metrics"
+
+---
+
+### Issue #11: Historical Sync Only Returns ~9 Days Instead of 90
+**Status**: OPEN - INVESTIGATION NEEDED
+**Reported**: 2026-01-20
+
+**Problem**: History sync for device 519 only created 9 days of data instead of 90 days.
+
+**Observations**:
+- Sync processes 3 chunks (30 days each): Oct 22, Nov 21, Dec 21
+- Each chunk returns 500 raw data points from LM
+- But only ~3 unique dates per chunk pass validation (9 total)
+
+**Possible Causes**:
+1. **LM data aggregation** - LogicMonitor may aggregate older data, reducing granularity
+2. **Percentage validation too strict** - `value < 0 || value > 100` filters out valid data
+3. **Data gaps** - Device may not have been monitored continuously
+4. **Timestamp parsing** - Some timestamps may be invalid/skipped
+
+**Investigation Needed**:
+- Check raw LM data to see actual date distribution
+- Review if percentage validation is filtering too aggressively
+- Check if LM returns daily data or higher-frequency samples that need different aggregation
 
 ---
 
