@@ -18,10 +18,18 @@ public class LogicMonitorService
     private readonly string _accessId;
     private readonly string _accessKey;
     private readonly string _baseUrl;
-    
-    // Rate limit tracking
+
+    // Rate limit tracking (thread-safe)
     private static int _remainingRequests = 100;
     private static DateTime _rateLimitReset = DateTime.UtcNow;
+    private static readonly object _rateLimitLock = new object();
+
+    // Concurrency control - limit parallel API calls
+    private static readonly SemaphoreSlim _apiSemaphore = new SemaphoreSlim(3, 3);
+
+    // Retry settings
+    private const int MaxRetries = 3;
+    private static readonly TimeSpan[] RetryDelays = { TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(5), TimeSpan.FromSeconds(15) };
 
     public LogicMonitorService(
         ILoggerFactory loggerFactory,
@@ -59,7 +67,7 @@ public class LogicMonitorService
     }
 
     /// <summary>
-    /// Executes an authenticated request to LogicMonitor API
+    /// Executes an authenticated request to LogicMonitor API with retry and rate limiting
     /// </summary>
     private async Task<T?> ExecuteRequestAsync<T>(
         string method,
@@ -67,67 +75,129 @@ public class LogicMonitorService
         string? queryParams = null,
         object? body = null) where T : class
     {
-        // Rate limit protection
-        if (_remainingRequests <= 5 && DateTime.UtcNow < _rateLimitReset)
-        {
-            var waitTime = _rateLimitReset - DateTime.UtcNow;
-            _logger.LogWarning("Rate limit approaching, waiting {WaitSeconds}s", waitTime.TotalSeconds);
-            await Task.Delay(waitTime);
-        }
-
-        var bodyJson = body != null ? JsonSerializer.Serialize(body) : "";
-        var authHeader = GenerateAuthHeader(method, resourcePath, bodyJson);
-        
         var uri = $"{_baseUrl}{resourcePath}";
         if (!string.IsNullOrEmpty(queryParams))
         {
             uri += $"?{queryParams}";
         }
 
-        using var request = new HttpRequestMessage(new HttpMethod(method), uri);
-        request.Headers.Add("Authorization", authHeader);
-        request.Headers.Add("X-Version", "3");
-        
-        if (!string.IsNullOrEmpty(bodyJson))
-        {
-            request.Content = new StringContent(bodyJson, Encoding.UTF8, "application/json");
-        }
-
+        // Acquire semaphore to limit concurrent requests
+        await _apiSemaphore.WaitAsync();
         try
         {
-            _logger.LogInformation("LM API Request: {Method} {Uri}", method, uri);
-            var response = await _httpClient.SendAsync(request);
-            
-            // Update rate limit tracking from response headers
-            if (response.Headers.TryGetValues("X-Rate-Limit-Remaining", out var remaining))
+            for (int attempt = 0; attempt <= MaxRetries; attempt++)
             {
-                int.TryParse(remaining.FirstOrDefault(), out _remainingRequests);
-            }
-            if (response.Headers.TryGetValues("X-Rate-Limit-Window", out var window))
-            {
-                if (int.TryParse(window.FirstOrDefault(), out var windowSeconds))
+                // Thread-safe rate limit check
+                lock (_rateLimitLock)
                 {
-                    _rateLimitReset = DateTime.UtcNow.AddSeconds(windowSeconds);
+                    if (_remainingRequests <= 5 && DateTime.UtcNow < _rateLimitReset)
+                    {
+                        var waitTime = _rateLimitReset - DateTime.UtcNow;
+                        if (waitTime.TotalSeconds > 0)
+                        {
+                            _logger.LogWarning("Rate limit approaching ({Remaining} left), waiting {WaitSeconds}s", _remainingRequests, waitTime.TotalSeconds);
+                            Thread.Sleep(waitTime); // Use sync sleep inside lock for short waits
+                        }
+                    }
+                }
+
+                var bodyJson = body != null ? JsonSerializer.Serialize(body) : "";
+                var authHeader = GenerateAuthHeader(method, resourcePath, bodyJson);
+
+                using var request = new HttpRequestMessage(new HttpMethod(method), uri);
+                request.Headers.Add("Authorization", authHeader);
+                request.Headers.Add("X-Version", "3");
+
+                if (!string.IsNullOrEmpty(bodyJson))
+                {
+                    request.Content = new StringContent(bodyJson, Encoding.UTF8, "application/json");
+                }
+
+                try
+                {
+                    if (attempt == 0)
+                    {
+                        _logger.LogInformation("LM API Request: {Method} {Uri}", method, uri);
+                    }
+                    else
+                    {
+                        _logger.LogInformation("LM API Request (retry {Attempt}): {Method} {Uri}", attempt, method, uri);
+                    }
+
+                    var response = await _httpClient.SendAsync(request);
+
+                    // Update rate limit tracking from response headers (thread-safe)
+                    lock (_rateLimitLock)
+                    {
+                        if (response.Headers.TryGetValues("X-Rate-Limit-Remaining", out var remaining))
+                        {
+                            int.TryParse(remaining.FirstOrDefault(), out _remainingRequests);
+                        }
+                        if (response.Headers.TryGetValues("X-Rate-Limit-Window", out var window))
+                        {
+                            if (int.TryParse(window.FirstOrDefault(), out var windowSeconds))
+                            {
+                                _rateLimitReset = DateTime.UtcNow.AddSeconds(windowSeconds);
+                            }
+                        }
+                    }
+
+                    // Handle 429 Too Many Requests with retry
+                    if (response.StatusCode == System.Net.HttpStatusCode.TooManyRequests)
+                    {
+                        if (attempt < MaxRetries)
+                        {
+                            // Check for Retry-After header
+                            TimeSpan retryDelay = RetryDelays[attempt];
+                            if (response.Headers.TryGetValues("Retry-After", out var retryAfter))
+                            {
+                                if (int.TryParse(retryAfter.FirstOrDefault(), out var retrySeconds))
+                                {
+                                    retryDelay = TimeSpan.FromSeconds(retrySeconds);
+                                }
+                            }
+
+                            _logger.LogWarning("Rate limited (429), retrying in {Seconds}s (attempt {Attempt}/{MaxRetries})",
+                                retryDelay.TotalSeconds, attempt + 1, MaxRetries);
+                            await Task.Delay(retryDelay);
+                            continue; // Retry
+                        }
+
+                        _logger.LogError("Rate limited (429) - max retries exceeded for {Uri}", uri);
+                        return null;
+                    }
+
+                    if (!response.IsSuccessStatusCode)
+                    {
+                        var errorContent = await response.Content.ReadAsStringAsync();
+                        _logger.LogError("LM API error: {StatusCode} - {Error} for {Uri}", response.StatusCode, errorContent, uri);
+                        return null;
+                    }
+
+                    var content = await response.Content.ReadAsStringAsync();
+                    return JsonSerializer.Deserialize<T>(content, new JsonSerializerOptions
+                    {
+                        PropertyNameCaseInsensitive = true
+                    });
+                }
+                catch (HttpRequestException ex) when (attempt < MaxRetries)
+                {
+                    _logger.LogWarning("HTTP error, retrying in {Seconds}s: {Message}", RetryDelays[attempt].TotalSeconds, ex.Message);
+                    await Task.Delay(RetryDelays[attempt]);
+                    continue;
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Exception calling LogicMonitor API: {Path} - {Message}", resourcePath, ex.Message);
+                    return null;
                 }
             }
 
-            if (!response.IsSuccessStatusCode)
-            {
-                var errorContent = await response.Content.ReadAsStringAsync();
-                _logger.LogError("LM API error: {StatusCode} - {Error} for {Uri}", response.StatusCode, errorContent, uri);
-                return null;
-            }
-
-            var content = await response.Content.ReadAsStringAsync();
-            return JsonSerializer.Deserialize<T>(content, new JsonSerializerOptions 
-            { 
-                PropertyNameCaseInsensitive = true 
-            });
+            return null; // Should not reach here
         }
-        catch (Exception ex)
+        finally
         {
-            _logger.LogError(ex, "Exception calling LogicMonitor API: {Path} - {Message}", resourcePath, ex.Message);
-            return null;
+            _apiSemaphore.Release();
         }
     }
 
@@ -157,11 +227,11 @@ public class LogicMonitorService
         await CollectSubgroupIdsAsync(groupId, allGroupIds);
         
         _logger.LogInformation("Found {Count} groups (including subgroups) for group {GroupId}", allGroupIds.Count, groupId);
-        
-        // Fetch devices from all groups in parallel (batch of 5 at a time to avoid rate limits)
+
+        // Fetch devices from all groups in parallel (batch of 3 at a time - matches semaphore limit)
         var allDevices = new List<LMDevice>();
-        
-        foreach (var batch in allGroupIds.Chunk(5))
+
+        foreach (var batch in allGroupIds.Chunk(3))
         {
             var tasks = batch.Select(gid => ExecuteRequestAsync<LMDeviceListResponse>(
                 "GET",

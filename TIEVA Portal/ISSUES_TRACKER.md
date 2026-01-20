@@ -106,29 +106,40 @@
 ---
 
 ### Issue #10: LogicMonitor API Rate Limiting Failures
-**Status**: OPEN  
-**Reported**: 2026-01-20  
+**Status**: ✅ FIXED - NEEDS TESTING
+**Reported**: 2026-01-20
+**Updated**: 2026-01-20
 
 **Problem**: Performance sync fails with HTTP 429 (Too Many Requests) even after detecting rate limit and waiting.
 
-**Error Log**:
+**Root Cause**: Concurrent requests bypassing rate limit check due to lack of thread safety.
+
+**Fixes Applied** (in `LogicMonitorService.cs`):
+
+| Fix | Description |
+|-----|-------------|
+| ✅ SemaphoreSlim | Added `_apiSemaphore` (max 3 concurrent requests) |
+| ✅ Thread-safe locking | Added `_rateLimitLock` for rate limit variables |
+| ✅ Retry with backoff | 3 retries with exponential delays (1s, 5s, 15s) |
+| ✅ Retry-After header | Parses header for 429 responses |
+| ✅ Reduced batch size | `GetAllDevicesInGroupAsync` now uses batch of 3 (was 5) |
+
+**Code Changes**:
+```csharp
+// NEW: Thread-safe rate limiting
+private static readonly object _rateLimitLock = new object();
+private static readonly SemaphoreSlim _apiSemaphore = new SemaphoreSlim(3, 3);
+private const int MaxRetries = 3;
+private static readonly TimeSpan[] RetryDelays = { 1s, 5s, 15s };
+
+// ExecuteRequestAsync now:
+// 1. Acquires semaphore before request
+// 2. Uses lock for rate limit checks
+// 3. Retries on 429 with Retry-After header support
+// 4. Retries on HttpRequestException
 ```
-2026-01-20T16:09:58 [Warning] Rate limit approaching, waiting 59.3s
-2026-01-20T16:09:58 [Error]   LM API error: TooManyRequests - HTTP Status 429
-```
 
-**Root Cause Analysis** (in `LogicMonitorService.cs`):
-
-| Issue | Description | Severity |
-|-------|-------------|----------|
-| No thread safety | Static `_remainingRequests` not locked - parallel requests bypass check | High |
-| No retry on 429 | Request fails immediately instead of retrying after wait | High |
-| Batch parallelism | `GetAllDevicesInGroupAsync` uses `Task.WhenAll` for 5 parallel requests | Medium |
-| No semaphore | No limit on concurrent API calls | Medium |
-
-**Evidence**: Warning and Error logged at same timestamp (16:09:58) - concurrent requests bypassed the wait.
-
-**Current Code** (Lines 23-24, 64-70):
+**Previous Code** (for reference):
 ```csharp
 // Static fields - NOT thread-safe
 private static int _remainingRequests = 100;
