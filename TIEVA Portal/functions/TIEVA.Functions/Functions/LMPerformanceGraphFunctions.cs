@@ -1087,6 +1087,92 @@ public class LMPerformanceGraphFunctions
     }
 
     /// <summary>
+    /// Watchdog timer that automatically restarts stuck history syncs.
+    /// Runs every 5 minutes to check for stuck syncs and re-queue remaining devices.
+    /// </summary>
+    [Function("HistorySyncWatchdog")]
+    public async Task HistorySyncWatchdog(
+        [TimerTrigger("0 */5 * * * *")] TimerInfo timer)
+    {
+        _logger.LogInformation("History sync watchdog running at {Time}", DateTime.UtcNow);
+
+        // Find all stuck syncs (status = SyncingHistory and no update in 5+ minutes)
+        var stuckSyncs = await _db.LMSyncStatuses
+            .Where(s => s.Status == "SyncingHistory")
+            .ToListAsync();
+
+        foreach (var syncStatus in stuckSyncs)
+        {
+            var timeSinceUpdate = DateTime.UtcNow - syncStatus.UpdatedAt;
+
+            // If no progress in 5 minutes, re-queue remaining devices
+            if (timeSinceUpdate.TotalMinutes < 5)
+            {
+                _logger.LogInformation("Sync for customer {CustomerId} is active (updated {Minutes:F1} min ago)",
+                    syncStatus.CustomerId, timeSinceUpdate.TotalMinutes);
+                continue;
+            }
+
+            _logger.LogWarning("Detected stuck sync for customer {CustomerId}. Progress: {Progress}/{Total}. Last update: {Minutes:F1} min ago",
+                syncStatus.CustomerId, syncStatus.HistorySyncProgress, syncStatus.HistorySyncTotal, timeSinceUpdate.TotalMinutes);
+
+            // Get devices that still need to be processed
+            var processedCount = syncStatus.HistorySyncProgress ?? 0;
+            var totalCount = syncStatus.HistorySyncTotal ?? 0;
+
+            if (processedCount >= totalCount)
+            {
+                // Actually complete - mark it
+                syncStatus.Status = "Completed";
+                syncStatus.HistorySyncCompleted = DateTime.UtcNow;
+                syncStatus.UpdatedAt = DateTime.UtcNow;
+                await _db.SaveChangesAsync();
+                _logger.LogInformation("Marked sync as completed for customer {CustomerId}", syncStatus.CustomerId);
+                continue;
+            }
+
+            // Get all devices and queue the ones that haven't been processed yet
+            var allDevices = await _db.LMDeviceMetricsV2
+                .Where(d => d.CustomerId == syncStatus.CustomerId && d.ResourceTypeCode != null && d.ResourceTypeCode != "Unknown")
+                .OrderBy(d => d.DeviceId)
+                .Select(d => d.DeviceId)
+                .ToListAsync();
+
+            // Skip devices that have already been processed (based on progress count)
+            var remainingDevices = allDevices.Skip(processedCount).ToList();
+
+            if (!remainingDevices.Any())
+            {
+                // No remaining devices - mark complete
+                syncStatus.Status = "Completed";
+                syncStatus.HistorySyncCompleted = DateTime.UtcNow;
+                syncStatus.UpdatedAt = DateTime.UtcNow;
+                await _db.SaveChangesAsync();
+                _logger.LogInformation("No remaining devices - marked sync as completed for customer {CustomerId}", syncStatus.CustomerId);
+                continue;
+            }
+
+            // Re-queue remaining devices
+            var connectionString = Environment.GetEnvironmentVariable("AzureWebJobsStorage");
+            var queueClient = new Azure.Storage.Queues.QueueClient(connectionString, "lm-history-sync");
+            await queueClient.CreateIfNotExistsAsync();
+
+            foreach (var deviceId in remainingDevices)
+            {
+                var message = JsonSerializer.Serialize(new { customerId = syncStatus.CustomerId, deviceId });
+                await queueClient.SendMessageAsync(Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(message)));
+            }
+
+            // Update the sync status to show we've restarted
+            syncStatus.UpdatedAt = DateTime.UtcNow;
+            await _db.SaveChangesAsync();
+
+            _logger.LogInformation("Watchdog re-queued {Count} remaining devices for customer {CustomerId}",
+                remainingDevices.Count, syncStatus.CustomerId);
+        }
+    }
+
+    /// <summary>
     /// Queue processor for history sync - processes one device at a time
     /// </summary>
     [Function("ProcessHistorySyncQueue")]
