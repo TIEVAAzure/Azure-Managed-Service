@@ -969,7 +969,8 @@ public class LMPerformanceGraphFunctions
         if (syncStatus?.Status == "SyncingHistory" && !forceRestart)
         {
             // Check if sync appears stuck (no progress in last 10 minutes)
-            var timeSinceUpdate = DateTime.UtcNow - (syncStatus.UpdatedAt ?? syncStatus.HistorySyncStarted ?? DateTime.UtcNow);
+            var lastUpdate = syncStatus.UpdatedAt != default ? syncStatus.UpdatedAt : (syncStatus.HistorySyncStarted ?? DateTime.UtcNow);
+            var timeSinceUpdate = DateTime.UtcNow - lastUpdate;
             var appearsStuck = timeSinceUpdate.TotalMinutes > 10;
 
             var inProgress = req.CreateResponse(HttpStatusCode.OK);
@@ -1063,9 +1064,9 @@ public class LMPerformanceGraphFunctions
 
         // Check if sync appears stuck (no progress in last 10 minutes)
         var appearsStuck = false;
-        if (syncStatus?.Status == "SyncingHistory" && syncStatus.UpdatedAt.HasValue)
+        if (syncStatus?.Status == "SyncingHistory" && syncStatus.UpdatedAt != default)
         {
-            var timeSinceUpdate = DateTime.UtcNow - syncStatus.UpdatedAt.Value;
+            var timeSinceUpdate = DateTime.UtcNow - syncStatus.UpdatedAt;
             appearsStuck = timeSinceUpdate.TotalMinutes > 10;
         }
 
