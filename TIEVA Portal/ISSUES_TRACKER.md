@@ -38,6 +38,41 @@
 
 ---
 
+### Issue #13: History Sync Getting Stuck
+**Status**: ✅ FIXED
+**Reported**: 2026-01-20
+**Updated**: 2026-01-20
+
+**Problem**: History sync started at 18:12:54, processed 143/269 devices (82 with data), then appeared to get stuck.
+
+**Root Cause**: When individual device sync failed with an exception, the message was re-thrown and moved to poison queue. Progress counter was never incremented for failed devices, causing sync to appear stuck.
+
+**Fixes Applied**:
+
+1. **ProcessHistorySyncQueue** - Moved progress tracking to `finally` block:
+   - Progress now ALWAYS increments, even on failure
+   - Exceptions caught but not re-thrown (avoids poison queue)
+   - Failed devices logged with error message
+
+2. **StartBulkHistorySync** - Added stuck detection and force restart:
+   - Detects stuck sync (no update in 10+ minutes)
+   - Returns `appearsStuck: true` flag
+   - Added `?force=true` query param to restart stuck sync
+
+3. **GetHistorySyncStatus** - Added `lastUpdated` and `appearsStuck` to response
+
+4. **Frontend** - Added stuck sync UI:
+   - Shows "Stuck" status tag when sync appears stuck
+   - Button changes to "Force Restart" when stuck
+   - One-click force restart functionality
+
+**Testing**:
+- Deploy and start a new history sync
+- If it gets stuck, UI should show "Stuck" status
+- Click "Force Restart" to restart the sync
+
+---
+
 ### Issue #11: Historical Sync Only Returns ~9 Days Instead of 90
 **Status**: OPEN - INVESTIGATION NEEDED
 **Reported**: 2026-01-20
@@ -74,11 +109,16 @@ Device 527 Disk C:: RAW VALUES - Capacity[0]=14411145216, FreeSpace[0]=79.1944
 Device 527 Disk C:: Unit mismatch detected - converting Capacity from bytes to GB
 Device 527 Disk C:: CALC - 100 - (79.1944/13.4214...) = -490.1%
 Device 527 Disk C:: Calculated 0 valid percentages from 500 data points
+
+Device 87 Disk C:: RAW VALUES - Capacity[0]=27287760896, FreeSpace[0]=74.4608
+Device 87 Disk C:: Unit mismatch detected - converting Capacity from bytes to GB
+Device 87 Disk C:: CALC - 100 - (74.4608/25.413707733154297*100) = -193.0%
+Device 87 Disk C:: Calculated 0 valid percentages from 500 data points
 ```
 
-**Root Cause**: FreeSpace is already in GB (79.19 GB) while Capacity is in bytes (14.4 billion = 13.4 GB). The code converts Capacity to GB but FreeSpace is already in GB, causing calculation: `100 - (79GB / 13.4GB * 100) = -490%`
+**Root Cause**: FreeSpace is already in GB (79.19 GB, 74.46 GB) while Capacity is in bytes (14.4B, 27.2B). The code converts Capacity to GB but FreeSpace is already in GB, causing calculation: `100 - (79GB / 13.4GB * 100) = -490%`
 
-**Affected Devices**: Many Windows servers showing "No disk data found"
+**Affected Devices**: Multiple Windows servers showing "No disk data found" including devices 87, 527
 
 **Fix Needed**:
 - Detect when FreeSpace > Capacity (after conversion) - indicates FreeSpace already in GB
@@ -218,9 +258,45 @@ if (_remainingRequests <= 5 && DateTime.UtcNow < _rateLimitReset)
 
 ---
 
+### Issue #14: Overview Findings/Recommendations Click-Through
+**Status**: OPEN - ENHANCEMENT
+**Reported**: 2026-01-20
+
+**Problem**: When clicking on a finding or recommendation in the Overview section, users want to see more detailed information.
+
+**Expected Behavior**:
+- Clicking on a finding should show detailed breakdown
+- Include root cause, affected resources, and recommended actions
+- May link to relevant documentation or remediation steps
+
+**Implementation Notes**:
+- Need to determine what data is available for each finding type
+- Consider modal or slide-out panel for details
+- Link findings to relevant monitoring data where applicable
+
+---
+
+### Issue #15: Monitoring Click-Through for Alerts/Devices
+**Status**: OPEN - ENHANCEMENT
+**Reported**: 2026-01-20
+
+**Problem**: In Monitoring > Overview, Alerts, and Devices tabs, users want to click on alerts or devices to get more information.
+
+**Expected Behavior**:
+- **Overview**: Click items for drill-down details
+- **Alerts**: Click alert to see full alert details, history, affected device
+- **Devices**: Click device to see device details, metrics, alerts for that device
+
+**Implementation Notes**:
+- Alerts may need: severity, timestamp, acknowledgement status, notes, linked device
+- Devices may need: link to existing device modal with performance metrics
+- Consider consistent UX pattern across all monitoring sub-tabs
+
+---
+
 ### Issue #6: Limited PaaS Service Coverage
-**Status**: OPEN - ENHANCEMENT  
-**Reported**: 2026-01-20  
+**Status**: OPEN - ENHANCEMENT
+**Reported**: 2026-01-20
 
 **Problem**: Most Azure PaaS services have no performance metrics configured.
 

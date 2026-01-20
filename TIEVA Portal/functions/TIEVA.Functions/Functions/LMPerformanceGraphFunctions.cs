@@ -951,7 +951,7 @@ public class LMPerformanceGraphFunctions
     /// </summary>
     [Function("StartBulkHistorySync")]
     public async Task<HttpResponseData> StartBulkHistorySync(
-        [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "v2/performance/customers/{customerId}/sync-history/start")] 
+        [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "v2/performance/customers/{customerId}/sync-history/start")]
         HttpRequestData req, string customerId)
     {
         if (!Guid.TryParse(customerId, out var custId))
@@ -961,19 +961,36 @@ public class LMPerformanceGraphFunctions
             return badRequest;
         }
 
+        // Check for force restart parameter (use ?force=true to restart stuck sync)
+        var forceRestart = req.Query.Get("force")?.ToLowerInvariant() == "true";
+
         // Check if sync already in progress
         var syncStatus = await _db.LMSyncStatuses.FirstOrDefaultAsync(s => s.CustomerId == custId);
-        if (syncStatus?.Status == "SyncingHistory")
+        if (syncStatus?.Status == "SyncingHistory" && !forceRestart)
         {
+            // Check if sync appears stuck (no progress in last 10 minutes)
+            var timeSinceUpdate = DateTime.UtcNow - (syncStatus.UpdatedAt ?? syncStatus.HistorySyncStarted ?? DateTime.UtcNow);
+            var appearsStuck = timeSinceUpdate.TotalMinutes > 10;
+
             var inProgress = req.CreateResponse(HttpStatusCode.OK);
             await inProgress.WriteAsJsonAsync(new
             {
                 status = "in_progress",
-                message = "History sync already in progress",
+                message = appearsStuck
+                    ? "History sync appears stuck. Use ?force=true to restart."
+                    : "History sync already in progress",
                 progress = syncStatus.HistorySyncProgress ?? 0,
-                totalDevices = syncStatus.HistorySyncTotal ?? 0
+                totalDevices = syncStatus.HistorySyncTotal ?? 0,
+                appearsStuck,
+                lastUpdated = syncStatus.UpdatedAt
             });
             return inProgress;
+        }
+
+        if (forceRestart && syncStatus != null)
+        {
+            _logger.LogWarning("Force restarting stuck history sync for customer {CustomerId}. Previous progress: {Progress}/{Total}",
+                custId, syncStatus.HistorySyncProgress, syncStatus.HistorySyncTotal);
         }
 
         // Get devices that have performance metrics
@@ -1044,6 +1061,14 @@ public class LMPerformanceGraphFunctions
 
         var syncStatus = await _db.LMSyncStatuses.FirstOrDefaultAsync(s => s.CustomerId == custId);
 
+        // Check if sync appears stuck (no progress in last 10 minutes)
+        var appearsStuck = false;
+        if (syncStatus?.Status == "SyncingHistory" && syncStatus.UpdatedAt.HasValue)
+        {
+            var timeSinceUpdate = DateTime.UtcNow - syncStatus.UpdatedAt.Value;
+            appearsStuck = timeSinceUpdate.TotalMinutes > 10;
+        }
+
         var response = req.CreateResponse(HttpStatusCode.OK);
         await response.WriteAsJsonAsync(new
         {
@@ -1053,6 +1078,8 @@ public class LMPerformanceGraphFunctions
             devicesWithHistory = syncStatus?.HistorySyncWithData ?? 0,
             startedAt = syncStatus?.HistorySyncStarted,
             completedAt = syncStatus?.HistorySyncCompleted,
+            lastUpdated = syncStatus?.UpdatedAt,
+            appearsStuck,
             errorMessage = syncStatus?.ErrorMessage
         });
         return response;
@@ -1067,6 +1094,11 @@ public class LMPerformanceGraphFunctions
     {
         _logger.LogInformation("Processing history sync message: {Message}", message);
 
+        Guid customerId = Guid.Empty;
+        int deviceId = 0;
+        bool syncSucceeded = false;
+        string? errorMessage = null;
+
         try
         {
             // Parse message (handle both plain JSON and Base64 encoded)
@@ -1078,38 +1110,58 @@ public class LMPerformanceGraphFunctions
             catch { /* Already plain text */ }
 
             var data = JsonSerializer.Deserialize<JsonElement>(jsonMessage);
-            var customerId = Guid.Parse(data.GetProperty("customerId").GetString()!);
-            var deviceId = data.GetProperty("deviceId").GetInt32();
+            customerId = Guid.Parse(data.GetProperty("customerId").GetString()!);
+            deviceId = data.GetProperty("deviceId").GetInt32();
 
             _logger.LogInformation("Syncing history for device {DeviceId} customer {CustomerId}", deviceId, customerId);
 
             // Process this device
             await SyncDeviceHistoryInternal(customerId, deviceId);
-
-            // Update progress
-            using var scope = _serviceProvider.CreateScope();
-            var db = scope.ServiceProvider.GetRequiredService<TievaDbContext>();
-            var syncStatus = await db.LMSyncStatuses.FirstOrDefaultAsync(s => s.CustomerId == customerId);
-            if (syncStatus != null)
-            {
-                syncStatus.HistorySyncProgress = (syncStatus.HistorySyncProgress ?? 0) + 1;
-                syncStatus.UpdatedAt = DateTime.UtcNow;
-
-                // Check if complete
-                if (syncStatus.HistorySyncProgress >= syncStatus.HistorySyncTotal)
-                {
-                    syncStatus.Status = "Completed";
-                    syncStatus.HistorySyncCompleted = DateTime.UtcNow;
-                    _logger.LogInformation("History sync completed for customer {CustomerId}", customerId);
-                }
-
-                await db.SaveChangesAsync();
-            }
+            syncSucceeded = true;
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error processing history sync message: {Message}", message);
-            throw; // Re-throw to move to poison queue
+            _logger.LogError(ex, "Error processing history sync for device {DeviceId}: {Message}", deviceId, message);
+            errorMessage = ex.Message;
+            // Don't re-throw - we still want to update progress so sync doesn't get stuck
+        }
+        finally
+        {
+            // Always update progress, even on failure
+            if (customerId != Guid.Empty)
+            {
+                try
+                {
+                    using var scope = _serviceProvider.CreateScope();
+                    var db = scope.ServiceProvider.GetRequiredService<TievaDbContext>();
+                    var syncStatus = await db.LMSyncStatuses.FirstOrDefaultAsync(s => s.CustomerId == customerId);
+                    if (syncStatus != null)
+                    {
+                        syncStatus.HistorySyncProgress = (syncStatus.HistorySyncProgress ?? 0) + 1;
+                        syncStatus.UpdatedAt = DateTime.UtcNow;
+
+                        if (!syncSucceeded)
+                        {
+                            // Track failed devices (could add a HistorySyncFailed counter if needed)
+                            _logger.LogWarning("Device {DeviceId} failed during history sync: {Error}", deviceId, errorMessage);
+                        }
+
+                        // Check if complete
+                        if (syncStatus.HistorySyncProgress >= syncStatus.HistorySyncTotal)
+                        {
+                            syncStatus.Status = "Completed";
+                            syncStatus.HistorySyncCompleted = DateTime.UtcNow;
+                            _logger.LogInformation("History sync completed for customer {CustomerId}", customerId);
+                        }
+
+                        await db.SaveChangesAsync();
+                    }
+                }
+                catch (Exception dbEx)
+                {
+                    _logger.LogError(dbEx, "Failed to update sync progress for device {DeviceId}", deviceId);
+                }
+            }
         }
     }
 
