@@ -1161,6 +1161,21 @@ public class LMPerformanceGraphFunctions
                 var dsPatterns = mapping.GetDatasourcePatterns();
                 var dpPatterns = mapping.GetDatapointPatterns();
 
+                // Expand CALC: patterns to actual LM datapoint names
+                var effectiveDpPatterns = dpPatterns.SelectMany(p =>
+                {
+                    if (p.StartsWith("CALC:", StringComparison.OrdinalIgnoreCase))
+                    {
+                        return p.ToUpperInvariant() switch
+                        {
+                            "CALC:MEMORY" => new[] { "MemoryUtilizationPercent", "PercentMemoryUsed" },
+                            "CALC:DISK" => new[] { "PercentUsed", "UsedPercent" },
+                            _ => new[] { p }
+                        };
+                    }
+                    return new[] { p };
+                }).ToArray();
+
                 // Find matching datasource
                 var matchedDs = datasources.Items.FirstOrDefault(ds =>
                     dsPatterns.Any(p => ds.DataSourceName?.Contains(p, StringComparison.OrdinalIgnoreCase) == true));
@@ -1192,7 +1207,7 @@ public class LMPerformanceGraphFunctions
                             for (int dpIdx = 0; dpIdx < data.DataPoints.Count; dpIdx++)
                             {
                                 var dpName = data.DataPoints[dpIdx];
-                                if (!dpPatterns.Any(p => dpName.Contains(p, StringComparison.OrdinalIgnoreCase)))
+                                if (!effectiveDpPatterns.Any(p => dpName.Contains(p, StringComparison.OrdinalIgnoreCase)))
                                     continue;
 
                                 // Process values into daily aggregates

@@ -20,12 +20,14 @@
 
 **Changes Made**:
 1. ✅ `LMPerformanceGraphFunctions.cs` - Fixed `ProcessDailyAggregates` to use separate `Time[]` array (epoch milliseconds)
-2. ✅ `LMPerformanceGraphFunctions.cs` - Added CALC: pattern mapping to actual LM datapoint names
-3. ✅ `portal/index.html` - Transform history API response to flat array format for charts
+2. ✅ `LMPerformanceGraphFunctions.cs` - Added CALC: pattern mapping to `SyncDeviceHistory` (single device test endpoint)
+3. ✅ `LMPerformanceGraphFunctions.cs` - Added CALC: pattern mapping to `SyncDeviceHistoryInternal` (bulk sync method)
+4. ✅ `portal/index.html` - Transform history API response to flat array format for charts
 
 **Current Status**:
 - ✅ Sync creates records (tested: 27 records for device 519)
 - ✅ API returns history data correctly
+- ✅ Bulk sync now has CALC: pattern mapping (was missing, causing some resources to fail)
 - ⚠️ Only 9 days showing (not full 90 days) - see Issue #11
 
 **Remaining**:
@@ -57,6 +59,31 @@
 - Check raw LM data to see actual date distribution
 - Review if percentage validation is filtering too aggressively
 - Check if LM returns daily data or higher-frequency samples that need different aggregation
+
+---
+
+### Issue #12: Disk Calculation Producing Negative Percentages
+**Status**: OPEN
+**Reported**: 2026-01-20
+
+**Problem**: Many disks show negative percentage calculations and get filtered out as invalid.
+
+**Evidence from logs**:
+```
+Device 527 Disk C:: RAW VALUES - Capacity[0]=14411145216, FreeSpace[0]=79.1944
+Device 527 Disk C:: Unit mismatch detected - converting Capacity from bytes to GB
+Device 527 Disk C:: CALC - 100 - (79.1944/13.4214...) = -490.1%
+Device 527 Disk C:: Calculated 0 valid percentages from 500 data points
+```
+
+**Root Cause**: FreeSpace is already in GB (79.19 GB) while Capacity is in bytes (14.4 billion = 13.4 GB). The code converts Capacity to GB but FreeSpace is already in GB, causing calculation: `100 - (79GB / 13.4GB * 100) = -490%`
+
+**Affected Devices**: Many Windows servers showing "No disk data found"
+
+**Fix Needed**:
+- Detect when FreeSpace > Capacity (after conversion) - indicates FreeSpace already in GB
+- Don't convert FreeSpace if it's already in the correct unit
+- Or check the actual LM datapoint unit metadata
 
 ---
 
