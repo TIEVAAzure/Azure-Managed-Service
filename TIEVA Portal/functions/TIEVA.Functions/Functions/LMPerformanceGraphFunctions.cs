@@ -485,8 +485,9 @@ public class LMPerformanceGraphFunctions
                 var instance = instances.Items.First();
                 debugInfo.Add(new { step = "matched", metric = mapping.MetricName, datasource = matchedDs.DataSourceName, instanceId = instance.Id, instanceName = instance.DisplayName });
 
-                // Fetch 90-day data in chunks (LM may have limits)
-                var chunkDays = 30;
+                // Fetch 90-day data in 1-day chunks (LM API returns max 500 samples per request)
+                // At 5-min intervals, 1 day = 288 samples, well within the 500 limit
+                var chunkDays = 1;
                 var currentStart = start;
 
                 while (currentStart < end)
@@ -620,7 +621,7 @@ public class LMPerformanceGraphFunctions
                     }
 
                     currentStart = chunkEnd;
-                    await Task.Delay(200); // Rate limiting
+                    await Task.Delay(100); // Rate limiting - 100ms between chunks (90 chunks per metric)
                 }
             }
 
@@ -1327,8 +1328,9 @@ public class LMPerformanceGraphFunctions
 
                 var instance = instances.Items.First();
 
-                // Fetch 90-day data in 30-day chunks (LM rate limits)
-                var chunkDays = 30;
+                // Fetch 90-day data in 1-day chunks (LM API returns max 500 samples per request)
+                // At 5-min intervals, 1 day = 288 samples, well within the 500 limit
+                var chunkDays = 1;
                 var currentStart = start;
 
                 while (currentStart < end)
@@ -1398,10 +1400,10 @@ public class LMPerformanceGraphFunctions
                     }
 
                     currentStart = chunkEnd;
-                    await Task.Delay(500); // Rate limiting - 500ms between chunks
+                    await Task.Delay(100); // Rate limiting - 100ms between chunks (90 chunks per metric)
                 }
 
-                await Task.Delay(200); // Rate limiting between metrics
+                await Task.Delay(100); // Rate limiting between metrics
             }
 
             await db.SaveChangesAsync();

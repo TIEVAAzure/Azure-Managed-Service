@@ -78,26 +78,34 @@
 ---
 
 ### Issue #11: Historical Sync Only Returns ~9 Days Instead of 90
-**Status**: OPEN - INVESTIGATION NEEDED
+**Status**: ✅ FIXED - NEEDS DEPLOYMENT
 **Reported**: 2026-01-20
+**Updated**: 2026-01-21
 
 **Problem**: History sync for device 519 only created 9 days of data instead of 90 days.
 
-**Observations**:
-- Sync processes 3 chunks (30 days each): Oct 22, Nov 21, Dec 21
-- Each chunk returns 500 raw data points from LM
-- But only ~3 unique dates per chunk pass validation (9 total)
+**Root Cause Found**:
+- LogicMonitor API returns **max 500 samples per request**
+- Code was requesting **30-day chunks**
+- At 5-minute intervals: 30 days × 24 hours × 12 samples/hour = **8,640 samples**
+- LM returned only 500 samples (~1.7 days worth) from each 30-day request
+- Result: Only ~2 days per chunk = 6 days total (observed as 6 dates in the data)
 
-**Possible Causes**:
-1. **LM data aggregation** - LogicMonitor may aggregate older data, reducing granularity
-2. **Percentage validation too strict** - `value < 0 || value > 100` filters out valid data
-3. **Data gaps** - Device may not have been monitored continuously
-4. **Timestamp parsing** - Some timestamps may be invalid/skipped
+**Fix Applied**:
+- Changed chunk size from **30 days to 1 day**
+- 1 day × 24 hours × 12 samples/hour = **288 samples** (within 500 limit)
+- Now requests 90 individual day chunks to get full coverage
+- Reduced delay between chunks from 500ms to 100ms (still safe for rate limits)
 
-**Investigation Needed**:
-- Check raw LM data to see actual date distribution
-- Review if percentage validation is filtering too aggressively
-- Check if LM returns daily data or higher-frequency samples that need different aggregation
+**Files Changed**:
+- `functions/TIEVA.Functions/Functions/LMPerformanceGraphFunctions.cs`
+  - Line ~489: Test endpoint chunk size 30 → 1
+  - Line ~1331: Bulk sync chunk size 30 → 1
+  - Delay adjustments for more frequent requests
+
+**Testing**:
+- After deployment, re-run history sync for a device
+- Should see ~90 days of data instead of ~6
 
 ---
 
@@ -413,6 +421,74 @@ if (_remainingRequests <= 5 && DateTime.UtcNow < _rateLimitReset)
 
 ---
 
+### Issue #20: Soft Delete Finding False Positive
+**Status**: ✅ FIXED
+**Reported**: 2026-01-21
+**Updated**: 2026-01-21
+
+**Problem**: Backup Audit reports "Always-On soft delete is not enabled on Recovery Services vault" as a High severity finding, even when Soft Delete **is** enabled in Azure portal.
+
+**Evidence**: User verified vault390 in Azure portal showing Soft Delete as **Enabled**, but assessment reports it as a High finding.
+
+**Root Cause Found** in `BackupAudit.ps1`:
+
+The `ConvertTo-AlwaysOnBool` function (line 138-141) only returns `$true` if the state is exactly `'AlwaysON'`:
+
+```powershell
+function ConvertTo-AlwaysOnBool {
+  param([string]$A,[string]$B)
+  (($A -eq 'AlwaysON') -or ($B -eq 'AlwaysON'))
+}
+```
+
+This means vaults with Soft Delete in `'Enabled'` state (but not `'AlwaysON'`) trigger the finding at line 1069:
+
+```powershell
+if (-not $r.AlwaysOnSoftDelete) {
+  # High severity finding generated...
+}
+```
+
+**Issue**: Two concepts being conflated:
+1. **Soft Delete Enabled** - Basic soft delete protection (can be disabled by user)
+2. **Always-On Soft Delete** - Permanent soft delete that cannot be disabled
+
+**Affected Files**:
+- `functions/TIEVA.Audit/Scripts/BackupAudit.ps1` (lines 138-141, 1069-1081, 1563-1574)
+
+**Fix Applied**:
+- Simplified to only flag when soft delete is actually **Disabled** (High severity)
+- Removed Always-On check since new vaults have soft delete always on by default
+- Also improved storage redundancy findings (LRS=Medium, ZRS=Low, GRS=compliant)
+- CRR findings now only apply to GRS/GZRS vaults
+
+**Commits**: `a865b5c`, `b3e7919`, `3cfefae`
+
+---
+
+### Issue #21: User Name Display and Avatar Initials
+**Status**: ✅ FIXED
+**Reported**: 2026-01-21
+**Updated**: 2026-01-21
+
+**Problem**: Welcome message was hardcoded to "Welcome back, Chris" instead of showing logged-in user's actual name. Avatar initials weren't reflecting the user's name.
+
+**Request**:
+- Show logged-in user's first name in welcome message
+- Show initials (first letter of first name + first letter of last name) in avatar
+
+**Fix Applied**:
+- Added `loadUserInfo()` function that fetches from Azure SWA `/.auth/me` endpoint
+- Parses `clientPrincipal.userDetails` to extract name
+- Handles both "First Last" format and "first.last@email.com" format
+- Updates welcome message with first name
+- Updates avatar with proper initials (e.g., "CT" for "Chris Thompson")
+
+**Files Changed**:
+- `portal/index.html` - Added `loadUserInfo()` function
+
+---
+
 ### Issue #19: Function App Endpoint Reconciliation
 **Status**: OPEN - MAINTENANCE
 **Reported**: 2026-01-21
@@ -523,6 +599,11 @@ func azure functionapp list-functions func-tievaportal-6612
 | `6e4f88f` | Memory: Multiple % datapoints + auto-swap Free/Total |
 | `a2cd099` | Browse Groups: Backend endpoint for customer subgroups |
 | `6e10d85` | Browse Groups: UI in LM Config tab |
+| `a865b5c` | Backup: Split soft delete findings into two severity levels |
+| `b3e7919` | Backup: Improve storage redundancy and CRR findings logic |
+| `3cfefae` | Backup: Simplify soft delete - only flag if disabled |
+| `cb95c3c` | Audit: Fix null array error when parsing findings |
+| `c961c79` | UI: Display logged-in user name in welcome message |
 
 ---
 
@@ -597,10 +678,10 @@ func azure functionapp list-functions func-tievaportal-6612
 | **Historical Data** | #3, #11, #13 | ⚠️ Partially Fixed |
 | **Azure PaaS Metrics** | #5, #6 | 🔴 Open |
 | **Data Coverage** | #6, #9 | 🔴 Open |
-| **Assessment Quality** | #16, #17 | 🔴 Open |
+| **Assessment Quality** | #16, #17, #20 | ⚠️ #20 Fixed |
 | **UI/UX** | #7, #8, #14, #15 | ✅ All Fixed |
 | **Reliability** | #10, #13 | ✅ Fixed (testing) |
 
 ---
 
-*Last Updated: 2026-01-21 11:30 UTC*
+*Last Updated: 2026-01-21 15:00 UTC*
