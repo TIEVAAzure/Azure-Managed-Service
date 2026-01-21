@@ -1319,28 +1319,54 @@ public class LMPerformanceV2Functions
                         // Find matching datasource - try each pattern
                         LMDeviceDatasource? matchedDs = null;
                         string? matchedPattern = null;
-                        
-                        foreach (var pattern in dsPatterns)
-                        {
-                            matchedDs = datasources.Items.FirstOrDefault(ds =>
-                                ds.DataSourceName?.Contains(pattern, StringComparison.OrdinalIgnoreCase) == true);
-                            if (matchedDs != null)
-                            {
-                                matchedPattern = pattern;
-                                break;
-                            }
-                        }
 
-                        if (matchedDs != null)
+                        // For Disk metrics, we need to check ALL matching datasources (C: might be in WinVolumeUsage, D: in WinLogicalDisk)
+                        var isDiskMetric = mapping.MetricName.Equals("Disk", StringComparison.OrdinalIgnoreCase) &&
+                            dpPatterns.Any(p => p.StartsWith("CALC:", StringComparison.OrdinalIgnoreCase));
+
+                        if (isDiskMetric)
                         {
-                            _logger.LogDebug("Device {DeviceId}: Found datasource '{DsName}' (ID: {DsId}) matching pattern '{Pattern}' for {Metric}",
-                                device.Id, matchedDs.DataSourceName, matchedDs.Id, matchedPattern, mapping.MetricName);
-                            
-                            // Special handling for Disk - fetch ALL disk instances
-                            if (mapping.MetricName.Equals("Disk", StringComparison.OrdinalIgnoreCase) && 
-                                dpPatterns.Any(p => p.StartsWith("CALC:", StringComparison.OrdinalIgnoreCase)))
+                            // Find ALL matching disk datasources
+                            var allMatchingDs = new List<(LMDeviceDatasource ds, string pattern)>();
+                            foreach (var pattern in dsPatterns)
                             {
-                                var allDisks = await FetchAllDiskMetricsAsync(lmService, device.Id, matchedDs.Id, start7Day, end);
+                                var matchingDatasources = datasources.Items.Where(ds =>
+                                    ds.DataSourceName?.Contains(pattern, StringComparison.OrdinalIgnoreCase) == true);
+                                foreach (var ds in matchingDatasources)
+                                {
+                                    // Avoid duplicates
+                                    if (!allMatchingDs.Any(m => m.ds.Id == ds.Id))
+                                    {
+                                        allMatchingDs.Add((ds, pattern));
+                                    }
+                                }
+                            }
+
+                            if (allMatchingDs.Any())
+                            {
+                                _logger.LogInformation("Device {DeviceId}: Found {Count} disk datasources: {Names}",
+                                    device.Id, allMatchingDs.Count, string.Join(", ", allMatchingDs.Select(m => m.ds.DataSourceName)));
+
+                                // Fetch disks from ALL matching datasources
+                                var allDisks = new Dictionary<string, (double avg, double max)>();
+                                foreach (var (ds, pattern) in allMatchingDs)
+                                {
+                                    _logger.LogDebug("Device {DeviceId}: Fetching disks from '{DsName}' (ID: {DsId})",
+                                        device.Id, ds.DataSourceName, ds.Id);
+                                    var disksFromDs = await FetchAllDiskMetricsAsync(lmService, device.Id, ds.Id, start7Day, end);
+                                    foreach (var disk in disksFromDs)
+                                    {
+                                        // Don't overwrite if we already have this drive from another datasource
+                                        if (!allDisks.ContainsKey(disk.Key))
+                                        {
+                                            allDisks[disk.Key] = disk.Value;
+                                            _logger.LogDebug("Device {DeviceId}: Added {Drive} from {DsName}",
+                                                device.Id, disk.Key, ds.DataSourceName);
+                                        }
+                                    }
+                                }
+
+                                // Use allDisks for the rest of processing (same as before)
                                 
                                 if (allDisks.Any())
                                 {
@@ -1382,6 +1408,32 @@ public class LMPerformanceV2Functions
                             }
                             else
                             {
+                                // No disk datasources found
+                                var availableDs = datasources.Items.Select(d => d.DataSourceName).Take(10);
+                                metricDebugInfo.Add($"{mapping.MetricName}=NO_DS");
+                                _logger.LogWarning("Device {DeviceId}: No disk datasource found. Patterns: [{Patterns}]. Available: [{Available}]",
+                                    device.Id, string.Join(", ", dsPatterns), string.Join(", ", availableDs));
+                            }
+                        }
+                        else
+                        {
+                            // Non-disk metrics: find first matching datasource
+                            foreach (var pattern in dsPatterns)
+                            {
+                                matchedDs = datasources.Items.FirstOrDefault(ds =>
+                                    ds.DataSourceName?.Contains(pattern, StringComparison.OrdinalIgnoreCase) == true);
+                                if (matchedDs != null)
+                                {
+                                    matchedPattern = pattern;
+                                    break;
+                                }
+                            }
+
+                            if (matchedDs != null)
+                            {
+                                _logger.LogDebug("Device {DeviceId}: Found datasource '{DsName}' (ID: {DsId}) matching pattern '{Pattern}' for {Metric}",
+                                    device.Id, matchedDs.DataSourceName, matchedDs.Id, matchedPattern, mapping.MetricName);
+
                                 // Standard metric processing
                                 var data = await FetchMetricDataAsync(lmService, device.Id, matchedDs.Id, dpPatterns, start7Day, end, mapping.MetricName);
                                 if (data.HasValue)
@@ -1408,14 +1460,14 @@ public class LMPerformanceV2Functions
                                         device.Id, matchedDs.DataSourceName, mapping.MetricName);
                                 }
                             }
-                        }
-                        else
-                        {
-                            // Log which datasources were available
-                            var availableDs = datasources.Items.Select(d => d.DataSourceName).Take(10);
-                            metricDebugInfo.Add($"{mapping.MetricName}=NO_DS");
-                            _logger.LogWarning("Device {DeviceId}: No datasource found for {Metric}. Patterns: [{Patterns}]. Available: [{Available}]",
-                                device.Id, mapping.MetricName, string.Join(", ", dsPatterns), string.Join(", ", availableDs));
+                            else
+                            {
+                                // Log which datasources were available
+                                var availableDs = datasources.Items.Select(d => d.DataSourceName).Take(10);
+                                metricDebugInfo.Add($"{mapping.MetricName}=NO_DS");
+                                _logger.LogWarning("Device {DeviceId}: No datasource found for {Metric}. Patterns: [{Patterns}]. Available: [{Available}]",
+                                    device.Id, mapping.MetricName, string.Join(", ", dsPatterns), string.Join(", ", availableDs));
+                            }
                         }
                     }
                     
