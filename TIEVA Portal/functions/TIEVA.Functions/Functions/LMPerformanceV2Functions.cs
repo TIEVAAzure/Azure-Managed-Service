@@ -2886,6 +2886,7 @@ public class LMPerformanceV2Functions
             var discoveredTypes = new Dictionary<string, DiscoveredResourceType>();
             var devicesScannedCount = 0;
             var liveScannedCount = 0;
+            var alreadyScannedDatasources = new HashSet<string>();
 
             // PHASE 1: Always do fast database scan first
             // Use AvailableDatasourcesJson which stores the list of datasource names
@@ -2941,9 +2942,32 @@ public class LMPerformanceV2Functions
             {
                 _logger.LogInformation("Starting Phase 2: Live API scan to discover datapoints");
 
+                // Get datasources that already have mappings in the database (already scanned)
+                // Include both active mappings and marker mappings (IsActive = false)
+                var existingMappings = await _db.LMMetricMappings
+                    .Select(m => m.DatasourcePatternsJson)
+                    .ToListAsync();
+
+                foreach (var json in existingMappings)
+                {
+                    try
+                    {
+                        var patterns = JsonSerializer.Deserialize<string[]>(json ?? "[]") ?? Array.Empty<string>();
+                        foreach (var p in patterns)
+                        {
+                            if (p.StartsWith("Microsoft_Azure_"))
+                                alreadyScannedDatasources.Add(p);
+                        }
+                    }
+                    catch { }
+                }
+
+                _logger.LogInformation("Found {Count} datasources already have mappings in database", alreadyScannedDatasources.Count);
+
                 // Find datasources that need datapoints (limited to prevent timeout)
+                // Skip datasources that already have mappings
                 var allDatasourcesNeedingDatapoints = discoveredDatasources.Values
-                    .Where(ds => ds.Datapoints.Count == 0)
+                    .Where(ds => ds.Datapoints.Count == 0 && !alreadyScannedDatasources.Contains(ds.Name))
                     .Select(ds => ds.Name)
                     .ToList();
 
@@ -2952,7 +2976,7 @@ public class LMPerformanceV2Functions
                     .Take(liveScanLimit)
                     .ToHashSet();
 
-                _logger.LogInformation("Need to discover datapoints for {Total} datasources, scanning {Limit} this batch",
+                _logger.LogInformation("Need to discover datapoints for {Total} datasources (excluding already mapped), scanning {Limit} this batch",
                     totalNeedingDatapoints, datasourcesNeedingDatapoints.Count);
 
                 if (datasourcesNeedingDatapoints.Any())
@@ -3033,11 +3057,17 @@ public class LMPerformanceV2Functions
                                     }
                                 }
 
+                                // Mark this datasource as scanned (even if no datapoints found)
+                                discoveredDatasources[dsName].WasLiveScanned = true;
+
                                 await Task.Delay(100); // Rate limiting
                             }
                             catch (Exception ex)
                             {
                                 _logger.LogWarning(ex, "Error fetching datapoints for {Datasource}", dsName);
+                                // Still mark as scanned so we don't retry failed ones endlessly
+                                if (discoveredDatasources.ContainsKey(dsName))
+                                    discoveredDatasources[dsName].WasLiveScanned = true;
                             }
                         }
                     }
@@ -3103,12 +3133,72 @@ public class LMPerformanceV2Functions
                 }
             }
 
+            // Track datasources that were scanned but had no useful metrics
+            var scannedNoMetrics = discoveredDatasources.Values
+                .Where(ds => ds.WasLiveScanned && ds.Datapoints.Count == 0)
+                .Select(ds => ds.Name)
+                .ToList();
+
             // If not dry run, create/update database records
             var created = new List<string>();
             var updated = new List<string>();
+            var markedAsScanned = new List<string>();
 
             if (!dryRun)
             {
+                // First, create marker mappings for datasources that were scanned but had no datapoints
+                // This prevents them from being scanned again
+                foreach (var dsName in scannedNoMetrics)
+                {
+                    var resourceTypeCode = DetermineResourceTypeFromDatasource(dsName);
+
+                    // Check if a mapping already exists for this datasource
+                    var existingMapping = await _db.LMMetricMappings
+                        .FirstOrDefaultAsync(m => m.DatasourcePatternsJson.Contains(dsName));
+
+                    if (existingMapping == null)
+                    {
+                        // Get or create the resource type
+                        var resourceType = await _db.LMResourceTypes.FirstOrDefaultAsync(rt => rt.Code == resourceTypeCode);
+                        if (resourceType == null)
+                        {
+                            resourceType = new LMResourceType
+                            {
+                                Code = resourceTypeCode,
+                                DisplayName = GetResourceTypeDisplayName(resourceTypeCode),
+                                Category = GetResourceTypeCategory(resourceTypeCode),
+                                DetectionPatternsJson = JsonSerializer.Serialize(new[] { dsName }),
+                                HasPerformanceMetrics = false, // No useful metrics found
+                                ShowInDashboard = false,
+                                IsActive = true,
+                                SortOrder = 999,
+                                CreatedAt = DateTime.UtcNow,
+                                UpdatedAt = DateTime.UtcNow
+                            };
+                            _db.LMResourceTypes.Add(resourceType);
+                            await _db.SaveChangesAsync();
+                        }
+
+                        // Create a marker mapping (inactive) to track that this datasource was scanned
+                        var markerMapping = new LMMetricMapping
+                        {
+                            ResourceTypeId = resourceType.Id,
+                            MetricName = "_NoUsefulMetrics",
+                            DisplayName = "No useful metrics found",
+                            Unit = "",
+                            DatasourcePatternsJson = JsonSerializer.Serialize(new[] { dsName }),
+                            DatapointPatternsJson = "[]",
+                            IsActive = false, // Marker only, not used for actual metrics
+                            SortOrder = 999,
+                            CreatedAt = DateTime.UtcNow,
+                            UpdatedAt = DateTime.UtcNow
+                        };
+                        _db.LMMetricMappings.Add(markerMapping);
+                        await _db.SaveChangesAsync();
+                        markedAsScanned.Add(dsName);
+                    }
+                }
+
                 foreach (var type in discoveredTypes.Values.Where(t => t.Metrics.Any()))
                 {
                     // Check if resource type exists
@@ -3204,7 +3294,11 @@ public class LMPerformanceV2Functions
 
             var response = req.CreateResponse(HttpStatusCode.OK);
             var newFromLiveScan = discoveredDatasources.Values.Count(d => d.IsNewFromLiveScan);
-            var remainingToScan = discoveredDatasources.Values.Count(d => d.Datapoints.Count == 0);
+            // Remaining = those with no datapoints AND weren't just scanned AND don't have a marker mapping
+            var remainingToScan = discoveredDatasources.Values.Count(d =>
+                d.Datapoints.Count == 0 &&
+                !d.WasLiveScanned &&
+                !alreadyScannedDatasources.Contains(d.Name));
 
             await response.WriteAsJsonAsync(new
             {
@@ -3214,12 +3308,14 @@ public class LMPerformanceV2Functions
                 summary = new
                 {
                     datasourcesDiscovered = discoveredDatasources.Count,
+                    alreadyScanned = alreadyScannedDatasources.Count,
                     newFromLiveScan,
                     resourceTypesFound = discoveredTypes.Count,
                     typesWithMetrics = discoveredTypes.Values.Count(t => t.Metrics.Any()),
                     totalMetricsFound = discoveredTypes.Values.Sum(t => t.Metrics.Count),
                     created = created.Count,
                     updated = updated.Count,
+                    markedAsNoMetrics = markedAsScanned.Count,
                     devicesScanned = devicesScannedCount,
                     liveDevicesScanned = liveScannedCount,
                     remainingToScan = scanLive ? remainingToScan : 0,
@@ -3274,6 +3370,7 @@ public class LMPerformanceV2Functions
         public int DeviceCount { get; set; }
         public HashSet<string> Datapoints { get; set; } = new();
         public bool IsNewFromLiveScan { get; set; }
+        public bool WasLiveScanned { get; set; } // Tracks if we attempted to scan this datasource
     }
 
     private class DiscoveredResourceType
