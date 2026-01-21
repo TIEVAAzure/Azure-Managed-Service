@@ -102,52 +102,40 @@
 ---
 
 ### Issue #12: Disk Calculation Producing Negative Percentages
-**Status**: ✅ FIXED
+**Status**: ✅ FIXED - VERIFIED WORKING
 **Reported**: 2026-01-20
 **Updated**: 2026-01-21
 
-**Problem**: Many disks show negative percentage calculations and get filtered out as invalid.
+**Problem**: Many disks show negative percentage calculations and get filtered out as invalid. Also C: drive missing on some servers.
 
-**Evidence from logs**:
-```
-Device 527 Disk C:: RAW VALUES - Capacity[0]=14411145216, FreeSpace[0]=79.1944
-Device 527 Disk C:: Unit mismatch detected - converting Capacity from bytes to GB
-Device 527 Disk C:: CALC - 100 - (79.1944/13.4214...) = -490.1%
-Device 527 Disk C:: Calculated 0 valid percentages from 500 data points
-```
+**Root Causes Found & Fixed**:
 
-**Root Cause**: FreeSpace is already in GB (79.19 GB) while Capacity is in bytes (14.4B). The code was converting Capacity to GB but assuming FreeSpace was also in bytes, causing: `100 - (79GB / 13.4GB * 100) = -490%`
+1. **Unit mismatch** - Capacity in bytes, FreeSpace in GB
+   - `100 - (79GB / 13.4GB * 100) = -490%` ❌
 
-**Fix Applied** (in `LMPerformanceV2Functions.cs`):
-- Added smart unit detection for three cases:
-  1. **Both in bytes** → Convert both to GB
-  2. **Capacity in bytes, FreeSpace in GB** → Convert only Capacity
-  3. **Both in same unit** → No conversion needed
-- Logic: If `Capacity > 1 billion` and `FreeSpace < 1 billion`, FreeSpace is already in GB
-- Added detailed logging for each conversion scenario
+2. **FreeSpace already a percentage** - Some devices return FreeSpace as % not GB
+   - Device 535: Capacity=29.3GB, FreeSpace=63.05 → FreeSpace is 63% free, not 63GB
 
-**Code Change**:
-```csharp
-// Before: Only converted Capacity, assumed FreeSpace needed same treatment
-var needsConversion = sampleCap > 1_000_000_000 && sampleFree < 100_000;
+3. **Only first datasource checked** - C: might be in `WinVolumeUsage`, D:/L:/S: in `WinLogicalDisk`
 
-// After: Detect each value's unit independently
-if (sampleCap > 1_000_000_000) // Capacity is in bytes
-{
-    if (sampleFree > 1_000_000_000) // Both in bytes
-    {
-        convertCapacityToGB = true;
-        convertFreeToGB = true;
-    }
-    else // Capacity in bytes, FreeSpace already in GB
-    {
-        convertCapacityToGB = true;
-        convertFreeToGB = false;
-    }
-}
-```
+**Fixes Applied** (in `LMPerformanceV2Functions.cs`):
 
-**Expected Result**: Devices 87, 527 and others should now show valid disk percentages instead of "No disk data found"
+| Fix | Description |
+|-----|-------------|
+| ✅ Unit detection | Detect if both values in bytes, mixed units, or same unit |
+| ✅ FreeSpace % detection | If FreeSpace > Capacity (in GB), FreeSpace is already a percentage |
+| ✅ All disk datasources | Fetch from ALL matching datasources, not just first match |
+| ✅ Detailed logging | Log conversion strategy for each disk |
+
+**Commits**:
+- `b674ed8` - Initial unit mismatch fix
+- `95970a3` - Fetch from all disk datasources
+- `9afce4f` - Detect FreeSpace as percentage
+
+**Verified Working**:
+- Device 535: Now shows C: (37%), D: (98.8%), L: (92.9%), S: (97.1%)
+- Device 517: Now shows C: (13.5%), D: (96.4%)
+- Device 518: C: detected as percentage (55.1%)
 
 ---
 
@@ -411,16 +399,47 @@ if (_remainingRequests <= 5 && DateTime.UtcNow < _rateLimitReset)
 
 ---
 
+### Issue #18: Memory Showing "-" on Some Servers
+**Status**: ✅ FIXED - VERIFIED WORKING
+**Reported**: 2026-01-21
+**Updated**: 2026-01-21
+
+**Problem**: Memory showing "-" on Device 535 and others despite having memory data available.
+
+**Root Causes Found & Fixed**:
+
+1. **Free > Total impossible** - Device 535 showed Free=1,775,596, Total=1,397,320
+   - This is mathematically impossible, indicates wrong datapoint indices
+
+2. **Limited percentage datapoints checked** - Only tried `MemoryUtilizationPercent`
+   - Device 535 had `PercentVirtualMemoryInUse` available but not checked
+
+**Fixes Applied** (in `LMPerformanceV2Functions.cs`):
+
+| Fix | Description |
+|-----|-------------|
+| ✅ Multiple % datapoints | Try: MemoryUtilizationPercent, PercentMemoryUsed, PercentVirtualMemoryInUse, UsedMemoryPercent |
+| ✅ Auto-swap Free/Total | If Free > Total, swap values (handles wrong indices) |
+| ✅ Better logging | Log which datapoint was used |
+
+**Commit**: `6e4f88f`
+
+**Verified Working**: Memory now displays correctly using available percentage datapoints
+
+---
+
 ## ✅ COMPLETED ISSUES
 
 | Issue | Fixed | Solution |
 |-------|-------|----------|
 | Device Modal "No metrics found" | 2026-01-20 | Changed frontend to V2 endpoint |
 | CPU showing millions % | 2026-01-20 | Percentage validation (reject >100) |
-| Memory showing "-" | 2026-01-20 | MemoryUtilizationPercent + CALC fallback |
+| Memory showing "-" | 2026-01-21 | Multiple % datapoints + auto-swap Free/Total |
 | Disk showing 100% | 2026-01-20 | Unit conversion (bytes to GB) |
 | Only one disk shown | 2026-01-20 | FetchAllDiskMetricsAsync processes all |
 | Individual disks in UI | 2026-01-20 | Added disk cards ✅ Deployed |
+| Disk negative percentages | 2026-01-21 | Unit detection + FreeSpace % detection |
+| Missing C: drive | 2026-01-21 | Check ALL disk datasources |
 
 ---
 
@@ -429,7 +448,7 @@ if (_remainingRequests <= 5 && DateTime.UtcNow < _rateLimitReset)
 **Working** ✅:
 | Resource Type | Count | CPU | Memory | Disk |
 |--------------|-------|-----|--------|------|
-| Windows Server | 4 | ✅ | ✅ | ✅ |
+| Windows Server | 4 | ✅ | ✅ | ✅ (all drives incl. C:) |
 | Azure App Service | 35 | ✅ | - | - |
 | Azure Managed Disk | 27 | - | - | ✅ (16) |
 | Azure Storage Account | 82 | - | - | ✅ (16) |
@@ -444,4 +463,15 @@ if (_remainingRequests <= 5 && DateTime.UtcNow < _rateLimitReset)
 
 ---
 
-*Last Updated: 2026-01-21 22:00 UTC*
+## 📝 Today's Fixes (2026-01-21)
+
+| Commit | Fix |
+|--------|-----|
+| `b674ed8` | Disk: Initial unit mismatch fix (Capacity bytes, FreeSpace GB) |
+| `95970a3` | Disk: Fetch from ALL matching datasources (finds C: drive) |
+| `9afce4f` | Disk: Detect when FreeSpace is already a percentage |
+| `6e4f88f` | Memory: Multiple % datapoints + auto-swap Free/Total |
+
+---
+
+*Last Updated: 2026-01-21 10:45 UTC*
