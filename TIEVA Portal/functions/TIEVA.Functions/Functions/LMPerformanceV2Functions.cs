@@ -2929,100 +2929,104 @@ public class LMPerformanceV2Functions
 
             _logger.LogInformation("Database scan found {DatasourceCount} unique Azure datasources", discoveredDatasources.Count);
 
-            // PHASE 2: Optional live API scan for NEW datasources not in database
+            // PHASE 2: Optional live API scan to get datapoints for datasources
             if (scanLive)
             {
-                _logger.LogInformation("Starting Phase 2: Live API scan for new resource types");
+                _logger.LogInformation("Starting Phase 2: Live API scan to discover datapoints");
 
-                // Get active LM-enabled customers
-                var customers = await _db.Customers
-                    .Where(c => c.LMEnabled && c.IsActive)
-                    .Take(3) // Limit to 3 customers to keep it fast
-                    .ToListAsync();
+                // Find datasources that need datapoints
+                var datasourcesNeedingDatapoints = discoveredDatasources.Values
+                    .Where(ds => ds.Datapoints.Count == 0)
+                    .Select(ds => ds.Name)
+                    .ToHashSet();
 
-                foreach (var customer in customers)
+                _logger.LogInformation("Need to discover datapoints for {Count} datasources", datasourcesNeedingDatapoints.Count);
+
+                if (datasourcesNeedingDatapoints.Any())
                 {
-                    try
+                    // For each datasource needing datapoints, find ONE device that has it
+                    var datasourceToDevice = new Dictionary<string, (Guid CustomerId, int DeviceId)>();
+
+                    // Query all devices with their datasources to find matches
+                    var allDevicesWithDs = await _db.LMDeviceMetricsV2
+                        .Where(d => d.AvailableDatasourcesJson != null && d.AvailableDatasourcesJson != "[]")
+                        .Select(d => new { d.CustomerId, d.DeviceId, d.AvailableDatasourcesJson })
+                        .ToListAsync();
+
+                    foreach (var device in allDevicesWithDs)
                     {
-                        var lmService = await GetLogicMonitorServiceAsync(customer.Id, _db);
+                        try
+                        {
+                            var deviceDatasources = JsonSerializer.Deserialize<List<string>>(device.AvailableDatasourcesJson ?? "[]") ?? new();
+                            foreach (var ds in deviceDatasources)
+                            {
+                                if (datasourcesNeedingDatapoints.Contains(ds) && !datasourceToDevice.ContainsKey(ds))
+                                {
+                                    datasourceToDevice[ds] = (device.CustomerId, device.DeviceId);
+                                }
+                            }
+                        }
+                        catch { }
+
+                        // Stop if we found a device for each datasource
+                        if (datasourceToDevice.Count >= datasourcesNeedingDatapoints.Count)
+                            break;
+                    }
+
+                    _logger.LogInformation("Found devices for {Count} datasources", datasourceToDevice.Count);
+
+                    // Group by customer to minimize LM service creation
+                    var byCustomer = datasourceToDevice.GroupBy(x => x.Value.CustomerId);
+
+                    foreach (var customerGroup in byCustomer)
+                    {
+                        var customerId = customerGroup.Key;
+                        var lmService = await GetLogicMonitorServiceAsync(customerId, _db);
                         if (lmService == null) continue;
 
-                        // Get just the first few devices with Azure datasources
-                        var devices = await _db.LMDeviceMetricsV2
-                            .Where(d => d.CustomerId == customer.Id)
-                            .OrderByDescending(d => d.LastSyncedAt)
-                            .Take(5) // Just 5 devices per customer
-                            .ToListAsync();
-
-                        foreach (var device in devices)
+                        foreach (var kvp in customerGroup)
                         {
+                            var dsName = kvp.Key;
+                            var deviceId = kvp.Value.DeviceId;
+
                             try
                             {
                                 liveScannedCount++;
-                                var dsResponse = await lmService.GetDeviceDatasourcesAsync(device.DeviceId);
-                                if (dsResponse?.Items == null) continue;
+                                _logger.LogInformation("Fetching datapoints for {Datasource} from device {DeviceId}", dsName, deviceId);
 
-                                foreach (var ds in dsResponse.Items.Where(d => d.DataSourceName?.StartsWith("Microsoft_Azure_") == true))
+                                // Get datasource ID for this device
+                                var dsResponse = await lmService.GetDeviceDatasourcesAsync(deviceId);
+                                var targetDs = dsResponse?.Items?.FirstOrDefault(d => d.DataSourceName == dsName);
+
+                                if (targetDs != null)
                                 {
-                                    var dsName = ds.DataSourceName!;
-
-                                    // Check if we need to discover datapoints for this datasource
-                                    var needsDatapoints = !discoveredDatasources.ContainsKey(dsName) ||
-                                                          discoveredDatasources[dsName].Datapoints.Count == 0;
-
-                                    if (needsDatapoints)
+                                    var instancesResponse = await lmService.GetDatasourceInstancesAsync(deviceId, targetDs.Id);
+                                    if (instancesResponse?.Items?.Any() == true)
                                     {
-                                        var isNew = !discoveredDatasources.ContainsKey(dsName);
-                                        if (isNew)
-                                        {
-                                            _logger.LogInformation("Found NEW datasource via live scan: {Datasource}", dsName);
-                                            discoveredDatasources[dsName] = new DiscoveredDatasource
-                                            {
-                                                Name = dsName,
-                                                DisplayName = ds.DataSourceDisplayName ?? dsName.Replace("Microsoft_Azure_", "").Replace("_", " "),
-                                                DeviceCount = 1,
-                                                Datapoints = new HashSet<string>(),
-                                                IsNewFromLiveScan = true
-                                            };
-                                        }
-                                        else
-                                        {
-                                            _logger.LogInformation("Fetching datapoints for existing datasource: {Datasource}", dsName);
-                                        }
+                                        var firstInstance = instancesResponse.Items.First();
+                                        var dataResponse = await lmService.GetInstanceDataAsync(
+                                            deviceId, targetDs.Id, firstInstance.Id,
+                                            DateTime.UtcNow.AddHours(-1), DateTime.UtcNow);
 
-                                        // Get datapoints for this datasource
-                                        var instancesResponse = await lmService.GetDatasourceInstancesAsync(device.DeviceId, ds.Id);
-                                        if (instancesResponse?.Items?.Any() == true)
+                                        if (dataResponse?.DataPoints != null)
                                         {
-                                            var firstInstance = instancesResponse.Items.First();
-                                            var dataResponse = await lmService.GetInstanceDataAsync(
-                                                device.DeviceId, ds.Id, firstInstance.Id,
-                                                DateTime.UtcNow.AddHours(-1), DateTime.UtcNow);
-
-                                            if (dataResponse?.DataPoints != null)
+                                            foreach (var dp in dataResponse.DataPoints)
                                             {
-                                                foreach (var dp in dataResponse.DataPoints)
-                                                {
-                                                    discoveredDatasources[dsName].Datapoints.Add(dp);
-                                                }
-                                                _logger.LogInformation("Found {Count} datapoints for {Datasource}",
-                                                    dataResponse.DataPoints.Count, dsName);
+                                                discoveredDatasources[dsName].Datapoints.Add(dp);
                                             }
+                                            _logger.LogInformation("Found {Count} datapoints for {Datasource}",
+                                                dataResponse.DataPoints.Count, dsName);
                                         }
-
-                                        await Task.Delay(100); // Rate limiting
                                     }
                                 }
+
+                                await Task.Delay(100); // Rate limiting
                             }
                             catch (Exception ex)
                             {
-                                _logger.LogWarning(ex, "Error scanning device {DeviceId} live", device.DeviceId);
+                                _logger.LogWarning(ex, "Error fetching datapoints for {Datasource}", dsName);
                             }
                         }
-                    }
-                    catch (Exception ex)
-                    {
-                        _logger.LogWarning(ex, "Error scanning customer {CustomerName} live", customer.Name);
                     }
                 }
 
