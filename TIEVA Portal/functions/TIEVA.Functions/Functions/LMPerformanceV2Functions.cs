@@ -2875,6 +2875,13 @@ public class LMPerformanceV2Functions
             var scanLive = options.ValueKind == JsonValueKind.Object &&
                            options.TryGetProperty("scanLive", out var liveProp) && liveProp.GetBoolean();
 
+            // Limit live scan to prevent timeouts (default 10, max 25)
+            var liveScanLimit = 10;
+            if (options.ValueKind == JsonValueKind.Object && options.TryGetProperty("liveScanLimit", out var limitProp))
+            {
+                liveScanLimit = Math.Min(25, Math.Max(1, limitProp.GetInt32()));
+            }
+
             var discoveredDatasources = new Dictionary<string, DiscoveredDatasource>();
             var discoveredTypes = new Dictionary<string, DiscoveredResourceType>();
             var devicesScannedCount = 0;
@@ -2934,13 +2941,19 @@ public class LMPerformanceV2Functions
             {
                 _logger.LogInformation("Starting Phase 2: Live API scan to discover datapoints");
 
-                // Find datasources that need datapoints
-                var datasourcesNeedingDatapoints = discoveredDatasources.Values
+                // Find datasources that need datapoints (limited to prevent timeout)
+                var allDatasourcesNeedingDatapoints = discoveredDatasources.Values
                     .Where(ds => ds.Datapoints.Count == 0)
                     .Select(ds => ds.Name)
+                    .ToList();
+
+                var totalNeedingDatapoints = allDatasourcesNeedingDatapoints.Count;
+                var datasourcesNeedingDatapoints = allDatasourcesNeedingDatapoints
+                    .Take(liveScanLimit)
                     .ToHashSet();
 
-                _logger.LogInformation("Need to discover datapoints for {Count} datasources", datasourcesNeedingDatapoints.Count);
+                _logger.LogInformation("Need to discover datapoints for {Total} datasources, scanning {Limit} this batch",
+                    totalNeedingDatapoints, datasourcesNeedingDatapoints.Count);
 
                 if (datasourcesNeedingDatapoints.Any())
                 {
@@ -3183,6 +3196,7 @@ public class LMPerformanceV2Functions
 
             var response = req.CreateResponse(HttpStatusCode.OK);
             var newFromLiveScan = discoveredDatasources.Values.Count(d => d.IsNewFromLiveScan);
+            var remainingToScan = discoveredDatasources.Values.Count(d => d.Datapoints.Count == 0);
 
             await response.WriteAsJsonAsync(new
             {
@@ -3199,7 +3213,13 @@ public class LMPerformanceV2Functions
                     created = created.Count,
                     updated = updated.Count,
                     devicesScanned = devicesScannedCount,
-                    liveDevicesScanned = liveScannedCount
+                    liveDevicesScanned = liveScannedCount,
+                    remainingToScan = scanLive ? remainingToScan : 0,
+                    liveScanLimit = scanLive ? liveScanLimit : 0,
+                    batchComplete = !scanLive || remainingToScan == 0,
+                    message = !scanLive ? "Database scan only - enable Live Scan for full discovery"
+                        : remainingToScan > 0 ? $"Batch complete. Run again to scan {remainingToScan} more datasources."
+                        : "All datasources scanned!"
                 },
                 created,
                 updated,
