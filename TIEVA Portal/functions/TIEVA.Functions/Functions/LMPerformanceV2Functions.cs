@@ -2966,21 +2966,31 @@ public class LMPerformanceV2Functions
                                 {
                                     var dsName = ds.DataSourceName!;
 
-                                    // Only scan if we don't already know this datasource
-                                    if (!discoveredDatasources.ContainsKey(dsName))
+                                    // Check if we need to discover datapoints for this datasource
+                                    var needsDatapoints = !discoveredDatasources.ContainsKey(dsName) ||
+                                                          discoveredDatasources[dsName].Datapoints.Count == 0;
+
+                                    if (needsDatapoints)
                                     {
-                                        _logger.LogInformation("Found NEW datasource via live scan: {Datasource}", dsName);
-
-                                        discoveredDatasources[dsName] = new DiscoveredDatasource
+                                        var isNew = !discoveredDatasources.ContainsKey(dsName);
+                                        if (isNew)
                                         {
-                                            Name = dsName,
-                                            DisplayName = ds.DataSourceDisplayName ?? dsName.Replace("Microsoft_Azure_", "").Replace("_", " "),
-                                            DeviceCount = 1,
-                                            Datapoints = new HashSet<string>(),
-                                            IsNewFromLiveScan = true
-                                        };
+                                            _logger.LogInformation("Found NEW datasource via live scan: {Datasource}", dsName);
+                                            discoveredDatasources[dsName] = new DiscoveredDatasource
+                                            {
+                                                Name = dsName,
+                                                DisplayName = ds.DataSourceDisplayName ?? dsName.Replace("Microsoft_Azure_", "").Replace("_", " "),
+                                                DeviceCount = 1,
+                                                Datapoints = new HashSet<string>(),
+                                                IsNewFromLiveScan = true
+                                            };
+                                        }
+                                        else
+                                        {
+                                            _logger.LogInformation("Fetching datapoints for existing datasource: {Datasource}", dsName);
+                                        }
 
-                                        // Get datapoints for this new datasource
+                                        // Get datapoints for this datasource
                                         var instancesResponse = await lmService.GetDatasourceInstancesAsync(device.DeviceId, ds.Id);
                                         if (instancesResponse?.Items?.Any() == true)
                                         {
@@ -2995,6 +3005,8 @@ public class LMPerformanceV2Functions
                                                 {
                                                     discoveredDatasources[dsName].Datapoints.Add(dp);
                                                 }
+                                                _logger.LogInformation("Found {Count} datapoints for {Datasource}",
+                                                    dataResponse.DataPoints.Count, dsName);
                                             }
                                         }
 
