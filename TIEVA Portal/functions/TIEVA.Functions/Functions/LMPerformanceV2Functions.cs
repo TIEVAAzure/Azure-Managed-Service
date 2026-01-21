@@ -1287,10 +1287,13 @@ public class LMPerformanceV2Functions
                         .ToList();
                     metrics.AvailableDatasourcesJson = JsonSerializer.Serialize(allDsNames);
 
-                    // Match to resource type
-                    var matchedType = MatchResourceType(allDsNames, resourceTypes);
-                    metrics.DetectedTypeCode = matchedType?.Code ?? "Unknown";
-                    metrics.ResourceTypeCode = matchedType?.Code ?? "Unknown";
+                    // Classify device using simple hardcoded logic (no database lookup)
+                    var typeCode = ClassifyDevice(allDsNames);
+                    metrics.DetectedTypeCode = typeCode;
+                    metrics.ResourceTypeCode = typeCode;
+
+                    // Find the resource type in database for metric mappings (optional - may not exist)
+                    var matchedType = resourceTypes.FirstOrDefault(rt => rt.Code.Equals(typeCode, StringComparison.OrdinalIgnoreCase));
                     metrics.ResourceTypeId = matchedType?.Id;
 
                     if (matchedType == null || !matchedType.HasPerformanceMetrics || !matchedType.MetricMappings.Any())
@@ -1567,23 +1570,232 @@ public class LMPerformanceV2Functions
     }
 
     /// <summary>
-    /// Match device to resource type based on datasources
+    /// Simple, fast device classification based on datasources.
+    /// Returns a resource type CODE (not the full object).
+    /// Uses hardcoded logic - no database lookups, no priority bugs.
+    /// </summary>
+    private static string ClassifyDevice(List<string> datasources)
+    {
+        if (datasources == null || !datasources.Any())
+            return "Unknown";
+
+        // Generic/metadata datasources that appear on almost everything - ignore these for classification
+        var dominated = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            "LogUsage", "Whois_TTL_Expiry", "HostStatus", "Ping", "PingMulti-",
+            "SSL_Certificates", "SSL_Certificate_Chains", "HTTP-", "HTTPS",
+            "Microsoft_Azure_ResourceHealth", "Port-"
+        };
+
+        // Get meaningful datasources (exclude generic ones)
+        var meaningful = datasources
+            .Where(d => !dominated.Any(dom => d.Equals(dom, StringComparison.OrdinalIgnoreCase) ||
+                                              d.StartsWith(dom, StringComparison.OrdinalIgnoreCase)))
+            .ToList();
+
+        // If nothing meaningful, check what generic ones we have
+        if (!meaningful.Any())
+        {
+            if (datasources.Any(d => d.Equals("LogUsage", StringComparison.OrdinalIgnoreCase)))
+                return "LogUsage";
+            return "MetadataOnly";
+        }
+
+        // === AZURE SPECIFIC TYPES (check most specific first) ===
+
+        // Azure VMs
+        if (meaningful.Any(d => d.StartsWith("Microsoft_Azure_VMs", StringComparison.OrdinalIgnoreCase)))
+            return "AzureVM";
+
+        // Azure SQL
+        if (meaningful.Any(d => d.StartsWith("Microsoft_Azure_SQLDatabase", StringComparison.OrdinalIgnoreCase)))
+            return "AzureSQLDatabase";
+
+        // Azure App Service
+        if (meaningful.Any(d => d.StartsWith("Microsoft_Azure_AppService", StringComparison.OrdinalIgnoreCase)))
+            return "AppService";
+
+        // Azure Functions
+        if (meaningful.Any(d => d.StartsWith("Microsoft_Azure_Function", StringComparison.OrdinalIgnoreCase)))
+            return "AzureFunction";
+
+        // Azure Storage
+        if (meaningful.Any(d => d.StartsWith("Microsoft_Azure_StorageAccount", StringComparison.OrdinalIgnoreCase) ||
+                               d.StartsWith("Microsoft_Azure_BlobStorage", StringComparison.OrdinalIgnoreCase)))
+            return "AzureStorage";
+
+        // Azure File Storage
+        if (meaningful.Any(d => d.StartsWith("Microsoft_Azure_FileStorage", StringComparison.OrdinalIgnoreCase)))
+            return "AzureFileStorage";
+
+        // Azure Queue Storage
+        if (meaningful.Any(d => d.StartsWith("Microsoft_Azure_QueueStorage", StringComparison.OrdinalIgnoreCase)))
+            return "AzureQueueStorage";
+
+        // Azure Table Storage
+        if (meaningful.Any(d => d.StartsWith("Microsoft_Azure_TableStorage", StringComparison.OrdinalIgnoreCase)))
+            return "AzureTableStorage";
+
+        // Azure Disk
+        if (meaningful.Any(d => d.StartsWith("Microsoft_Azure_Disk", StringComparison.OrdinalIgnoreCase)))
+            return "AzureDisk";
+
+        // Azure Redis
+        if (meaningful.Any(d => d.StartsWith("Microsoft_Azure_Redis", StringComparison.OrdinalIgnoreCase)))
+            return "Redis";
+
+        // Azure Cosmos DB
+        if (meaningful.Any(d => d.StartsWith("Microsoft_Azure_CosmosDB", StringComparison.OrdinalIgnoreCase)))
+            return "CosmosDB";
+
+        // Azure Key Vault
+        if (meaningful.Any(d => d.StartsWith("Microsoft_Azure_KeyVault", StringComparison.OrdinalIgnoreCase)))
+            return "AzureKeyVault";
+
+        // Azure Service Bus
+        if (meaningful.Any(d => d.StartsWith("Microsoft_Azure_ServiceBus", StringComparison.OrdinalIgnoreCase)))
+            return "AzureServiceBus";
+
+        // Azure Event Hubs
+        if (meaningful.Any(d => d.StartsWith("Microsoft_Azure_EventHub", StringComparison.OrdinalIgnoreCase)))
+            return "AzureEventHubs";
+
+        // Azure Container Registry
+        if (meaningful.Any(d => d.StartsWith("Microsoft_Azure_ContainerRegistry", StringComparison.OrdinalIgnoreCase)))
+            return "AzureContainerRegistry";
+
+        // Azure Container Instances
+        if (meaningful.Any(d => d.StartsWith("Microsoft_Azure_ContainerInstance", StringComparison.OrdinalIgnoreCase)))
+            return "AzureContainerInstance";
+
+        // Azure Kubernetes (AKS)
+        if (meaningful.Any(d => d.StartsWith("Microsoft_Azure_Kubernetes", StringComparison.OrdinalIgnoreCase)))
+            return "AKS";
+
+        // Azure Recovery Services / Backup
+        if (meaningful.Any(d => d.StartsWith("Microsoft_Azure_RecoveryService", StringComparison.OrdinalIgnoreCase) ||
+                               d.StartsWith("Microsoft_Azure_BackupJob", StringComparison.OrdinalIgnoreCase) ||
+                               d.StartsWith("Microsoft_Azure_BackupProtected", StringComparison.OrdinalIgnoreCase)))
+            return "AzureBackup";
+
+        // Azure Log Analytics
+        if (meaningful.Any(d => d.StartsWith("Microsoft_Azure_LogAnalytics", StringComparison.OrdinalIgnoreCase)))
+            return "LogAnalytics";
+
+        // Azure Application Insights
+        if (meaningful.Any(d => d.StartsWith("Microsoft_Azure_ApplicationInsights", StringComparison.OrdinalIgnoreCase)))
+            return "AppInsights";
+
+        // Azure Virtual Network Gateway
+        if (meaningful.Any(d => d.StartsWith("Microsoft_Azure_VirtualNetworkGateway", StringComparison.OrdinalIgnoreCase)))
+            return "AzureVirtualNetworkGateway";
+
+        // Azure Load Balancer
+        if (meaningful.Any(d => d.StartsWith("Microsoft_Azure_StandardLoadBalancer", StringComparison.OrdinalIgnoreCase) ||
+                               d.StartsWith("Microsoft_Azure_LoadBalancer", StringComparison.OrdinalIgnoreCase)))
+            return "AzureLoadBalancer";
+
+        // Azure Application Gateway
+        if (meaningful.Any(d => d.StartsWith("Microsoft_Azure_ApplicationGateway", StringComparison.OrdinalIgnoreCase)))
+            return "AzureAppGateway";
+
+        // Azure Front Door
+        if (meaningful.Any(d => d.StartsWith("Microsoft_Azure_FrontDoor", StringComparison.OrdinalIgnoreCase)))
+            return "AzureFrontDoor";
+
+        // Azure ExpressRoute
+        if (meaningful.Any(d => d.StartsWith("Microsoft_Azure_ExpressRoute", StringComparison.OrdinalIgnoreCase)))
+            return "AzureExpressRoute";
+
+        // Azure Public IP
+        if (meaningful.Any(d => d.StartsWith("Microsoft_Azure_PublicIP", StringComparison.OrdinalIgnoreCase)))
+            return "AzurePublicIP";
+
+        // Azure Network Interface
+        if (meaningful.Any(d => d.StartsWith("Microsoft_Azure_NetworkInterface", StringComparison.OrdinalIgnoreCase)))
+            return "AzureNIC";
+
+        // Azure Virtual Network
+        if (meaningful.Any(d => d.StartsWith("Microsoft_Azure_VirtualNetwork", StringComparison.OrdinalIgnoreCase)))
+            return "AzureVNet";
+
+        // Azure Logic Apps
+        if (meaningful.Any(d => d.StartsWith("Microsoft_Azure_LogicApp", StringComparison.OrdinalIgnoreCase)))
+            return "AzureLogicApps";
+
+        // Azure IoT Hub
+        if (meaningful.Any(d => d.StartsWith("Microsoft_Azure_IoTHub", StringComparison.OrdinalIgnoreCase)))
+            return "AzureIoTHub";
+
+        // Azure Automation
+        if (meaningful.Any(d => d.StartsWith("Microsoft_Azure_Automation", StringComparison.OrdinalIgnoreCase)))
+            return "AzureAutomation";
+
+        // Azure Active Directory
+        if (meaningful.Any(d => d.StartsWith("Microsoft_Azure_ActiveDirectory", StringComparison.OrdinalIgnoreCase)))
+            return "AzureAD";
+
+        // Generic Azure fallback - any remaining Microsoft_Azure_ datasource
+        if (meaningful.Any(d => d.StartsWith("Microsoft_Azure_", StringComparison.OrdinalIgnoreCase)))
+            return "AzureOther";
+
+        // === ON-PREMISES / NON-AZURE TYPES ===
+
+        // Windows Server (check for Windows-specific datasources)
+        if (meaningful.Any(d => d.StartsWith("Microsoft_Windows_", StringComparison.OrdinalIgnoreCase) ||
+                               d.StartsWith("WinCPU", StringComparison.OrdinalIgnoreCase) ||
+                               d.StartsWith("WinOS", StringComparison.OrdinalIgnoreCase) ||
+                               d.StartsWith("WinMemory", StringComparison.OrdinalIgnoreCase) ||
+                               d.StartsWith("WinServer", StringComparison.OrdinalIgnoreCase) ||
+                               d.StartsWith("WinVolume", StringComparison.OrdinalIgnoreCase) ||
+                               d.StartsWith("WinLogicalDrive", StringComparison.OrdinalIgnoreCase)))
+            return "WindowsServer";
+
+        // Linux Server
+        if (meaningful.Any(d => d.StartsWith("Linux", StringComparison.OrdinalIgnoreCase)))
+            return "LinuxServer";
+
+        // Hyper-V
+        if (meaningful.Any(d => d.Contains("HyperV", StringComparison.OrdinalIgnoreCase) ||
+                               d.Contains("Hyper-V", StringComparison.OrdinalIgnoreCase)))
+            return "HyperV";
+
+        // VMware
+        if (meaningful.Any(d => d.StartsWith("VMware_", StringComparison.OrdinalIgnoreCase)))
+            return "VMware";
+
+        // SQL Server (on-prem)
+        if (meaningful.Any(d => d.StartsWith("WinSQLServer", StringComparison.OrdinalIgnoreCase) ||
+                               d.StartsWith("Microsoft_SQLServer", StringComparison.OrdinalIgnoreCase)))
+            return "SQLServer";
+
+        // Active Directory (on-prem)
+        if (meaningful.Any(d => d.StartsWith("Microsoft_ActiveDirectory", StringComparison.OrdinalIgnoreCase) ||
+                               d.StartsWith("Microsoft_Windows_AD", StringComparison.OrdinalIgnoreCase)))
+            return "ActiveDirectory";
+
+        // LogicMonitor Collector
+        if (meaningful.Any(d => d.StartsWith("LogicMonitor_Collector", StringComparison.OrdinalIgnoreCase)))
+            return "LMCollector";
+
+        // Network devices (SNMP)
+        if (meaningful.Any(d => d.StartsWith("snmp", StringComparison.OrdinalIgnoreCase)))
+            return "NetworkDevice";
+
+        // If we have meaningful datasources but didn't match anything specific
+        return "Other";
+    }
+
+    /// <summary>
+    /// OLD: Match device to resource type based on datasources (database-driven)
+    /// DEPRECATED - Use ClassifyDevice() instead
+    /// Kept for backwards compatibility with admin tools
     /// </summary>
     private LMResourceType? MatchResourceType(List<string> deviceDatasources, List<LMResourceType> resourceTypes)
     {
-        foreach (var rt in resourceTypes)
-        {
-            var patterns = rt.GetDetectionPatterns();
-            if (patterns.Length == 0) continue;
-
-            // Check if any detection pattern matches any datasource
-            if (patterns.Any(pattern =>
-                deviceDatasources.Any(ds => ds.Contains(pattern, StringComparison.OrdinalIgnoreCase))))
-            {
-                return rt;
-            }
-        }
-        return null;
+        // Use new classification, then find matching resource type
+        var typeCode = ClassifyDevice(deviceDatasources);
+        return resourceTypes.FirstOrDefault(rt => rt.Code.Equals(typeCode, StringComparison.OrdinalIgnoreCase));
     }
 
     /// <summary>
@@ -2393,11 +2605,97 @@ public class LMPerformanceV2Functions
     }
 
     /// <summary>
+    /// Fix known detection pattern mismatches in the database
+    /// LogicMonitor uses different naming than expected (e.g., Function vs FunctionApps)
+    /// </summary>
+    [Function("FixDetectionPatterns")]
+    public async Task<HttpResponseData> FixDetectionPatterns(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "v2/performance/admin/fix-patterns")]
+        HttpRequestData req)
+    {
+        try
+        {
+            // Known pattern corrections: wrong -> correct
+            var patternFixes = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+            {
+                // Singular/plural mismatches
+                ["Microsoft_Azure_SQLDatabases"] = "Microsoft_Azure_SQLDatabase",
+                ["Microsoft_Azure_FunctionApps"] = "Microsoft_Azure_Function",
+                ["Microsoft_Azure_EventHubs"] = "Microsoft_Azure_EventHub",
+                ["Microsoft_Azure_ContainerInstances"] = "Microsoft_Azure_ContainerInstance",
+                ["Microsoft_Azure_StorageAccounts"] = "Microsoft_Azure_StorageAccount",
+                ["Microsoft_Azure_AppServices"] = "Microsoft_Azure_AppService",
+                // Suffix differences
+                ["Microsoft_Azure_VirtualMachines"] = "Microsoft_Azure_VMs"
+            };
+
+            var fixedPatterns = new List<object>();
+            var resourceTypes = await _db.LMResourceTypes.ToListAsync();
+
+            foreach (var rt in resourceTypes)
+            {
+                var patterns = rt.GetDetectionPatterns();
+                var needsUpdate = false;
+                var updatedPatterns = new List<string>();
+
+                foreach (var pattern in patterns)
+                {
+                    if (patternFixes.TryGetValue(pattern, out var correctPattern))
+                    {
+                        updatedPatterns.Add(correctPattern);
+                        needsUpdate = true;
+                        fixedPatterns.Add(new
+                        {
+                            resourceType = rt.Code,
+                            oldPattern = pattern,
+                            newPattern = correctPattern
+                        });
+                    }
+                    else
+                    {
+                        updatedPatterns.Add(pattern);
+                    }
+                }
+
+                if (needsUpdate)
+                {
+                    rt.DetectionPatternsJson = JsonSerializer.Serialize(updatedPatterns);
+                    rt.UpdatedAt = DateTime.UtcNow;
+                }
+            }
+
+            if (fixedPatterns.Any())
+            {
+                await _db.SaveChangesAsync();
+            }
+
+            var response = req.CreateResponse(HttpStatusCode.OK);
+            await response.WriteAsJsonAsync(new
+            {
+                success = true,
+                fixedCount = fixedPatterns.Count,
+                fixes = fixedPatterns,
+                message = fixedPatterns.Any()
+                    ? "Patterns updated. Re-run sync for customers to detect resources correctly."
+                    : "No pattern fixes needed - all patterns already correct."
+            });
+            return response;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Fix detection patterns failed");
+            var err = req.CreateResponse(HttpStatusCode.InternalServerError);
+            await err.WriteStringAsync($"Error: {ex.Message}");
+            return err;
+        }
+    }
+
+    /// <summary>
     /// Get resource type health/configuration status
     /// </summary>
     [Function("GetResourceTypeHealth")]
     public async Task<HttpResponseData> GetResourceTypeHealth(
-        [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "v2/performance/admin/health")] 
+        [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "v2/performance/admin/health")]
         HttpRequestData req)
     {
         try
