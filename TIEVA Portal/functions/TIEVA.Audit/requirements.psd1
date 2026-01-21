@@ -13,5 +13,8 @@
     'Az.Security' = '1.*'
     'Az.Maintenance' = '1.*'
     'Az.Advisor' = '2.*'
+    'Az.DataProtection' = '2.*'
+    'Az.Sql' = '5.*'
+    'Az.PostgreSql' = '1.*'
     'ImportExcel' = '7.*'
 }
