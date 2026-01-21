@@ -1065,8 +1065,9 @@ foreach ($sub in $subs) {
       Immutable               = $r.Immutable
     })
 
-    # Findings for vault config
-    if (-not $r.AlwaysOnSoftDelete) {
+    # Findings for vault config - Soft Delete
+    # Check if soft delete is completely disabled (High) vs just not Always-On (Medium)
+    if ($r.CloudSoftDeleteState -eq 'Disabled' -or $r.CloudSoftDeleteState -eq $null) {
       $findings.Add([pscustomobject]@{
         SubscriptionName = $sub.Name
         SubscriptionId   = $sub.Id
@@ -1075,8 +1076,21 @@ foreach ($sub in $subs) {
         ResourceType     = 'Microsoft.RecoveryServices/vaults'
         ResourceName     = $r.VaultName
         ResourceId       = $v.Id
-        Detail           = "Always-On soft delete is not enabled on Recovery Services vault."
-        Recommendation   = 'Enable Always-On soft delete to protect against accidental or malicious deletion'
+        Detail           = "Soft delete is disabled on Recovery Services vault. Backups can be permanently deleted."
+        Recommendation   = 'Enable soft delete to protect backups from accidental or malicious deletion'
+      })
+    }
+    elseif (-not $r.AlwaysOnSoftDelete) {
+      $findings.Add([pscustomobject]@{
+        SubscriptionName = $sub.Name
+        SubscriptionId   = $sub.Id
+        Severity         = 'Medium'
+        Category         = 'Vault Configuration'
+        ResourceType     = 'Microsoft.RecoveryServices/vaults'
+        ResourceName     = $r.VaultName
+        ResourceId       = $v.Id
+        Detail           = "Soft delete is enabled but not set to Always-On. Users can disable soft delete protection."
+        Recommendation   = 'Enable Always-On soft delete to prevent soft delete from being disabled'
       })
     }
     if ($r.SecurityLevel -ne 'Enhanced') {
@@ -1559,8 +1573,9 @@ foreach ($sub in $subs) {
       Immutable               = $immutable
     })
 
-    # Findings for Backup Vault config
-    if (-not $alwaysOn) {
+    # Findings for Backup Vault config - Soft Delete
+    # Check if soft delete is completely disabled (High) vs just not Always-On (Medium)
+    if ($cloudState -eq 'Disabled' -or $cloudState -eq $null) {
       $findings.Add([pscustomobject]@{
         SubscriptionName = $sub.Name
         SubscriptionId   = $sub.Id
@@ -1569,8 +1584,21 @@ foreach ($sub in $subs) {
         ResourceType     = 'Microsoft.DataProtection/backupVaults'
         ResourceName     = $bvName
         ResourceId       = $bv.Id
-        Detail           = "Always-On soft delete is not effectively enabled on Backup Vault."
-        Recommendation   = 'Enable Always-On soft delete to protect against accidental or malicious deletion'
+        Detail           = "Soft delete is disabled on Backup Vault. Backups can be permanently deleted."
+        Recommendation   = 'Enable soft delete to protect backups from accidental or malicious deletion'
+      })
+    }
+    elseif (-not $alwaysOn) {
+      $findings.Add([pscustomobject]@{
+        SubscriptionName = $sub.Name
+        SubscriptionId   = $sub.Id
+        Severity         = 'Medium'
+        Category         = 'Vault Configuration'
+        ResourceType     = 'Microsoft.DataProtection/backupVaults'
+        ResourceName     = $bvName
+        ResourceId       = $bv.Id
+        Detail           = "Soft delete is enabled but not set to Always-On. Users can disable soft delete protection."
+        Recommendation   = 'Enable Always-On soft delete to prevent soft delete from being disabled'
       })
     }
     if ($secLevel -ne 'Enhanced') {
