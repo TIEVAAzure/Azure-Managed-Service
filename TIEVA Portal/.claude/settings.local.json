@@ -4,7 +4,9 @@
       "Bash(git add:*)",
       "Bash(git commit:*)",
       "Bash(git push)",
-      "Bash(dotnet build:*)"
+      "Bash(dotnet build:*)",
+      "Bash(func azure functionapp publish:*)",
+      "Bash(export PATH=\"$PATH:$APPDATA/npm\")"
     ]
   }
 }

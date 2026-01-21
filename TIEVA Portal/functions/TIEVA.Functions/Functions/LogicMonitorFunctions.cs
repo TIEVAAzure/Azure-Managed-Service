@@ -1401,7 +1401,7 @@ public class LogicMonitorFunctions
         catch (Exception ex)
         {
             _logger.LogError(ex, "LM connection test failed for customer {CustomerId}", custId);
-            
+
             var errorResponse = req.CreateResponse(HttpStatusCode.OK);
             await errorResponse.WriteAsJsonAsync(new
             {
@@ -1411,6 +1411,73 @@ public class LogicMonitorFunctions
             return errorResponse;
         }
     }
+
+    /// <summary>
+    /// Test LogicMonitor connection with provided credentials (before saving)
+    /// </summary>
+    [Function("TestLMConnectionWithCredentials")]
+    public async Task<HttpResponseData> TestLMConnectionWithCredentials(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "logicmonitor/test-credentials")]
+        HttpRequestData req)
+    {
+        try
+        {
+            var body = await req.ReadAsStringAsync();
+            var payload = JsonSerializer.Deserialize<TestCredentialsRequest>(body ?? "{}",
+                new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+
+            if (payload == null || string.IsNullOrEmpty(payload.Company) ||
+                string.IsNullOrEmpty(payload.AccessId) || string.IsNullOrEmpty(payload.AccessKey))
+            {
+                var badRequest = req.CreateResponse(HttpStatusCode.BadRequest);
+                await badRequest.WriteStringAsync("Company, AccessId, and AccessKey are required");
+                return badRequest;
+            }
+
+            // Create a temporary LM service with the provided credentials
+            var lmService = new LogicMonitorService(payload.Company, payload.AccessId, payload.AccessKey, _logger);
+
+            // Test by getting groups
+            var groups = await lmService.GetAllGroupsAsync();
+
+            string? groupPath = null;
+            if (payload.GroupId.HasValue && payload.GroupId.Value > 0)
+            {
+                var group = groups?.Items?.FirstOrDefault(g => g.Id == payload.GroupId.Value);
+                groupPath = group?.FullPath ?? group?.Name;
+            }
+
+            var response = req.CreateResponse(HttpStatusCode.OK);
+            await response.WriteAsJsonAsync(new
+            {
+                success = true,
+                message = "Connection successful",
+                groupsFound = groups?.Total ?? 0,
+                groupPath = groupPath
+            });
+            return response;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "LM credential test failed");
+
+            var errorResponse = req.CreateResponse(HttpStatusCode.OK);
+            await errorResponse.WriteAsJsonAsync(new
+            {
+                success = false,
+                error = ex.Message
+            });
+            return errorResponse;
+        }
+    }
+}
+
+public class TestCredentialsRequest
+{
+    public string? Company { get; set; }
+    public string? AccessId { get; set; }
+    public string? AccessKey { get; set; }
+    public int? GroupId { get; set; }
 }
 
 public class AckAlertRequest { public string? Comment { get; set; } }
