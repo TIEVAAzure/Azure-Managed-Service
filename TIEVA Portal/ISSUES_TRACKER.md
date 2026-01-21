@@ -160,18 +160,38 @@
 ---
 
 ### Issue #8: Browse Group Button Missing
-**Status**: OPEN  
-**Reported**: 2026-01-20  
+**Status**: ✅ FIXED
+**Reported**: 2026-01-20
+**Updated**: 2026-01-21
 
-**Problem**: There was a "Browse Group" button to select which LogicMonitor device group to sync from. This appears to be missing.
+**Problem**: There was a "Browse Group" button to select which LogicMonitor device group to sync from. This was missing from the new LM Config tab.
 
-**Expected Behavior**:
-- User should be able to browse/select LogicMonitor groups
-- Sets which group to pull devices from for this customer
+**Root Cause**: The Browse Groups functionality existed in the OLD settings modal but was not added to the new Monitoring > LM Config tab.
 
-**Investigation Needed**:
-- Check if this was removed or never implemented
-- Determine where it should appear (Customer settings? Monitoring tab?)
+**Fixes Applied**:
+
+| Component | Change |
+|-----------|--------|
+| **portal/index.html** | Added "Browse Groups" button to Shared Portal config |
+| **portal/index.html** | Added "Browse Groups" button to Customer Portal config |
+| **portal/index.html** | Added tree-view group picker with expand/collapse |
+| **portal/index.html** | Click group to auto-fill Group ID and Path fields |
+| **LogicMonitorFunctions.cs** | Added `GetCustomerLMSubgroups` endpoint |
+
+**New Endpoint**:
+```
+GET /logicmonitor/customers/{customerId}/groups/{groupId}/subgroups
+```
+
+**Commits**:
+- `a2cd099` - Backend: Customer-specific subgroups endpoint
+- `6e10d85` - Frontend: Browse Groups UI in LM Config tab
+
+**Usage**:
+1. Go to Customer > Monitoring > LM Config
+2. Click "Browse Groups" button
+3. Expand folders with ▶ button
+4. Click group name to select it
 
 ---
 
@@ -471,6 +491,8 @@ if (_remainingRequests <= 5 && DateTime.UtcNow < _rateLimitReset)
 | `95970a3` | Disk: Fetch from ALL matching datasources (finds C: drive) |
 | `9afce4f` | Disk: Detect when FreeSpace is already a percentage |
 | `6e4f88f` | Memory: Multiple % datapoints + auto-swap Free/Total |
+| `a2cd099` | Browse Groups: Backend endpoint for customer subgroups |
+| `6e10d85` | Browse Groups: UI in LM Config tab |
 
 ---
 
@@ -482,7 +504,7 @@ if (_remainingRequests <= 5 && DateTime.UtcNow < _rateLimitReset)
 | Priority | Issue | Category | Effort | Impact |
 |----------|-------|----------|--------|--------|
 | 🔴 High | #11 - Historical Sync 9 Days | Data Quality | Low | Medium |
-| 🔴 High | #8 - Browse Group Button | UI/UX | Low | Medium |
+| ✅ Done | #8 - Browse Group Button | UI/UX | Low | Medium |
 | 🟡 Medium | #10 - Rate Limiting (needs testing) | Reliability | Done | High |
 
 ---
@@ -546,9 +568,9 @@ if (_remainingRequests <= 5 && DateTime.UtcNow < _rateLimitReset)
 | **Azure PaaS Metrics** | #5, #6 | 🔴 Open |
 | **Data Coverage** | #6, #9 | 🔴 Open |
 | **Assessment Quality** | #16, #17 | 🔴 Open |
-| **UI/UX** | #7, #8, #14, #15 | ⚠️ Mostly Fixed |
+| **UI/UX** | #7, #8, #14, #15 | ✅ All Fixed |
 | **Reliability** | #10, #13 | ✅ Fixed (testing) |
 
 ---
 
-*Last Updated: 2026-01-21 11:00 UTC*
+*Last Updated: 2026-01-21 11:30 UTC*
