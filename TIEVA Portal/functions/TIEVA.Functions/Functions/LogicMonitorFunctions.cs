@@ -1470,6 +1470,63 @@ public class LogicMonitorFunctions
             return errorResponse;
         }
     }
+
+    /// <summary>
+    /// Browse LogicMonitor groups with provided credentials (before saving)
+    /// </summary>
+    [Function("BrowseLMGroupsWithCredentials")]
+    public async Task<HttpResponseData> BrowseLMGroupsWithCredentials(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "logicmonitor/browse-groups")]
+        HttpRequestData req)
+    {
+        try
+        {
+            var body = await req.ReadAsStringAsync();
+            var payload = JsonSerializer.Deserialize<TestCredentialsRequest>(body ?? "{}",
+                new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+
+            if (payload == null || string.IsNullOrEmpty(payload.Company) ||
+                string.IsNullOrEmpty(payload.AccessId) || string.IsNullOrEmpty(payload.AccessKey))
+            {
+                var badRequest = req.CreateResponse(HttpStatusCode.BadRequest);
+                await badRequest.WriteStringAsync("Company, AccessId, and AccessKey are required");
+                return badRequest;
+            }
+
+            // Create a temporary LM service with the provided credentials
+            var lmService = new LogicMonitorService(payload.Company, payload.AccessId, payload.AccessKey, _logger);
+
+            // Get all groups
+            var groups = await lmService.GetAllGroupsAsync();
+
+            var response = req.CreateResponse(HttpStatusCode.OK);
+            await response.WriteAsJsonAsync(new
+            {
+                lmGroups = groups?.Items?.Select(g => new
+                {
+                    id = g.Id,
+                    name = g.Name,
+                    fullPath = g.FullPath,
+                    parentId = g.ParentId,
+                    numOfHosts = g.NumOfHosts,
+                    subGroups = g.SubGroups
+                }).ToList() ?? new List<object>()
+            });
+            return response;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "LM browse groups failed");
+
+            var errorResponse = req.CreateResponse(HttpStatusCode.OK);
+            await errorResponse.WriteAsJsonAsync(new
+            {
+                lmGroups = new List<object>(),
+                error = ex.Message
+            });
+            return errorResponse;
+        }
+    }
 }
 
 public class TestCredentialsRequest
