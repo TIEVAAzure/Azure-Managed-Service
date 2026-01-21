@@ -945,10 +945,12 @@ public class LogicMonitorFunctions
 
         // For customer's own portal: get ALL groups (no parentId filter)
         // For TIEVA shared portal: filter to children of Customers group (ID: 406)
-        var groups = hasCustomCreds 
+        _logger.LogInformation("Getting groups for customer {CustomerId}, hasCustomCreds={HasCustomCreds}", custId, hasCustomCreds);
+        var groups = hasCustomCreds
             ? await lmService.GetAllGroupsAsync()
             : await lmService.GetCustomerGroupsAsync();
-        
+        _logger.LogInformation("Got {GroupCount} groups, Total={Total}", groups?.Items?.Count ?? 0, groups?.Total ?? 0);
+
         // Get company name if using custom creds
         string? companyName = null;
         if (hasCustomCreds)

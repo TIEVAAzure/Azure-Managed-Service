@@ -183,10 +183,12 @@ public class LogicMonitorService
                     }
 
                     var content = await response.Content.ReadAsStringAsync();
-                    return JsonSerializer.Deserialize<T>(content, new JsonSerializerOptions
+                    _logger.LogDebug("LM API response for {Path}: {Length} chars", resourcePath, content.Length);
+                    var result = JsonSerializer.Deserialize<T>(content, new JsonSerializerOptions
                     {
                         PropertyNameCaseInsensitive = true
                     });
+                    return result;
                 }
                 catch (HttpRequestException ex) when (attempt < MaxRetries)
                 {

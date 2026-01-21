@@ -413,6 +413,36 @@ if (_remainingRequests <= 5 && DateTime.UtcNow < _rateLimitReset)
 
 ---
 
+### Issue #19: Function App Endpoint Reconciliation
+**Status**: OPEN - MAINTENANCE
+**Reported**: 2026-01-21
+
+**Problem**: Frontend code may be calling API endpoints that don't exist or use wrong HTTP methods/parameters. Need to reconcile frontend API calls against deployed Azure Functions.
+
+**Tasks**:
+1. Extract all API calls from `portal/index.html` (search for `api(` and `fetch(`)
+2. List all deployed functions from Azure Function App (`func-tievaportal-6612`)
+3. Compare endpoints, HTTP methods, and request/response formats
+4. Document any mismatches and fix them
+
+**Known Issues Found**:
+| Frontend Call | Issue | Fix |
+|--------------|-------|-----|
+| `POST /logicmonitor/customers/{id}/config` | Should be PUT | Fixed `9651215` |
+| `POST /logicmonitor/customers/{id}/test-connection` | Endpoint doesn't exist | Fixed - use `/test` |
+| `POST /logicmonitor/customers/{id}/credentials` | Endpoint doesn't exist for POST | Use PUT `/config` |
+
+**How to Check**:
+```bash
+# List all functions in deployed app
+func azure functionapp list-functions func-tievaportal-6612
+
+# Or check in Azure Portal:
+# Function App > Functions > See all routes
+```
+
+---
+
 ## 🟡 PENDING DEPLOYMENT
 
 *No pending deployments*
