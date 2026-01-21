@@ -36,12 +36,12 @@ public class LMPerformanceFunctions
             "Microsoft_Azure_VMs",
             // Azure PaaS with CPU metrics
             "Microsoft_Azure_AppServicePlan", "Microsoft_Azure_AppServices",
-            "Microsoft_Azure_FunctionApps", "Microsoft_Azure_SQLDatabase",
+            "Microsoft_Azure_Function", "Microsoft_Azure_SQLDatabase",
             "Microsoft_Azure_RedisCache", "Microsoft_Azure_KubernetesService",
             // Additional Azure PaaS
             "Microsoft_Azure_CosmosDB", "Microsoft_Azure_PostgreSQL",
             "Microsoft_Azure_MySQL", "Microsoft_Azure_MariaDB",
-            "Microsoft_Azure_EventHubs", "Microsoft_Azure_ServiceBus"
+            "Microsoft_Azure_EventHub", "Microsoft_Azure_ServiceBus"
         },
         ["Memory"] = new[] {
             // Windows/Linux Servers (with collector agent)
@@ -151,8 +151,8 @@ public class LMPerformanceFunctions
             return "AzureSQLDatabase";
         if (datasources.Any(d => d.StartsWith("Microsoft_Azure_AppService", StringComparison.OrdinalIgnoreCase)))
             return "AppService";
-        if (datasources.Any(d => d.StartsWith("Microsoft_Azure_FunctionApps", StringComparison.OrdinalIgnoreCase)))
-            return "FunctionApp";
+        if (datasources.Any(d => d.StartsWith("Microsoft_Azure_Function", StringComparison.OrdinalIgnoreCase)))
+            return "AzureFunction";
         if (datasources.Any(d => d.StartsWith("Microsoft_Azure_StorageAccount", StringComparison.OrdinalIgnoreCase) ||
                                  d.StartsWith("Microsoft_Azure_BlobStorage", StringComparison.OrdinalIgnoreCase) ||
                                  d.StartsWith("Microsoft_Azure_FileStorage", StringComparison.OrdinalIgnoreCase)))
@@ -188,12 +188,12 @@ public class LMPerformanceFunctions
         if (datasources.Any(d => d.StartsWith("Microsoft_Azure_MariaDB", StringComparison.OrdinalIgnoreCase)))
             return "AzureMariaDB";
         // Azure Messaging services
-        if (datasources.Any(d => d.StartsWith("Microsoft_Azure_EventHubs", StringComparison.OrdinalIgnoreCase)))
+        if (datasources.Any(d => d.StartsWith("Microsoft_Azure_EventHub", StringComparison.OrdinalIgnoreCase)))
             return "AzureEventHubs";
         if (datasources.Any(d => d.StartsWith("Microsoft_Azure_ServiceBus", StringComparison.OrdinalIgnoreCase)))
             return "AzureServiceBus";
         // Azure Container services
-        if (datasources.Any(d => d.StartsWith("Microsoft_Azure_ContainerInstances", StringComparison.OrdinalIgnoreCase)))
+        if (datasources.Any(d => d.StartsWith("Microsoft_Azure_ContainerInstance", StringComparison.OrdinalIgnoreCase)))
             return "AzureContainerInstance";
         if (datasources.Any(d => d.StartsWith("Microsoft_Azure_ContainerRegistry", StringComparison.OrdinalIgnoreCase)))
             return "AzureContainerRegistry";

@@ -3400,7 +3400,7 @@ public class LMPerformanceV2Functions
         if (dsName.Contains("SQLDatabase")) return "AzureSQLDatabase"; // Catches SQLDatabase, SQLDatabases, SQLDatabaseNonDTU
         if (dsName.Contains("AppServicePlan")) return "AppServicePlan";
         if (dsName.Contains("AppService") || dsName.Contains("WebApps")) return "AppService";
-        if (dsName.Contains("FunctionApps")) return "FunctionApp";
+        if (dsName.Contains("_Function")) return "AzureFunction";
         if (dsName.Contains("StorageAccount") || dsName.Contains("BlobStorage") || dsName.Contains("FileStorage"))
             return "AzureStorage";
         if (dsName.Contains("RedisCache")) return "Redis";
@@ -3434,6 +3434,20 @@ public class LMPerformanceV2Functions
         if (dsName.Contains("APIManagement")) return "AzureAPIM";
         if (dsName.Contains("Automation")) return "AzureAutomation";
         if (dsName.Contains("LogicApp")) return "AzureLogicApps";
+        if (dsName.Contains("IoTHub")) return "AzureIoTHub";
+        if (dsName.Contains("WebApplication") || dsName.Contains("WebApps")) return "AzureWebApplication";
+        if (dsName.Contains("WebJob")) return "AzureWebJobs";
+        if (dsName.Contains("ResourceHealth")) return "AzureResourceHealth";
+        if (dsName.Contains("VMBackupStatus")) return "AzureVMBackupStatus";
+        if (dsName.Contains("BackupJobStatus") || dsName.Contains("BackupProtectedItem")) return "AzureBackupJobStatus";
+        if (dsName.Contains("RecoveryService") || dsName.Contains("VaultAgents")) return "AzureRecoveryServices";
+        if (dsName.Contains("Replication")) return "AzureReplication";
+        if (dsName.Contains("VirtualNetworkGateway")) return "AzureVirtualNetworkGateway";
+        if (dsName.Contains("UpdateManager")) return "AzureUpdateManager";
+        if (dsName.Contains("ActiveDirectory")) return "AzureActiveDirectory";
+        if (dsName.Contains("QueueStorage")) return "AzureQueueStorage";
+        if (dsName.Contains("TableStorage")) return "AzureTableStorage";
+        if (dsName.Contains("CostManagement")) return "AzureCostManagement";
 
         // Default - extract from datasource name
         var suffix = dsName.Replace("Microsoft_Azure_", "").Split('_')[0];
