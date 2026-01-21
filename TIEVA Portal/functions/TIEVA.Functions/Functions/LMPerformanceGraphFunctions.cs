@@ -485,9 +485,10 @@ public class LMPerformanceGraphFunctions
                 var instance = instances.Items.First();
                 debugInfo.Add(new { step = "matched", metric = mapping.MetricName, datasource = matchedDs.DataSourceName, instanceId = instance.Id, instanceName = instance.DisplayName });
 
-                // Fetch 90-day data in 1-day chunks (LM API returns max 500 samples per request)
-                // At 5-min intervals, 1 day = 288 samples, well within the 500 limit
-                var chunkDays = 1;
+                // Fetch 90-day data in 2-day chunks (LM API returns max 500 samples per request)
+                // At 5-min intervals, 2 days = 576 samples, LM returns 500 (~1.7 days coverage)
+                // 90 days / 2 = 45 API calls per metric (vs 90 with 1-day chunks)
+                var chunkDays = 2;
                 var currentStart = start;
 
                 while (currentStart < end)
@@ -621,7 +622,7 @@ public class LMPerformanceGraphFunctions
                     }
 
                     currentStart = chunkEnd;
-                    await Task.Delay(100); // Rate limiting - 100ms between chunks (90 chunks per metric)
+                    await Task.Delay(250); // Rate limiting - 250ms between chunks (45 chunks per metric)
                 }
             }
 
@@ -1328,9 +1329,10 @@ public class LMPerformanceGraphFunctions
 
                 var instance = instances.Items.First();
 
-                // Fetch 90-day data in 1-day chunks (LM API returns max 500 samples per request)
-                // At 5-min intervals, 1 day = 288 samples, well within the 500 limit
-                var chunkDays = 1;
+                // Fetch 90-day data in 2-day chunks (LM API returns max 500 samples per request)
+                // At 5-min intervals, 2 days = 576 samples, LM returns 500 (~1.7 days coverage)
+                // 90 days / 2 = 45 API calls per metric (vs 90 with 1-day chunks)
+                var chunkDays = 2;
                 var currentStart = start;
 
                 while (currentStart < end)
@@ -1400,10 +1402,10 @@ public class LMPerformanceGraphFunctions
                     }
 
                     currentStart = chunkEnd;
-                    await Task.Delay(100); // Rate limiting - 100ms between chunks (90 chunks per metric)
+                    await Task.Delay(250); // Rate limiting - 250ms between chunks (45 chunks per metric)
                 }
 
-                await Task.Delay(100); // Rate limiting between metrics
+                await Task.Delay(500); // Rate limiting between metrics
             }
 
             await db.SaveChangesAsync();
