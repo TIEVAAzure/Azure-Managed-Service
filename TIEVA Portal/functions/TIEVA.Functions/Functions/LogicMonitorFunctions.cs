@@ -1435,7 +1435,7 @@ public class LogicMonitorFunctions
             }
 
             // Create a temporary LM service with the provided credentials
-            var lmService = new LogicMonitorService(payload.Company, payload.AccessId, payload.AccessKey, _logger);
+            var lmService = new LogicMonitorService(_loggerFactory, payload.Company, payload.AccessId, payload.AccessKey);
 
             // Test by getting groups
             var groups = await lmService.GetAllGroupsAsync();
@@ -1494,7 +1494,7 @@ public class LogicMonitorFunctions
             }
 
             // Create a temporary LM service with the provided credentials
-            var lmService = new LogicMonitorService(payload.Company, payload.AccessId, payload.AccessKey, _logger);
+            var lmService = new LogicMonitorService(_loggerFactory, payload.Company, payload.AccessId, payload.AccessKey);
 
             // Get all groups
             var groups = await lmService.GetAllGroupsAsync();
@@ -1507,9 +1507,7 @@ public class LogicMonitorFunctions
                     id = g.Id,
                     name = g.Name,
                     fullPath = g.FullPath,
-                    parentId = g.ParentId,
-                    numOfHosts = g.NumOfHosts,
-                    subGroups = g.SubGroups
+                    numOfHosts = g.NumOfHosts
                 }).ToList() ?? new List<object>()
             });
             return response;
