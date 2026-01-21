@@ -262,8 +262,12 @@ try {
                     ModuleCode = $module
                 }
                 $cfByHash = @{}
-                foreach ($cf in $existingCf) {
-                    $cfByHash[$cf.Hash] = $cf
+                if ($existingCf) {
+                    foreach ($cf in $existingCf) {
+                        if ($cf -and $cf.Hash) {
+                            $cfByHash[$cf.Hash] = $cf
+                        }
+                    }
                 }
                 
                 $seenHashes = @{}
