@@ -1765,44 +1765,62 @@ public class FinOpsFunctions
             _logger.LogInformation("All date ranges found in storage: {Ranges}", string.Join(", ", allDateRanges!));
             _logger.LogInformation("Parsed files count (after date filter): {Count}, startDate: {Date}", parsedFiles.Count, startDate.ToString("yyyy-MM-dd"));
             
-            // For each date-range in DAILY exports, find the MOST RECENT DATE and get ALL files from that date
-            // This ensures we get all subscription exports from the same day
+            // For each date-range in DAILY exports, get the MOST RECENT file per TIMESTAMP FOLDER
+            // Different subscriptions may export at different times, so we need files from all recent timestamps
+            // Group by DateRangeKey + Timestamp (the export run), then take most recent run per subscription
             var dailyFilesToRead = dailyExportFilesList
                 .Cast<dynamic>()
                 .GroupBy(f => (string)f.DateRangeKey)
                 .SelectMany(dateRangeGroup => {
-                    // Find the most recent DATE (not timestamp)
-                    var mostRecentDate = dateRangeGroup
-                        .OrderByDescending(f => (string)f.TimestampDate)
-                        .First().TimestampDate;
-                    
-                    // Return ALL files from that DATE (all subscriptions that ran on that day)
-                    return dateRangeGroup.Where(f => f.TimestampDate == mostRecentDate);
+                    // Group by timestamp (each timestamp = one export run, which may be from different subscription)
+                    // Take all unique timestamp folders for this date range
+                    var timestamps = dateRangeGroup
+                        .Select(f => (string)f.Timestamp)
+                        .Distinct()
+                        .ToList();
+
+                    // Get the most recent 2 dates to ensure we capture all subscriptions
+                    // (some may have run yesterday, some today)
+                    var recentDates = timestamps
+                        .Select(t => t.Substring(0, 8)) // Get date portion
+                        .Distinct()
+                        .OrderByDescending(d => d)
+                        .Take(2)
+                        .ToList();
+
+                    // Return files from the most recent 2 dates
+                    return dateRangeGroup.Where(f => recentDates.Contains(((string)f.TimestampDate)));
                 })
                 .ToList();
-            
-            // For each date-range in MONTHLY exports, find the MOST RECENT DATE and get ALL files from that date
+
+            // For each date-range in MONTHLY exports, get files from most recent 2 dates
             var monthlyFilesToRead = monthlyExportFilesList
                 .Cast<dynamic>()
                 .GroupBy(f => (string)f.DateRangeKey)
                 .SelectMany(dateRangeGroup => {
-                    var mostRecentDate = dateRangeGroup
-                        .OrderByDescending(f => (string)f.TimestampDate)
-                        .First().TimestampDate;
-                    return dateRangeGroup.Where(f => f.TimestampDate == mostRecentDate);
+                    var recentDates = dateRangeGroup
+                        .Select(f => (string)f.TimestampDate)
+                        .Distinct()
+                        .OrderByDescending(d => d)
+                        .Take(2)
+                        .ToList();
+                    return dateRangeGroup.Where(f => recentDates.Contains((string)f.TimestampDate));
                 })
                 .ToList();
-            
+
             // Process monthly files for MoM comparison (always needed, separate from main view)
             var comparisonMonthlyFilesToRead = monthlyFilesForComparison
                 .Cast<dynamic>()
                 .GroupBy(f => (string)f.DateRangeKey)
                 .SelectMany(dateRangeGroup => {
                     if (!dateRangeGroup.Any()) return Enumerable.Empty<dynamic>();
-                    var mostRecentDate = dateRangeGroup
-                        .OrderByDescending(f => (string)f.TimestampDate)
-                        .First().TimestampDate;
-                    return dateRangeGroup.Where(f => f.TimestampDate == mostRecentDate);
+                    var recentDates = dateRangeGroup
+                        .Select(f => (string)f.TimestampDate)
+                        .Distinct()
+                        .OrderByDescending(d => d)
+                        .Take(2)
+                        .ToList();
+                    return dateRangeGroup.Where(f => recentDates.Contains((string)f.TimestampDate));
                 })
                 .ToList();
             _logger.LogInformation("Comparison monthly files to read: {Count}", comparisonMonthlyFilesToRead.Count);
