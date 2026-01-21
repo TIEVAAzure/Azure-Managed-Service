@@ -1499,16 +1499,18 @@ public class LogicMonitorFunctions
             // Get all groups
             var groups = await lmService.GetAllGroupsAsync();
 
+            var groupList = groups?.Items?.Select(g => new
+            {
+                id = g.Id,
+                name = g.Name,
+                fullPath = g.FullPath,
+                numOfHosts = g.NumOfHosts
+            }).ToList();
+
             var response = req.CreateResponse(HttpStatusCode.OK);
             await response.WriteAsJsonAsync(new
             {
-                lmGroups = groups?.Items?.Select(g => new
-                {
-                    id = g.Id,
-                    name = g.Name,
-                    fullPath = g.FullPath,
-                    numOfHosts = g.NumOfHosts
-                }).ToList() ?? new List<object>()
+                lmGroups = groupList ?? (object)new List<object>()
             });
             return response;
         }
