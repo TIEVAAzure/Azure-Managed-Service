@@ -2028,18 +2028,22 @@ public class LMPerformanceV2Functions
                             var percentages = new List<double>();
                             
                             // Detect unit mismatches between Capacity and FreeSpace
-                            // Case 1: Capacity in bytes (huge number), FreeSpace in GB (small number like 79)
-                            // Case 2: Both in bytes
-                            // Case 3: Both in GB (or same unit)
+                            // Case 1: Capacity in bytes, FreeSpace in bytes → convert both to GB
+                            // Case 2: Capacity in bytes, FreeSpace in GB → convert Capacity only
+                            // Case 3: Capacity in bytes, FreeSpace is % (0-100) → use FreeSpace directly as free %
+                            // Case 4: Both in same unit (GB or %)
                             var sampleCap = capacityValues.First();
                             var sampleFree = freeValues.First();
 
                             // Determine conversion strategy
                             bool convertCapacityToGB = false;
                             bool convertFreeToGB = false;
+                            bool freeSpaceIsPercent = false;
 
                             if (sampleCap > 1_000_000_000) // Capacity is in bytes
                             {
+                                var capacityInGB = sampleCap / 1073741824.0;
+
                                 if (sampleFree > 1_000_000_000) // Both in bytes
                                 {
                                     convertCapacityToGB = true;
@@ -2047,7 +2051,15 @@ public class LMPerformanceV2Functions
                                     _logger.LogInformation("Device {DeviceId} Disk {Drive}: Both Capacity and FreeSpace in bytes - converting both to GB",
                                         deviceId, driveLetter);
                                 }
-                                else // Capacity in bytes, FreeSpace already in GB
+                                else if (sampleFree > capacityInGB)
+                                {
+                                    // FreeSpace > Capacity (in GB) is impossible, so FreeSpace must be a percentage
+                                    // e.g., Capacity=25GB, FreeSpace=74.66 means 74.66% FREE
+                                    freeSpaceIsPercent = true;
+                                    _logger.LogInformation("Device {DeviceId} Disk {Drive}: FreeSpace ({Free}) > Capacity in GB ({CapGB:F1}) - FreeSpace is already a percentage",
+                                        deviceId, driveLetter, sampleFree, capacityInGB);
+                                }
+                                else // Capacity in bytes, FreeSpace in GB (and FreeSpace < Capacity)
                                 {
                                     convertCapacityToGB = true;
                                     convertFreeToGB = false;
@@ -2065,31 +2077,44 @@ public class LMPerformanceV2Functions
                             {
                                 var capacity = capacityValues[i];
                                 var free = freeValues[i];
+                                double usedPercent;
 
-                                // Convert to GB if needed
-                                if (convertCapacityToGB)
+                                if (freeSpaceIsPercent)
                                 {
-                                    capacity = capacity / 1073741824.0; // bytes to GB
+                                    // FreeSpace is already a percentage (e.g., 74.66% free)
+                                    usedPercent = 100.0 - free;
                                 }
-                                if (convertFreeToGB)
+                                else
                                 {
-                                    free = free / 1073741824.0; // bytes to GB
-                                }
-
-                                if (capacity > 0)
-                                {
-                                    var usedPercent = 100.0 - (free / capacity * 100.0);
-                                    
-                                    // Log first calculation for debugging
-                                    if (i == 0)
+                                    // Convert to GB if needed
+                                    if (convertCapacityToGB)
                                     {
-                                        _logger.LogInformation("Device {DeviceId} Disk {Drive}: CALC - 100 - ({Free}/{Cap}*100) = {Result:F1}%",
-                                            deviceId, driveLetter, free, capacity, usedPercent);
+                                        capacity = capacity / 1073741824.0; // bytes to GB
                                     }
-                                    
-                                    if (usedPercent >= 0 && usedPercent <= 100)
-                                        percentages.Add(usedPercent);
+                                    if (convertFreeToGB)
+                                    {
+                                        free = free / 1073741824.0; // bytes to GB
+                                    }
+
+                                    if (capacity > 0)
+                                    {
+                                        usedPercent = 100.0 - (free / capacity * 100.0);
+                                    }
+                                    else
+                                    {
+                                        continue; // Skip if capacity is 0
+                                    }
                                 }
+
+                                // Log first calculation for debugging
+                                if (i == 0)
+                                {
+                                    _logger.LogInformation("Device {DeviceId} Disk {Drive}: CALC result = {Result:F1}% (freeSpaceIsPercent={IsPercent})",
+                                        deviceId, driveLetter, usedPercent, freeSpaceIsPercent);
+                                }
+
+                                if (usedPercent >= 0 && usedPercent <= 100)
+                                    percentages.Add(usedPercent);
                             }
                             
                             _logger.LogInformation("Device {DeviceId} Disk {Drive}: Calculated {Count} valid percentages from {Total} data points",
