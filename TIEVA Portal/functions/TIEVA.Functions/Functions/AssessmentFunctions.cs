@@ -101,7 +101,7 @@ public class AssessmentFunctions
 
         // Calculate score from THIS assessment's findings
         var weightedFindings = (totalHigh * 3.0) + (totalMedium * 1.5) + (totalLow * 0.5);
-        var calculatedScore = totalFindings > 0 ? (decimal)Math.Round(100.0 / (1.0 + (weightedFindings / 20.0)), 0) : 100m;
+        var calculatedScore = totalFindings > 0 ? (decimal)Math.Round(100.0 / (1.0 + (weightedFindings / 50.0)), 0) : 100m;
 
         // Use stored score if available, otherwise calculated
         var scoreToUse = assessment.ScoreOverall ?? calculatedScore;
@@ -242,6 +242,82 @@ public class AssessmentFunctions
 
         var response = req.CreateResponse(HttpStatusCode.OK);
         await response.WriteAsJsonAsync(new { assessment.Id, assessment.Status });
+        return response;
+    }
+
+    [Function("RecalculateAssessmentScores")]
+    public async Task<HttpResponseData> RecalculateAssessmentScores(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "assessments/{id}/recalculate")] HttpRequestData req,
+        string id)
+    {
+        if (!Guid.TryParse(id, out var assessmentId))
+        {
+            var badRequest = req.CreateResponse(HttpStatusCode.BadRequest);
+            await badRequest.WriteStringAsync("Invalid assessment ID");
+            return badRequest;
+        }
+
+        var assessment = await _db.Assessments.FindAsync(assessmentId);
+        if (assessment == null)
+        {
+            var notFound = req.CreateResponse(HttpStatusCode.NotFound);
+            await notFound.WriteStringAsync("Assessment not found");
+            return notFound;
+        }
+
+        // Get all findings for this assessment
+        var findings = await _db.Findings.Where(f => f.AssessmentId == assessmentId).ToListAsync();
+
+        // Recalculate overall score
+        var totalHigh = findings.Count(f => f.Severity.ToLower() == "high");
+        var totalMedium = findings.Count(f => f.Severity.ToLower() == "medium");
+        var totalLow = findings.Count(f => f.Severity.ToLower() == "low");
+        var totalFindings = totalHigh + totalMedium + totalLow;
+
+        var weightedFindings = (totalHigh * 3.0) + (totalMedium * 1.5) + (totalLow * 0.5);
+        var oldScore = assessment.ScoreOverall;
+        assessment.ScoreOverall = totalFindings > 0
+            ? (decimal)Math.Round(100.0 / (1.0 + (weightedFindings / 50.0)), 0)
+            : 100m;
+
+        // Update finding counts
+        assessment.FindingsHigh = totalHigh;
+        assessment.FindingsMedium = totalMedium;
+        assessment.FindingsLow = totalLow;
+        assessment.FindingsTotal = totalFindings;
+
+        // Recalculate module scores
+        var moduleResults = await _db.AssessmentModuleResults
+            .Where(m => m.AssessmentId == assessmentId)
+            .ToListAsync();
+
+        var moduleUpdates = new List<object>();
+        foreach (var module in moduleResults)
+        {
+            var moduleFindings = findings.Where(f => f.ModuleCode == module.ModuleCode).ToList();
+            var oldModuleScore = module.Score;
+            module.Score = CalculateModuleScore(moduleFindings);
+            module.FindingsCount = moduleFindings.Count;
+            moduleUpdates.Add(new { module.ModuleCode, OldScore = oldModuleScore, NewScore = module.Score, FindingsCount = moduleFindings.Count });
+        }
+
+        await _db.SaveChangesAsync();
+
+        _logger.LogInformation("Recalculated scores for assessment {AssessmentId}: {OldScore} -> {NewScore}",
+            assessmentId, oldScore, assessment.ScoreOverall);
+
+        var response = req.CreateResponse(HttpStatusCode.OK);
+        await response.WriteAsJsonAsync(new
+        {
+            assessmentId,
+            oldScore,
+            newScore = assessment.ScoreOverall,
+            findingsTotal = totalFindings,
+            findingsHigh = totalHigh,
+            findingsMedium = totalMedium,
+            findingsLow = totalLow,
+            modules = moduleUpdates
+        });
         return response;
     }
 
@@ -698,7 +774,7 @@ public class AssessmentFunctions
 
             // Calculate overall score
             var weightedFindings = (assessment.FindingsHigh * 3.0) + (assessment.FindingsMedium * 1.5) + (assessment.FindingsLow * 0.5);
-            var score = 100.0 / (1.0 + (weightedFindings / 20.0));
+            var score = 100.0 / (1.0 + (weightedFindings / 50.0));
             assessment.ScoreOverall = (decimal)Math.Round(score, 0);
 
             await _db.SaveChangesAsync();
@@ -746,7 +822,7 @@ public class AssessmentFunctions
         var med = findings.Count(f => f.Severity.ToLower() == "medium");
         var low = findings.Count(f => f.Severity.ToLower() == "low");
         var weighted = (high * 3.0) + (med * 1.5) + (low * 0.5);
-        var score = 100.0 / (1.0 + (weighted / 10.0));
+        var score = 100.0 / (1.0 + (weighted / 25.0));
         return (decimal)Math.Round(score, 0);
     }
 
