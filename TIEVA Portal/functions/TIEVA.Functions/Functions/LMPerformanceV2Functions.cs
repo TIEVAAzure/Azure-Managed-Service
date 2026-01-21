@@ -2855,115 +2855,82 @@ public class LMPerformanceV2Functions
 
     /// <summary>
     /// Auto-discover Azure resource types and their available metrics from LogicMonitor
-    /// Scans devices to find all Azure datasources and their datapoints, then creates/updates
-    /// resource type configurations automatically
+    /// FAST MODE: Scans existing MetricsJson in the database instead of making API calls
+    /// This extracts datasources and datapoints from already-synced device data
     /// </summary>
     [Function("DiscoverAzureResourceTypes")]
     public async Task<HttpResponseData> DiscoverAzureResourceTypes(
         [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "v2/performance/admin/discover-azure")]
         HttpRequestData req)
     {
-        _logger.LogInformation("Starting Azure resource type discovery");
+        _logger.LogInformation("Starting Azure resource type discovery (database scan mode)");
 
         try
         {
             var body = await req.ReadAsStringAsync();
-            var options = JsonSerializer.Deserialize<JsonElement>(body ?? "{}");
+            var options = string.IsNullOrEmpty(body) ? new JsonElement() : JsonSerializer.Deserialize<JsonElement>(body);
 
             // Options
-            var customerId = options.TryGetProperty("customerId", out var custProp)
-                ? Guid.Parse(custProp.GetString()!) : (Guid?)null;
-            var dryRun = options.TryGetProperty("dryRun", out var dryProp) && dryProp.GetBoolean();
-            var maxDevices = options.TryGetProperty("maxDevices", out var maxProp) ? maxProp.GetInt32() : 50;
-
-            // Get a sample of customers to scan
-            var customersToScan = customerId.HasValue
-                ? await _db.Customers.Where(c => c.Id == customerId.Value && c.LMEnabled).ToListAsync()
-                : await _db.Customers.Where(c => c.LMEnabled && c.IsActive).Take(5).ToListAsync();
-
-            if (!customersToScan.Any())
-            {
-                var noCustomers = req.CreateResponse(HttpStatusCode.BadRequest);
-                await noCustomers.WriteStringAsync("No LM-enabled customers found to scan");
-                return noCustomers;
-            }
+            var dryRun = options.ValueKind == JsonValueKind.Object &&
+                         options.TryGetProperty("dryRun", out var dryProp) && dryProp.GetBoolean();
 
             var discoveredDatasources = new Dictionary<string, DiscoveredDatasource>();
             var discoveredTypes = new Dictionary<string, DiscoveredResourceType>();
-            var scanLog = new List<object>();
 
-            foreach (var customer in customersToScan)
+            // FAST: Query database for all devices with metrics data
+            var devicesWithMetrics = await _db.LMDeviceMetricsV2
+                .Where(d => d.MetricsJson != null && d.MetricsJson != "" && d.MetricsJson != "[]")
+                .Select(d => new { d.DeviceId, d.DeviceName, d.MetricsJson, d.ResourceType })
+                .ToListAsync();
+
+            _logger.LogInformation("Scanning {Count} devices with metrics data", devicesWithMetrics.Count);
+
+            foreach (var device in devicesWithMetrics)
             {
-                var lmService = await GetLogicMonitorServiceAsync(customer.Id, _db);
-                if (lmService == null)
+                try
                 {
-                    scanLog.Add(new { customer = customer.Name, error = "Could not get LM credentials" });
-                    continue;
-                }
+                    if (string.IsNullOrEmpty(device.MetricsJson)) continue;
 
-                // Get devices for customer
-                var devices = await _db.LMDeviceMetricsV2
-                    .Where(d => d.CustomerId == customer.Id)
-                    .OrderByDescending(d => d.LastSyncedAt)
-                    .Take(maxDevices)
-                    .ToListAsync();
+                    var metricsArray = JsonSerializer.Deserialize<JsonElement>(device.MetricsJson);
+                    if (metricsArray.ValueKind != JsonValueKind.Array) continue;
 
-                _logger.LogInformation("Scanning {DeviceCount} devices for customer {CustomerName}", devices.Count, customer.Name);
-
-                foreach (var device in devices)
-                {
-                    try
+                    foreach (var metric in metricsArray.EnumerateArray())
                     {
-                        // Get all datasources for this device
-                        var dsResponse = await lmService.GetDeviceDatasourcesAsync(device.DeviceId);
-                        if (dsResponse?.Items == null) continue;
+                        // Extract datasource and datapoint from each metric entry
+                        var datasource = metric.TryGetProperty("datasource", out var dsProp) ? dsProp.GetString() : null;
+                        var datapoint = metric.TryGetProperty("datapoint", out var dpProp) ? dpProp.GetString() : null;
 
-                        foreach (var ds in dsResponse.Items.Where(d => d.DataSourceName?.StartsWith("Microsoft_Azure_") == true))
+                        // Only interested in Azure datasources
+                        if (string.IsNullOrEmpty(datasource) || !datasource.StartsWith("Microsoft_Azure_"))
+                            continue;
+
+                        // Track this datasource
+                        if (!discoveredDatasources.ContainsKey(datasource))
                         {
-                            var dsName = ds.DataSourceName!;
-
-                            // Track this datasource
-                            if (!discoveredDatasources.ContainsKey(dsName))
+                            discoveredDatasources[datasource] = new DiscoveredDatasource
                             {
-                                discoveredDatasources[dsName] = new DiscoveredDatasource
-                                {
-                                    Name = dsName,
-                                    DisplayName = ds.DataSourceDisplayName ?? dsName,
-                                    DeviceCount = 0,
-                                    Datapoints = new HashSet<string>()
-                                };
-                            }
-                            discoveredDatasources[dsName].DeviceCount++;
+                                Name = datasource,
+                                DisplayName = datasource.Replace("Microsoft_Azure_", "").Replace("_", " "),
+                                DeviceCount = 0,
+                                Datapoints = new HashSet<string>()
+                            };
+                        }
+                        discoveredDatasources[datasource].DeviceCount++;
 
-                            // Get instances and datapoints
-                            var instancesResponse = await lmService.GetDatasourceInstancesAsync(device.DeviceId, ds.Id);
-                            if (instancesResponse?.Items == null || !instancesResponse.Items.Any()) continue;
-
-                            // Get data from first instance to discover datapoints
-                            var firstInstance = instancesResponse.Items.First();
-                            var dataResponse = await lmService.GetInstanceDataAsync(
-                                device.DeviceId, ds.Id, firstInstance.Id,
-                                DateTime.UtcNow.AddHours(-1), DateTime.UtcNow);
-
-                            if (dataResponse?.DataPoints != null)
-                            {
-                                foreach (var dp in dataResponse.DataPoints)
-                                {
-                                    discoveredDatasources[dsName].Datapoints.Add(dp);
-                                }
-                            }
-
-                            await Task.Delay(50); // Rate limiting
+                        // Track datapoint
+                        if (!string.IsNullOrEmpty(datapoint))
+                        {
+                            discoveredDatasources[datasource].Datapoints.Add(datapoint);
                         }
                     }
-                    catch (Exception ex)
-                    {
-                        _logger.LogWarning(ex, "Error scanning device {DeviceId}", device.DeviceId);
-                    }
                 }
-
-                scanLog.Add(new { customer = customer.Name, devicesScanned = devices.Count });
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Error parsing metrics for device {DeviceId}", device.DeviceId);
+                }
             }
+
+            _logger.LogInformation("Found {DatasourceCount} unique Azure datasources", discoveredDatasources.Count);
 
             // Group datasources into resource types
             foreach (var ds in discoveredDatasources.Values)
@@ -2982,7 +2949,8 @@ public class LMPerformanceV2Functions
                     };
                 }
 
-                discoveredTypes[resourceTypeCode].Datasources.Add(ds.Name);
+                if (!discoveredTypes[resourceTypeCode].Datasources.Contains(ds.Name))
+                    discoveredTypes[resourceTypeCode].Datasources.Add(ds.Name);
                 discoveredTypes[resourceTypeCode].TotalDevices += ds.DeviceCount;
 
                 // Identify percentage metrics that are useful for performance monitoring
@@ -3139,7 +3107,7 @@ public class LMPerformanceV2Functions
                         unit = m.Unit
                     })
                 }),
-                scanLog
+                devicesScanned = devicesWithMetrics.Count
             });
             return response;
         }
