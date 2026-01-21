@@ -2881,30 +2881,30 @@ public class LMPerformanceV2Functions
             var liveScannedCount = 0;
 
             // PHASE 1: Always do fast database scan first
+            // Use AvailableDatasourcesJson which stores the list of datasource names
             _logger.LogInformation("Starting Azure resource type discovery - Phase 1: Database scan");
 
-            var devicesWithMetrics = await _db.LMDeviceMetricsV2
-                .Where(d => d.MetricsJson != null && d.MetricsJson != "" && d.MetricsJson != "[]")
-                .Select(d => new { d.DeviceId, d.DeviceName, d.MetricsJson, d.ResourceType, d.CustomerId })
+            var devicesWithDatasources = await _db.LMDeviceMetricsV2
+                .Where(d => d.AvailableDatasourcesJson != null && d.AvailableDatasourcesJson != "" && d.AvailableDatasourcesJson != "[]")
+                .Select(d => new { d.DeviceId, d.DeviceName, d.AvailableDatasourcesJson, d.ResourceType, d.CustomerId })
                 .ToListAsync();
 
-            devicesScannedCount = devicesWithMetrics.Count;
-            _logger.LogInformation("Scanning {Count} devices with metrics data", devicesScannedCount);
+            devicesScannedCount = devicesWithDatasources.Count;
+            _logger.LogInformation("Scanning {Count} devices with datasource data", devicesScannedCount);
 
-            foreach (var device in devicesWithMetrics)
+            foreach (var device in devicesWithDatasources)
             {
                 try
                 {
-                    if (string.IsNullOrEmpty(device.MetricsJson)) continue;
+                    if (string.IsNullOrEmpty(device.AvailableDatasourcesJson)) continue;
 
-                    var metricsArray = JsonSerializer.Deserialize<JsonElement>(device.MetricsJson);
-                    if (metricsArray.ValueKind != JsonValueKind.Array) continue;
+                    // AvailableDatasourcesJson is a List<string> of datasource names
+                    var datasourceNames = JsonSerializer.Deserialize<List<string>>(device.AvailableDatasourcesJson);
+                    if (datasourceNames == null) continue;
 
-                    foreach (var metric in metricsArray.EnumerateArray())
+                    foreach (var datasource in datasourceNames)
                     {
-                        var datasource = metric.TryGetProperty("datasource", out var dsProp) ? dsProp.GetString() : null;
-                        var datapoint = metric.TryGetProperty("datapoint", out var dpProp) ? dpProp.GetString() : null;
-
+                        // Only interested in Azure datasources
                         if (string.IsNullOrEmpty(datasource) || !datasource.StartsWith("Microsoft_Azure_"))
                             continue;
 
@@ -2919,16 +2919,11 @@ public class LMPerformanceV2Functions
                             };
                         }
                         discoveredDatasources[datasource].DeviceCount++;
-
-                        if (!string.IsNullOrEmpty(datapoint))
-                        {
-                            discoveredDatasources[datasource].Datapoints.Add(datapoint);
-                        }
                     }
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogWarning(ex, "Error parsing metrics for device {DeviceId}", device.DeviceId);
+                    _logger.LogWarning(ex, "Error parsing datasources for device {DeviceId}", device.DeviceId);
                 }
             }
 
