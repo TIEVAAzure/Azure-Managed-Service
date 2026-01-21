@@ -1785,25 +1785,29 @@ public class LMPerformanceV2Functions
                 _logger.LogInformation("Device {DeviceId} {Metric}: Starting MEMORY calculation. DataPoints count={DpCount}, actualColumnCount={ActualCols}",
                     deviceId, metricName, data.DataPoints?.Count ?? 0, actualColumnCount);
                 
-                // First try: Use MemoryUtilizationPercent directly if available
-                var memUtilIdx = FindDatapointIndex(data.DataPoints, "MemoryUtilizationPercent", actualColumnCount);
-                if (memUtilIdx >= 0)
+                // First try: Use direct percentage datapoints if available
+                var percentDatapoints = new[] { "MemoryUtilizationPercent", "PercentMemoryUsed", "PercentVirtualMemoryInUse", "UsedMemoryPercent" };
+                foreach (var dpName in percentDatapoints)
                 {
-                    var memValues = data.GetDatapointValues(memUtilIdx);
-                    if (memValues != null && memValues.Any())
+                    var memUtilIdx = FindDatapointIndex(data.DataPoints, dpName, actualColumnCount);
+                    if (memUtilIdx >= 0)
                     {
-                        var validPercents = memValues.Where(v => v >= 0 && v <= 100).ToList();
-                        if (validPercents.Any())
+                        var memValues = data.GetDatapointValues(memUtilIdx);
+                        if (memValues != null && memValues.Any())
                         {
-                            var avg = validPercents.Average();
-                            var max = validPercents.Max();
-                            _logger.LogInformation("Device {DeviceId} {Metric}: Using MemoryUtilizationPercent directly. Avg={Avg:F1}%, Max={Max:F1}%",
-                                deviceId, metricName, avg, max);
-                            return (avg, max);
+                            var validPercents = memValues.Where(v => v >= 0 && v <= 100).ToList();
+                            if (validPercents.Any())
+                            {
+                                var avg = validPercents.Average();
+                                var max = validPercents.Max();
+                                _logger.LogInformation("Device {DeviceId} {Metric}: Using {Datapoint} directly. Avg={Avg:F1}%, Max={Max:F1}%",
+                                    deviceId, metricName, dpName, avg, max);
+                                return (avg, max);
+                            }
                         }
                     }
                 }
-                _logger.LogDebug("Device {DeviceId} {Metric}: MemoryUtilizationPercent not available at valid index, trying calculation",
+                _logger.LogDebug("Device {DeviceId} {Metric}: No direct percentage datapoint available, trying calculation",
                     deviceId, metricName);
                 
                 // Fallback: Calculate from FreePhysicalMemory / TotalVisibleMemorySize
@@ -1826,15 +1830,26 @@ public class LMPerformanceV2Functions
                         // Log sample values for debugging
                         _logger.LogInformation("Device {DeviceId} {Metric}: MEMORY sample - Free[0]={Free}, Total[0]={Total}",
                             deviceId, metricName, freeValues.First(), totalValues.First());
-                        
+
+                        // Detect if values are swapped (Free > Total is impossible)
+                        var sampleFree = freeValues.First();
+                        var sampleTotal = totalValues.First();
+                        bool swapValues = sampleFree > sampleTotal && sampleTotal > 0;
+
+                        if (swapValues)
+                        {
+                            _logger.LogWarning("Device {DeviceId} {Metric}: MEMORY Free ({Free}) > Total ({Total}) - values appear swapped, correcting",
+                                deviceId, metricName, sampleFree, sampleTotal);
+                        }
+
                         // Calculate memory usage percentage for each time point
                         var minCount = Math.Min(freeValues.Count, totalValues.Count);
                         var percentages = new List<double>();
-                        
+
                         for (int i = 0; i < minCount; i++)
                         {
-                            var total = totalValues[i];
-                            var free = freeValues[i];
+                            var total = swapValues ? freeValues[i] : totalValues[i];
+                            var free = swapValues ? totalValues[i] : freeValues[i];
                             if (total > 0)
                             {
                                 var usedPercent = 100.0 - (free / total * 100.0);
