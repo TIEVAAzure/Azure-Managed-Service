@@ -1975,29 +1975,55 @@ public class LMPerformanceV2Functions
                             var minCount = Math.Min(freeValues.Count, capacityValues.Count);
                             var percentages = new List<double>();
                             
-                            // Detect unit mismatch: if Capacity >> FreeSpace by factor of ~1 billion,
-                            // Capacity is in bytes and FreeSpace is in GB
+                            // Detect unit mismatches between Capacity and FreeSpace
+                            // Case 1: Capacity in bytes (huge number), FreeSpace in GB (small number like 79)
+                            // Case 2: Both in bytes
+                            // Case 3: Both in GB (or same unit)
                             var sampleCap = capacityValues.First();
                             var sampleFree = freeValues.First();
-                            var needsConversion = sampleCap > 1_000_000_000 && sampleFree < 100_000;
-                            
-                            if (needsConversion)
+
+                            // Determine conversion strategy
+                            bool convertCapacityToGB = false;
+                            bool convertFreeToGB = false;
+
+                            if (sampleCap > 1_000_000_000) // Capacity is in bytes
                             {
-                                _logger.LogInformation("Device {DeviceId} Disk {Drive}: Unit mismatch detected - converting Capacity from bytes to GB",
+                                if (sampleFree > 1_000_000_000) // Both in bytes
+                                {
+                                    convertCapacityToGB = true;
+                                    convertFreeToGB = true;
+                                    _logger.LogInformation("Device {DeviceId} Disk {Drive}: Both Capacity and FreeSpace in bytes - converting both to GB",
+                                        deviceId, driveLetter);
+                                }
+                                else // Capacity in bytes, FreeSpace already in GB
+                                {
+                                    convertCapacityToGB = true;
+                                    convertFreeToGB = false;
+                                    _logger.LogInformation("Device {DeviceId} Disk {Drive}: Capacity in bytes, FreeSpace already in GB - converting Capacity only",
+                                        deviceId, driveLetter);
+                                }
+                            }
+                            else
+                            {
+                                _logger.LogInformation("Device {DeviceId} Disk {Drive}: Both values appear to be in same unit (GB or %)",
                                     deviceId, driveLetter);
                             }
-                            
+
                             for (int i = 0; i < minCount; i++)
                             {
                                 var capacity = capacityValues[i];
                                 var free = freeValues[i];
-                                
-                                // Convert capacity from bytes to GB if needed
-                                if (needsConversion)
+
+                                // Convert to GB if needed
+                                if (convertCapacityToGB)
                                 {
                                     capacity = capacity / 1073741824.0; // bytes to GB
                                 }
-                                
+                                if (convertFreeToGB)
+                                {
+                                    free = free / 1073741824.0; // bytes to GB
+                                }
+
                                 if (capacity > 0)
                                 {
                                     var usedPercent = 100.0 - (free / capacity * 100.0);

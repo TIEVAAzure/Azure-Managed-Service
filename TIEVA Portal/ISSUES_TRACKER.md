@@ -66,10 +66,14 @@
    - Button changes to "Force Restart" when stuck
    - One-click force restart functionality
 
-**Testing**:
-- Deploy and start a new history sync
-- If it gets stuck, UI should show "Stuck" status
-- Click "Force Restart" to restart the sync
+5. **HistorySyncWatchdog** - Timer function (runs every 5 minutes):
+   - Automatically detects stuck syncs (no progress in 5+ minutes)
+   - Re-queues remaining devices without manual intervention
+   - Marks complete syncs that got stuck at 100%
+
+6. **Rate limit wait capped** - Reduced from 60s to 10s max to prevent Azure scale-down
+
+**Verified Working**: Sync progressed from 147 → 206 → 269 with watchdog auto-restarting
 
 ---
 
@@ -98,8 +102,9 @@
 ---
 
 ### Issue #12: Disk Calculation Producing Negative Percentages
-**Status**: OPEN
+**Status**: ✅ FIXED
 **Reported**: 2026-01-20
+**Updated**: 2026-01-21
 
 **Problem**: Many disks show negative percentage calculations and get filtered out as invalid.
 
@@ -109,37 +114,60 @@ Device 527 Disk C:: RAW VALUES - Capacity[0]=14411145216, FreeSpace[0]=79.1944
 Device 527 Disk C:: Unit mismatch detected - converting Capacity from bytes to GB
 Device 527 Disk C:: CALC - 100 - (79.1944/13.4214...) = -490.1%
 Device 527 Disk C:: Calculated 0 valid percentages from 500 data points
-
-Device 87 Disk C:: RAW VALUES - Capacity[0]=27287760896, FreeSpace[0]=74.4608
-Device 87 Disk C:: Unit mismatch detected - converting Capacity from bytes to GB
-Device 87 Disk C:: CALC - 100 - (74.4608/25.413707733154297*100) = -193.0%
-Device 87 Disk C:: Calculated 0 valid percentages from 500 data points
 ```
 
-**Root Cause**: FreeSpace is already in GB (79.19 GB, 74.46 GB) while Capacity is in bytes (14.4B, 27.2B). The code converts Capacity to GB but FreeSpace is already in GB, causing calculation: `100 - (79GB / 13.4GB * 100) = -490%`
+**Root Cause**: FreeSpace is already in GB (79.19 GB) while Capacity is in bytes (14.4B). The code was converting Capacity to GB but assuming FreeSpace was also in bytes, causing: `100 - (79GB / 13.4GB * 100) = -490%`
 
-**Affected Devices**: Multiple Windows servers showing "No disk data found" including devices 87, 527
+**Fix Applied** (in `LMPerformanceV2Functions.cs`):
+- Added smart unit detection for three cases:
+  1. **Both in bytes** → Convert both to GB
+  2. **Capacity in bytes, FreeSpace in GB** → Convert only Capacity
+  3. **Both in same unit** → No conversion needed
+- Logic: If `Capacity > 1 billion` and `FreeSpace < 1 billion`, FreeSpace is already in GB
+- Added detailed logging for each conversion scenario
 
-**Fix Needed**:
-- Detect when FreeSpace > Capacity (after conversion) - indicates FreeSpace already in GB
-- Don't convert FreeSpace if it's already in the correct unit
-- Or check the actual LM datapoint unit metadata
+**Code Change**:
+```csharp
+// Before: Only converted Capacity, assumed FreeSpace needed same treatment
+var needsConversion = sampleCap > 1_000_000_000 && sampleFree < 100_000;
+
+// After: Detect each value's unit independently
+if (sampleCap > 1_000_000_000) // Capacity is in bytes
+{
+    if (sampleFree > 1_000_000_000) // Both in bytes
+    {
+        convertCapacityToGB = true;
+        convertFreeToGB = true;
+    }
+    else // Capacity in bytes, FreeSpace already in GB
+    {
+        convertCapacityToGB = true;
+        convertFreeToGB = false;
+    }
+}
+```
+
+**Expected Result**: Devices 87, 527 and others should now show valid disk percentages instead of "No disk data found"
 
 ---
 
 ### Issue #7: Admin Settings Location Wrong
-**Status**: OPEN  
-**Reported**: 2026-01-20  
+**Status**: ✅ FIXED
+**Reported**: 2026-01-20
+**Updated**: 2026-01-21
 
-**Problem**: Admin Settings tab is inside Customer > Monitoring > Performance, but it covers configuration for Overview, Alerts, AND Devices - not just Performance.
+**Problem**: LM Config (customer LogicMonitor credentials) was inside Performance tab, but it affects ALL monitoring features (Overview, Alerts, Devices, Performance).
 
-**Current Location**: Customer > Monitoring > Performance > Admin Settings
+**Fixes Applied**:
+1. **Moved LM Config** to Monitoring sub-tab level (sibling to Overview, Alerts, Devices, Performance)
+2. **Renamed "Admin Settings" button** → **"Performance Admin"** (for global resource types & metric mappings)
+3. **Added tooltip** to Performance Admin button explaining its purpose
+4. **Removed duplicate LM Config** from inside Performance tab
 
-**Should Be**: Customer > Monitoring > Admin Settings (at the Monitoring sub-tab level)
-
-**Action Required**:
-- Move Admin Settings up one level in the tab hierarchy
-- Should be a sibling to Overview, Alerts, Devices, Performance (not a child of Performance)
+**Current Structure**:
+- Customer > Monitoring > **Overview** | **Alerts** | **Devices** | **Performance** | **LM Config** | Performance Admin
+- **LM Config** tab → Customer-specific LogicMonitor credentials (shared or own portal)
+- **Performance Admin** button → Opens global perf-admin page (resource types, metric mappings)
 
 ---
 
@@ -259,38 +287,51 @@ if (_remainingRequests <= 5 && DateTime.UtcNow < _rateLimitReset)
 ---
 
 ### Issue #14: Overview Findings/Recommendations Click-Through
-**Status**: OPEN - ENHANCEMENT
+**Status**: ✅ FIXED
 **Reported**: 2026-01-20
+**Updated**: 2026-01-21
 
 **Problem**: When clicking on a finding or recommendation in the Overview section, users want to see more detailed information.
 
-**Expected Behavior**:
-- Clicking on a finding should show detailed breakdown
-- Include root cause, affected resources, and recommended actions
-- May link to relevant documentation or remediation steps
-
-**Implementation Notes**:
-- Need to determine what data is available for each finding type
-- Consider modal or slide-out panel for details
-- Link findings to relevant monitoring data where applicable
+**Fixes Applied**:
+1. **Severity summary cards now clickable** - Click High/Medium/Low to filter findings
+2. **Switches to Findings tab** with selected severity filter applied
+3. **Hover effects** added to show cards are interactive
 
 ---
 
 ### Issue #15: Monitoring Click-Through for Alerts/Devices
-**Status**: OPEN - ENHANCEMENT
+**Status**: ✅ FIXED
 **Reported**: 2026-01-20
+**Updated**: 2026-01-21
 
 **Problem**: In Monitoring > Overview, Alerts, and Devices tabs, users want to click on alerts or devices to get more information.
 
-**Expected Behavior**:
-- **Overview**: Click items for drill-down details
-- **Alerts**: Click alert to see full alert details, history, affected device
-- **Devices**: Click device to see device details, metrics, alerts for that device
+**Fixes Applied**:
+1. **Alert severity cards now clickable** - Click Critical/Error/Warning/Info to filter alerts
+2. **Switches to Alerts tab** with selected severity filter applied
+3. **Alerts tab has filter buttons** - All, Critical, Error, Warning, Info
+4. **Hover effects** added to show cards are interactive
 
-**Implementation Notes**:
-- Alerts may need: severity, timestamp, acknowledgement status, notes, linked device
-- Devices may need: link to existing device modal with performance metrics
-- Consider consistent UX pattern across all monitoring sub-tabs
+---
+
+### Issue #17: Assessment Scoring Too Aggressive
+**Status**: OPEN - INVESTIGATION NEEDED
+**Reported**: 2026-01-21
+
+**Problem**: Assessment scoring appears too aggressive - customers showing low scores (e.g., 40%) that may not accurately reflect their actual posture.
+
+**Investigation Needed**:
+- Review scoring algorithm and weight distribution
+- Check if findings are being counted correctly
+- Verify severity multipliers are appropriate
+- Consider if passing checks should contribute positively to score
+- Compare scores across multiple customers to identify patterns
+
+**Expected Behavior**:
+- Scores should reflect actual compliance/health posture
+- A customer with minor issues shouldn't score 40%
+- Scoring should be balanced and actionable
 
 ---
 
@@ -343,6 +384,27 @@ if (_remainingRequests <= 5 && DateTime.UtcNow < _rateLimitReset)
 
 ---
 
+### Issue #16: Right-Sizing Recommendations Limited Scope
+**Status**: OPEN - ENHANCEMENT
+**Reported**: 2026-01-20
+
+**Problem**: Right-sizing recommendations only consider CPU, memory, and disk metrics. Recommendations should be based on all relevant metrics for each resource type.
+
+**Expected Behavior**:
+- Recommendations should include all applicable metrics for the resource type
+- Azure VMs: CPU, memory, disk, network I/O, IOPS
+- Azure SQL: DTU, storage, query performance
+- Azure App Service: requests, response time, connections
+- Storage accounts: transactions, latency, capacity
+- etc.
+
+**Implementation Notes**:
+- Review current recommendation logic to identify which metrics are considered
+- Expand metric coverage based on resource type
+- Consider cost optimization opportunities beyond compute resources
+
+---
+
 ## 🟡 PENDING DEPLOYMENT
 
 *No pending deployments*
@@ -382,4 +444,4 @@ if (_remainingRequests <= 5 && DateTime.UtcNow < _rateLimitReset)
 
 ---
 
-*Last Updated: 2026-01-20 18:30 UTC*
+*Last Updated: 2026-01-21 22:00 UTC*
