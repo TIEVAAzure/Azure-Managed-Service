@@ -36,7 +36,7 @@ public class LMPerformanceFunctions
             "Microsoft_Azure_VMs",
             // Azure PaaS with CPU metrics
             "Microsoft_Azure_AppServicePlan", "Microsoft_Azure_AppServices",
-            "Microsoft_Azure_FunctionApps", "Microsoft_Azure_SQLDatabases",
+            "Microsoft_Azure_FunctionApps", "Microsoft_Azure_SQLDatabase",
             "Microsoft_Azure_RedisCache", "Microsoft_Azure_KubernetesService",
             // Additional Azure PaaS
             "Microsoft_Azure_CosmosDB", "Microsoft_Azure_PostgreSQL",
@@ -70,7 +70,7 @@ public class LMPerformanceFunctions
             "Microsoft_Azure_BlobStorage", "Microsoft_Azure_BlobStorage_Capacity",
             "Microsoft_Azure_FileStorage", "Microsoft_Azure_FileStorage_Capacity",
             // Azure SQL/DB (storage metrics)
-            "Microsoft_Azure_SQLDatabases", "Microsoft_Azure_PostgreSQL",
+            "Microsoft_Azure_SQLDatabase", "Microsoft_Azure_PostgreSQL",
             "Microsoft_Azure_MySQL", "Microsoft_Azure_CosmosDB"
         }
     };
@@ -147,8 +147,8 @@ public class LMPerformanceFunctions
     private static string DetectResourceTypeFromDatasources(List<string> datasources)
     {
         // Check for Azure-specific datasources (most specific first)
-        if (datasources.Any(d => d.StartsWith("Microsoft_Azure_SQLDatabases", StringComparison.OrdinalIgnoreCase)))
-            return "AzureSQL";
+        if (datasources.Any(d => d.StartsWith("Microsoft_Azure_SQLDatabase", StringComparison.OrdinalIgnoreCase)))
+            return "AzureSQLDatabase";
         if (datasources.Any(d => d.StartsWith("Microsoft_Azure_AppService", StringComparison.OrdinalIgnoreCase)))
             return "AppService";
         if (datasources.Any(d => d.StartsWith("Microsoft_Azure_FunctionApps", StringComparison.OrdinalIgnoreCase)))
@@ -334,22 +334,34 @@ public class LMPerformanceFunctions
     /// </summary>
     private static string DetermineResourceType(string datasourceName)
     {
-        if (datasourceName.StartsWith("Microsoft_Azure_SQLDatabases", StringComparison.OrdinalIgnoreCase))
-            return "AzureSQL";
-        if (datasourceName.StartsWith("Microsoft_Azure_AppServices", StringComparison.OrdinalIgnoreCase))
+        if (datasourceName.StartsWith("Microsoft_Azure_SQLDatabase", StringComparison.OrdinalIgnoreCase))
+            return "AzureSQLDatabase";
+        if (datasourceName.StartsWith("Microsoft_Azure_AppService", StringComparison.OrdinalIgnoreCase))
             return "AppService";
-        if (datasourceName.StartsWith("Microsoft_Azure_FunctionApps", StringComparison.OrdinalIgnoreCase))
-            return "FunctionApp";
+        if (datasourceName.StartsWith("Microsoft_Azure_Function", StringComparison.OrdinalIgnoreCase))
+            return "AzureFunction";
         if (datasourceName.StartsWith("Microsoft_Azure_VMs", StringComparison.OrdinalIgnoreCase))
             return "AzureVM";
-        if (datasourceName.StartsWith("Microsoft_Azure_StorageAccounts", StringComparison.OrdinalIgnoreCase))
-            return "Storage";
+        if (datasourceName.StartsWith("Microsoft_Azure_StorageAccount", StringComparison.OrdinalIgnoreCase))
+            return "AzureStorage";
         if (datasourceName.StartsWith("Microsoft_Azure_RedisCache", StringComparison.OrdinalIgnoreCase))
             return "Redis";
         if (datasourceName.StartsWith("Microsoft_Azure_CosmosDB", StringComparison.OrdinalIgnoreCase))
             return "CosmosDB";
         if (datasourceName.StartsWith("Microsoft_Azure_KubernetesService", StringComparison.OrdinalIgnoreCase))
             return "AKS";
+        if (datasourceName.StartsWith("Microsoft_Azure_PostgreSQL", StringComparison.OrdinalIgnoreCase))
+            return "AzurePostgreSQL";
+        if (datasourceName.StartsWith("Microsoft_Azure_MySQL", StringComparison.OrdinalIgnoreCase))
+            return "AzureMySQL";
+        if (datasourceName.StartsWith("Microsoft_Azure_EventHub", StringComparison.OrdinalIgnoreCase))
+            return "AzureEventHubs";
+        if (datasourceName.StartsWith("Microsoft_Azure_ServiceBus", StringComparison.OrdinalIgnoreCase))
+            return "AzureServiceBus";
+        if (datasourceName.StartsWith("Microsoft_Azure_KeyVault", StringComparison.OrdinalIgnoreCase))
+            return "AzureKeyVault";
+        if (datasourceName.StartsWith("Microsoft_Azure_LogicApps", StringComparison.OrdinalIgnoreCase))
+            return "AzureLogicApps";
         if (datasourceName.StartsWith("Microsoft_Azure_", StringComparison.OrdinalIgnoreCase))
             return "Azure";
         if (datasourceName.StartsWith("VMware_", StringComparison.OrdinalIgnoreCase))

@@ -3397,7 +3397,7 @@ public class LMPerformanceV2Functions
     private string DetermineResourceTypeFromDatasource(string dsName)
     {
         // Map datasource names to resource type codes
-        if (dsName.Contains("SQLDatabases")) return "AzureSQL";
+        if (dsName.Contains("SQLDatabase")) return "AzureSQLDatabase"; // Catches SQLDatabase, SQLDatabases, SQLDatabaseNonDTU
         if (dsName.Contains("AppServicePlan")) return "AppServicePlan";
         if (dsName.Contains("AppService") || dsName.Contains("WebApps")) return "AppService";
         if (dsName.Contains("FunctionApps")) return "FunctionApp";
