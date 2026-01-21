@@ -2855,16 +2855,15 @@ public class LMPerformanceV2Functions
 
     /// <summary>
     /// Auto-discover Azure resource types and their available metrics from LogicMonitor
-    /// FAST MODE: Scans existing MetricsJson in the database instead of making API calls
-    /// This extracts datasources and datapoints from already-synced device data
+    /// Two modes:
+    /// - scanLive=false (default): Fast database scan of existing MetricsJson
+    /// - scanLive=true: Live API scan to find NEW resource types not yet in database
     /// </summary>
     [Function("DiscoverAzureResourceTypes")]
     public async Task<HttpResponseData> DiscoverAzureResourceTypes(
         [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "v2/performance/admin/discover-azure")]
         HttpRequestData req)
     {
-        _logger.LogInformation("Starting Azure resource type discovery (database scan mode)");
-
         try
         {
             var body = await req.ReadAsStringAsync();
@@ -2873,17 +2872,24 @@ public class LMPerformanceV2Functions
             // Options
             var dryRun = options.ValueKind == JsonValueKind.Object &&
                          options.TryGetProperty("dryRun", out var dryProp) && dryProp.GetBoolean();
+            var scanLive = options.ValueKind == JsonValueKind.Object &&
+                           options.TryGetProperty("scanLive", out var liveProp) && liveProp.GetBoolean();
 
             var discoveredDatasources = new Dictionary<string, DiscoveredDatasource>();
             var discoveredTypes = new Dictionary<string, DiscoveredResourceType>();
+            var devicesScannedCount = 0;
+            var liveScannedCount = 0;
 
-            // FAST: Query database for all devices with metrics data
+            // PHASE 1: Always do fast database scan first
+            _logger.LogInformation("Starting Azure resource type discovery - Phase 1: Database scan");
+
             var devicesWithMetrics = await _db.LMDeviceMetricsV2
                 .Where(d => d.MetricsJson != null && d.MetricsJson != "" && d.MetricsJson != "[]")
-                .Select(d => new { d.DeviceId, d.DeviceName, d.MetricsJson, d.ResourceType })
+                .Select(d => new { d.DeviceId, d.DeviceName, d.MetricsJson, d.ResourceType, d.CustomerId })
                 .ToListAsync();
 
-            _logger.LogInformation("Scanning {Count} devices with metrics data", devicesWithMetrics.Count);
+            devicesScannedCount = devicesWithMetrics.Count;
+            _logger.LogInformation("Scanning {Count} devices with metrics data", devicesScannedCount);
 
             foreach (var device in devicesWithMetrics)
             {
@@ -2896,15 +2902,12 @@ public class LMPerformanceV2Functions
 
                     foreach (var metric in metricsArray.EnumerateArray())
                     {
-                        // Extract datasource and datapoint from each metric entry
                         var datasource = metric.TryGetProperty("datasource", out var dsProp) ? dsProp.GetString() : null;
                         var datapoint = metric.TryGetProperty("datapoint", out var dpProp) ? dpProp.GetString() : null;
 
-                        // Only interested in Azure datasources
                         if (string.IsNullOrEmpty(datasource) || !datasource.StartsWith("Microsoft_Azure_"))
                             continue;
 
-                        // Track this datasource
                         if (!discoveredDatasources.ContainsKey(datasource))
                         {
                             discoveredDatasources[datasource] = new DiscoveredDatasource
@@ -2917,7 +2920,6 @@ public class LMPerformanceV2Functions
                         }
                         discoveredDatasources[datasource].DeviceCount++;
 
-                        // Track datapoint
                         if (!string.IsNullOrEmpty(datapoint))
                         {
                             discoveredDatasources[datasource].Datapoints.Add(datapoint);
@@ -2930,7 +2932,95 @@ public class LMPerformanceV2Functions
                 }
             }
 
-            _logger.LogInformation("Found {DatasourceCount} unique Azure datasources", discoveredDatasources.Count);
+            _logger.LogInformation("Database scan found {DatasourceCount} unique Azure datasources", discoveredDatasources.Count);
+
+            // PHASE 2: Optional live API scan for NEW datasources not in database
+            if (scanLive)
+            {
+                _logger.LogInformation("Starting Phase 2: Live API scan for new resource types");
+
+                // Get active LM-enabled customers
+                var customers = await _db.Customers
+                    .Where(c => c.LMEnabled && c.IsActive)
+                    .Take(3) // Limit to 3 customers to keep it fast
+                    .ToListAsync();
+
+                foreach (var customer in customers)
+                {
+                    try
+                    {
+                        var lmService = await GetLogicMonitorServiceAsync(customer.Id, _db);
+                        if (lmService == null) continue;
+
+                        // Get just the first few devices with Azure datasources
+                        var devices = await _db.LMDeviceMetricsV2
+                            .Where(d => d.CustomerId == customer.Id)
+                            .OrderByDescending(d => d.LastSyncedAt)
+                            .Take(5) // Just 5 devices per customer
+                            .ToListAsync();
+
+                        foreach (var device in devices)
+                        {
+                            try
+                            {
+                                liveScannedCount++;
+                                var dsResponse = await lmService.GetDeviceDatasourcesAsync(device.DeviceId);
+                                if (dsResponse?.Items == null) continue;
+
+                                foreach (var ds in dsResponse.Items.Where(d => d.DataSourceName?.StartsWith("Microsoft_Azure_") == true))
+                                {
+                                    var dsName = ds.DataSourceName!;
+
+                                    // Only scan if we don't already know this datasource
+                                    if (!discoveredDatasources.ContainsKey(dsName))
+                                    {
+                                        _logger.LogInformation("Found NEW datasource via live scan: {Datasource}", dsName);
+
+                                        discoveredDatasources[dsName] = new DiscoveredDatasource
+                                        {
+                                            Name = dsName,
+                                            DisplayName = ds.DataSourceDisplayName ?? dsName.Replace("Microsoft_Azure_", "").Replace("_", " "),
+                                            DeviceCount = 1,
+                                            Datapoints = new HashSet<string>(),
+                                            IsNewFromLiveScan = true
+                                        };
+
+                                        // Get datapoints for this new datasource
+                                        var instancesResponse = await lmService.GetDatasourceInstancesAsync(device.DeviceId, ds.Id);
+                                        if (instancesResponse?.Items?.Any() == true)
+                                        {
+                                            var firstInstance = instancesResponse.Items.First();
+                                            var dataResponse = await lmService.GetInstanceDataAsync(
+                                                device.DeviceId, ds.Id, firstInstance.Id,
+                                                DateTime.UtcNow.AddHours(-1), DateTime.UtcNow);
+
+                                            if (dataResponse?.DataPoints != null)
+                                            {
+                                                foreach (var dp in dataResponse.DataPoints)
+                                                {
+                                                    discoveredDatasources[dsName].Datapoints.Add(dp);
+                                                }
+                                            }
+                                        }
+
+                                        await Task.Delay(100); // Rate limiting
+                                    }
+                                }
+                            }
+                            catch (Exception ex)
+                            {
+                                _logger.LogWarning(ex, "Error scanning device {DeviceId} live", device.DeviceId);
+                            }
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogWarning(ex, "Error scanning customer {CustomerName} live", customer.Name);
+                    }
+                }
+
+                _logger.LogInformation("Live scan complete. Total datasources now: {Count}", discoveredDatasources.Count);
+            }
 
             // Group datasources into resource types
             foreach (var ds in discoveredDatasources.Values)
@@ -2952,6 +3042,10 @@ public class LMPerformanceV2Functions
                 if (!discoveredTypes[resourceTypeCode].Datasources.Contains(ds.Name))
                     discoveredTypes[resourceTypeCode].Datasources.Add(ds.Name);
                 discoveredTypes[resourceTypeCode].TotalDevices += ds.DeviceCount;
+
+                // Mark as new if any datasource came from live scan
+                if (ds.IsNewFromLiveScan)
+                    discoveredTypes[resourceTypeCode].IsNewFromLiveScan = true;
 
                 // Identify percentage metrics that are useful for performance monitoring
                 var percentageDatapoints = ds.Datapoints
@@ -3077,18 +3171,24 @@ public class LMPerformanceV2Functions
             }
 
             var response = req.CreateResponse(HttpStatusCode.OK);
+            var newFromLiveScan = discoveredDatasources.Values.Count(d => d.IsNewFromLiveScan);
+
             await response.WriteAsJsonAsync(new
             {
                 success = true,
                 dryRun,
+                scanLive,
                 summary = new
                 {
                     datasourcesDiscovered = discoveredDatasources.Count,
+                    newFromLiveScan,
                     resourceTypesFound = discoveredTypes.Count,
                     typesWithMetrics = discoveredTypes.Values.Count(t => t.Metrics.Any()),
                     totalMetricsFound = discoveredTypes.Values.Sum(t => t.Metrics.Count),
                     created = created.Count,
-                    updated = updated.Count
+                    updated = updated.Count,
+                    devicesScanned = devicesScannedCount,
+                    liveDevicesScanned = liveScannedCount
                 },
                 created,
                 updated,
@@ -3099,6 +3199,7 @@ public class LMPerformanceV2Functions
                     category = t.Category,
                     datasources = t.Datasources,
                     deviceCount = t.TotalDevices,
+                    isNew = t.IsNewFromLiveScan,
                     metrics = t.Metrics.Select(m => new
                     {
                         name = m.DatapointName,
@@ -3106,8 +3207,7 @@ public class LMPerformanceV2Functions
                         category = m.Category,
                         unit = m.Unit
                     })
-                }),
-                devicesScanned = devicesWithMetrics.Count
+                })
             });
             return response;
         }
@@ -3127,6 +3227,7 @@ public class LMPerformanceV2Functions
         public string DisplayName { get; set; } = "";
         public int DeviceCount { get; set; }
         public HashSet<string> Datapoints { get; set; } = new();
+        public bool IsNewFromLiveScan { get; set; }
     }
 
     private class DiscoveredResourceType
@@ -3137,6 +3238,7 @@ public class LMPerformanceV2Functions
         public List<string> Datasources { get; set; } = new();
         public List<DiscoveredMetric> Metrics { get; set; } = new();
         public int TotalDevices { get; set; }
+        public bool IsNewFromLiveScan { get; set; }
     }
 
     private class DiscoveredMetric
