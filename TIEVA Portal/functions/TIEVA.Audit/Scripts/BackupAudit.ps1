@@ -1148,22 +1148,25 @@ foreach ($sub in $subs) {
         Recommendation   = 'Consider using Private Endpoints for vault access to improve security'
       })
     }
-    # LRS storage redundancy
+    # Storage redundancy findings
+    # LRS = no zone or regional protection
+    # ZRS = zone protection only, no regional failover
+    # GRS/GZRS = regional protection (paired region), CRR available
     if ($r.StorageRedundancy -eq 'LRS') {
       $findings.Add([pscustomobject]@{
         SubscriptionName = $sub.Name
         SubscriptionId   = $sub.Id
-        Severity         = 'Low'
+        Severity         = 'Medium'
         Category         = 'Vault Configuration'
         ResourceType     = 'Microsoft.RecoveryServices/vaults'
         ResourceName     = $r.VaultName
         ResourceId       = $v.Id
-        Detail           = "Vault is using Locally Redundant Storage (LRS)."
-        Recommendation   = 'Consider using GRS or ZRS for disaster recovery protection across regions or zones'
+        Detail           = "Vault is using Locally Redundant Storage (LRS). No protection against zone or regional failures."
+        Recommendation   = 'Consider ZRS for zone protection, or GRS/GZRS for regional disaster recovery'
       })
     }
-    # Cross-Region Restore not enabled
-    if ($r.CrossRegionRestore -in @($null, $false, 'Disabled')) {
+    elseif ($r.StorageRedundancy -eq 'ZRS') {
+      # ZRS provides zone protection but no regional failover - informational only
       $findings.Add([pscustomobject]@{
         SubscriptionName = $sub.Name
         SubscriptionId   = $sub.Id
@@ -1172,9 +1175,26 @@ foreach ($sub in $subs) {
         ResourceType     = 'Microsoft.RecoveryServices/vaults'
         ResourceName     = $r.VaultName
         ResourceId       = $v.Id
-        Detail           = "Cross-Region Restore is not enabled on vault."
-        Recommendation   = 'Enable Cross-Region Restore for regional disaster recovery capability'
+        Detail           = "Vault is using Zone-Redundant Storage (ZRS). Protected against zone failures but not regional outages."
+        Recommendation   = 'Consider GRS or GZRS if regional disaster recovery is required'
       })
+    }
+    # Cross-Region Restore - only relevant for GRS/GZRS vaults
+    # CRR enables on-demand restore from paired region without waiting for Microsoft to declare regional failure
+    if ($r.StorageRedundancy -in @('GRS', 'GZRS', 'RA-GRS', 'RA-GZRS')) {
+      if ($r.CrossRegionRestore -in @($null, $false, 'Disabled')) {
+        $findings.Add([pscustomobject]@{
+          SubscriptionName = $sub.Name
+          SubscriptionId   = $sub.Id
+          Severity         = 'Low'
+          Category         = 'Vault Configuration'
+          ResourceType     = 'Microsoft.RecoveryServices/vaults'
+          ResourceName     = $r.VaultName
+          ResourceId       = $v.Id
+          Detail           = "Cross-Region Restore is not enabled. Restores from paired region require Microsoft to declare regional failure."
+          Recommendation   = 'Enable Cross-Region Restore for on-demand DR drills and proactive recovery from secondary region'
+        })
+      }
     }
 
     # ---- Backed-up VM items (robust discovery) ----
