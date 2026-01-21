@@ -978,6 +978,59 @@ public class LogicMonitorFunctions
         return response;
     }
 
+    /// <summary>
+    /// Get subgroups for a specific group using customer-specific credentials
+    /// </summary>
+    [Function("GetCustomerLMSubgroups")]
+    public async Task<HttpResponseData> GetCustomerSubgroups(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "logicmonitor/customers/{customerId}/groups/{groupId}/subgroups")]
+        HttpRequestData req, string customerId, string groupId)
+    {
+        if (!Guid.TryParse(customerId, out var custId))
+        {
+            var badRequest = req.CreateResponse(HttpStatusCode.BadRequest);
+            await badRequest.WriteStringAsync("Invalid customer ID");
+            return badRequest;
+        }
+
+        if (!int.TryParse(groupId, out var parentGroupId))
+        {
+            var badRequest = req.CreateResponse(HttpStatusCode.BadRequest);
+            await badRequest.WriteStringAsync("Invalid group ID");
+            return badRequest;
+        }
+
+        var customer = await _db.Customers.FindAsync(custId);
+        if (customer == null)
+        {
+            var notFound = req.CreateResponse(HttpStatusCode.NotFound);
+            await notFound.WriteStringAsync("Customer not found");
+            return notFound;
+        }
+
+        var lmService = await GetLogicMonitorServiceAsync(custId);
+        if (lmService == null)
+        {
+            var errorResponse = req.CreateResponse(HttpStatusCode.ServiceUnavailable);
+            await errorResponse.WriteStringAsync("LogicMonitor service unavailable");
+            return errorResponse;
+        }
+
+        var subgroups = await lmService.GetSubgroupsAsync(parentGroupId);
+
+        var response = req.CreateResponse(HttpStatusCode.OK);
+        await response.WriteAsJsonAsync(new
+        {
+            parentGroupId,
+            subgroups = subgroups?.Items.Select(g => new
+            {
+                g.Id, g.Name, g.FullPath, g.NumOfHosts
+            }) ?? Enumerable.Empty<object>(),
+            totalSubgroups = subgroups?.Total ?? 0
+        });
+        return response;
+    }
+
     [Function("SetLMMapping")]
     public async Task<HttpResponseData> SetMapping(
         [HttpTrigger(AuthorizationLevel.Anonymous, "put", Route = "logicmonitor/customers/{customerId}/mapping")] 
