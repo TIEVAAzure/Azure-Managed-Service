@@ -474,4 +474,81 @@ if (_remainingRequests <= 5 && DateTime.UtcNow < _rateLimitReset)
 
 ---
 
-*Last Updated: 2026-01-21 10:45 UTC*
+## 🗺️ REMEDIATION ROADMAP
+
+### Phase 1: Quick Wins (1-2 days)
+*Low effort, high impact fixes*
+
+| Priority | Issue | Category | Effort | Impact |
+|----------|-------|----------|--------|--------|
+| 🔴 High | #11 - Historical Sync 9 Days | Data Quality | Low | Medium |
+| 🔴 High | #8 - Browse Group Button | UI/UX | Low | Medium |
+| 🟡 Medium | #10 - Rate Limiting (needs testing) | Reliability | Done | High |
+
+---
+
+### Phase 2: Metric Coverage (3-5 days)
+*Expand monitoring coverage for Azure resources*
+
+| Priority | Issue | Category | Effort | Impact |
+|----------|-------|----------|--------|--------|
+| 🔴 High | #5 - Azure VM Metrics Failing | Metrics | Medium | High |
+| 🔴 High | #5 - Azure Storage Metrics | Metrics | Medium | Medium |
+| 🔴 High | #5 - Azure Disk Metrics | Metrics | Medium | Medium |
+| 🟡 Medium | #5 - Azure Network Metrics | Metrics | Medium | Low |
+
+**Related Issues**: #5, #6 (grouped as "Azure PaaS Metrics")
+
+**Approach**:
+1. Use Performance Admin > Bulk Discovery to find available LM datasources
+2. Map correct datapoints for each resource type
+3. Handle non-percentage metrics (latency in ms, IOPS counts, etc.)
+4. Add `UnitType` to `LMMetricMappings` table
+
+---
+
+### Phase 3: Data Completeness (1 week)
+*Ensure all customers have complete data*
+
+| Priority | Issue | Category | Effort | Impact |
+|----------|-------|----------|--------|--------|
+| 🟡 Medium | #9 - FinOps Missing Subscriptions | FinOps | Medium | High |
+| 🟡 Medium | #6 - Limited PaaS Coverage | Metrics | High | Medium |
+
+**Related Issues**: #6, #9 (grouped as "Data Coverage")
+
+---
+
+### Phase 4: Scoring & Recommendations (1-2 weeks)
+*Improve assessment accuracy and recommendations*
+
+| Priority | Issue | Category | Effort | Impact |
+|----------|-------|----------|--------|--------|
+| 🟡 Medium | #17 - Scoring Too Aggressive | Assessment | Medium | High |
+| 🟢 Low | #16 - Right-Sizing Limited | Recommendations | High | Medium |
+
+**Related Issues**: #16, #17 (grouped as "Assessment Quality")
+
+**Approach**:
+1. Review scoring algorithm weights
+2. Add positive contribution for passing checks
+3. Expand right-sizing to include all relevant metrics per resource type
+
+---
+
+### Grouped Issue Summary
+
+| Group | Issues | Status |
+|-------|--------|--------|
+| **Disk Metrics** | #12 | ✅ FIXED |
+| **Memory Metrics** | #18 | ✅ FIXED |
+| **Historical Data** | #3, #11, #13 | ⚠️ Partially Fixed |
+| **Azure PaaS Metrics** | #5, #6 | 🔴 Open |
+| **Data Coverage** | #6, #9 | 🔴 Open |
+| **Assessment Quality** | #16, #17 | 🔴 Open |
+| **UI/UX** | #7, #8, #14, #15 | ⚠️ Mostly Fixed |
+| **Reliability** | #10, #13 | ✅ Fixed (testing) |
+
+---
+
+*Last Updated: 2026-01-21 11:00 UTC*
