@@ -2852,4 +2852,597 @@ public class LMPerformanceV2Functions
             return err;
         }
     }
+
+    /// <summary>
+    /// Auto-discover Azure resource types and their available metrics from LogicMonitor
+    /// Scans devices to find all Azure datasources and their datapoints, then creates/updates
+    /// resource type configurations automatically
+    /// </summary>
+    [Function("DiscoverAzureResourceTypes")]
+    public async Task<HttpResponseData> DiscoverAzureResourceTypes(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "v2/performance/admin/discover-azure")]
+        HttpRequestData req)
+    {
+        _logger.LogInformation("Starting Azure resource type discovery");
+
+        try
+        {
+            var body = await req.ReadAsStringAsync();
+            var options = JsonSerializer.Deserialize<JsonElement>(body ?? "{}");
+
+            // Options
+            var customerId = options.TryGetProperty("customerId", out var custProp)
+                ? Guid.Parse(custProp.GetString()!) : (Guid?)null;
+            var dryRun = options.TryGetProperty("dryRun", out var dryProp) && dryProp.GetBoolean();
+            var maxDevices = options.TryGetProperty("maxDevices", out var maxProp) ? maxProp.GetInt32() : 50;
+
+            // Get a sample of customers to scan
+            var customersToScan = customerId.HasValue
+                ? await _db.Customers.Where(c => c.Id == customerId.Value && c.LMEnabled).ToListAsync()
+                : await _db.Customers.Where(c => c.LMEnabled && c.IsActive).Take(5).ToListAsync();
+
+            if (!customersToScan.Any())
+            {
+                var noCustomers = req.CreateResponse(HttpStatusCode.BadRequest);
+                await noCustomers.WriteStringAsync("No LM-enabled customers found to scan");
+                return noCustomers;
+            }
+
+            var discoveredDatasources = new Dictionary<string, DiscoveredDatasource>();
+            var discoveredTypes = new Dictionary<string, DiscoveredResourceType>();
+            var scanLog = new List<object>();
+
+            foreach (var customer in customersToScan)
+            {
+                var lmService = await GetLogicMonitorServiceAsync(customer.Id, _db);
+                if (lmService == null)
+                {
+                    scanLog.Add(new { customer = customer.Name, error = "Could not get LM credentials" });
+                    continue;
+                }
+
+                // Get devices for customer
+                var devices = await _db.LMDeviceMetricsV2
+                    .Where(d => d.CustomerId == customer.Id)
+                    .OrderByDescending(d => d.LastSyncedAt)
+                    .Take(maxDevices)
+                    .ToListAsync();
+
+                _logger.LogInformation("Scanning {DeviceCount} devices for customer {CustomerName}", devices.Count, customer.Name);
+
+                foreach (var device in devices)
+                {
+                    try
+                    {
+                        // Get all datasources for this device
+                        var dsResponse = await lmService.GetDeviceDatasourcesAsync(device.DeviceId);
+                        if (dsResponse?.Items == null) continue;
+
+                        foreach (var ds in dsResponse.Items.Where(d => d.DataSourceName?.StartsWith("Microsoft_Azure_") == true))
+                        {
+                            var dsName = ds.DataSourceName!;
+
+                            // Track this datasource
+                            if (!discoveredDatasources.ContainsKey(dsName))
+                            {
+                                discoveredDatasources[dsName] = new DiscoveredDatasource
+                                {
+                                    Name = dsName,
+                                    DisplayName = ds.DataSourceDisplayName ?? dsName,
+                                    DeviceCount = 0,
+                                    Datapoints = new HashSet<string>()
+                                };
+                            }
+                            discoveredDatasources[dsName].DeviceCount++;
+
+                            // Get instances and datapoints
+                            var instancesResponse = await lmService.GetDatasourceInstancesAsync(device.DeviceId, ds.Id);
+                            if (instancesResponse?.Items == null || !instancesResponse.Items.Any()) continue;
+
+                            // Get data from first instance to discover datapoints
+                            var firstInstance = instancesResponse.Items.First();
+                            var dataResponse = await lmService.GetInstanceDataAsync(
+                                device.DeviceId, ds.Id, firstInstance.Id,
+                                DateTime.UtcNow.AddHours(-1), DateTime.UtcNow);
+
+                            if (dataResponse?.DataPoints != null)
+                            {
+                                foreach (var dp in dataResponse.DataPoints)
+                                {
+                                    discoveredDatasources[dsName].Datapoints.Add(dp);
+                                }
+                            }
+
+                            await Task.Delay(50); // Rate limiting
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogWarning(ex, "Error scanning device {DeviceId}", device.DeviceId);
+                    }
+                }
+
+                scanLog.Add(new { customer = customer.Name, devicesScanned = devices.Count });
+            }
+
+            // Group datasources into resource types
+            foreach (var ds in discoveredDatasources.Values)
+            {
+                var resourceTypeCode = DetermineResourceTypeFromDatasource(ds.Name);
+
+                if (!discoveredTypes.ContainsKey(resourceTypeCode))
+                {
+                    discoveredTypes[resourceTypeCode] = new DiscoveredResourceType
+                    {
+                        Code = resourceTypeCode,
+                        DisplayName = GetResourceTypeDisplayName(resourceTypeCode),
+                        Category = GetResourceTypeCategory(resourceTypeCode),
+                        Datasources = new List<string>(),
+                        Metrics = new List<DiscoveredMetric>()
+                    };
+                }
+
+                discoveredTypes[resourceTypeCode].Datasources.Add(ds.Name);
+                discoveredTypes[resourceTypeCode].TotalDevices += ds.DeviceCount;
+
+                // Identify percentage metrics that are useful for performance monitoring
+                var percentageDatapoints = ds.Datapoints
+                    .Where(dp => IsUsefulPercentageMetric(dp))
+                    .ToList();
+
+                foreach (var dp in percentageDatapoints)
+                {
+                    var existingMetric = discoveredTypes[resourceTypeCode].Metrics
+                        .FirstOrDefault(m => m.DatapointName == dp);
+
+                    if (existingMetric == null)
+                    {
+                        discoveredTypes[resourceTypeCode].Metrics.Add(new DiscoveredMetric
+                        {
+                            DatapointName = dp,
+                            DisplayName = GetMetricDisplayName(dp),
+                            Unit = GetMetricUnit(dp),
+                            DatasourceName = ds.Name,
+                            Category = CategorizeMetric(dp)
+                        });
+                    }
+                }
+            }
+
+            // If not dry run, create/update database records
+            var created = new List<string>();
+            var updated = new List<string>();
+
+            if (!dryRun)
+            {
+                foreach (var type in discoveredTypes.Values.Where(t => t.Metrics.Any()))
+                {
+                    // Check if resource type exists
+                    var existing = await _db.LMResourceTypes
+                        .Include(rt => rt.MetricMappings)
+                        .FirstOrDefaultAsync(rt => rt.Code == type.Code);
+
+                    if (existing == null)
+                    {
+                        // Create new resource type
+                        var newType = new LMResourceType
+                        {
+                            Code = type.Code,
+                            DisplayName = type.DisplayName,
+                            Category = type.Category,
+                            DetectionPatternsJson = JsonSerializer.Serialize(type.Datasources),
+                            HasPerformanceMetrics = true,
+                            ShowInDashboard = true,
+                            IsActive = true,
+                            SortOrder = 100,
+                            CreatedAt = DateTime.UtcNow,
+                            UpdatedAt = DateTime.UtcNow
+                        };
+
+                        _db.LMResourceTypes.Add(newType);
+                        await _db.SaveChangesAsync();
+
+                        // Add metric mappings
+                        foreach (var metric in type.Metrics)
+                        {
+                            var mapping = new LMMetricMapping
+                            {
+                                ResourceTypeId = newType.Id,
+                                MetricName = metric.Category,
+                                DisplayName = metric.DisplayName,
+                                Unit = metric.Unit,
+                                DatasourcePatternsJson = JsonSerializer.Serialize(new[] { metric.DatasourceName }),
+                                DatapointPatternsJson = JsonSerializer.Serialize(new[] { metric.DatapointName }),
+                                IsActive = true,
+                                SortOrder = GetMetricSortOrder(metric.Category),
+                                CreatedAt = DateTime.UtcNow,
+                                UpdatedAt = DateTime.UtcNow
+                            };
+
+                            // Set thresholds based on metric type
+                            SetDefaultThresholds(mapping, metric.Category);
+
+                            _db.LMMetricMappings.Add(mapping);
+                        }
+
+                        await _db.SaveChangesAsync();
+                        created.Add(type.Code);
+                    }
+                    else
+                    {
+                        // Update existing - add any new metrics not already configured
+                        var existingMetricNames = existing.MetricMappings.Select(m => m.MetricName).ToHashSet();
+                        var newMetrics = type.Metrics
+                            .Where(m => !existingMetricNames.Contains(m.Category))
+                            .GroupBy(m => m.Category)
+                            .Select(g => g.First())
+                            .ToList();
+
+                        foreach (var metric in newMetrics)
+                        {
+                            var mapping = new LMMetricMapping
+                            {
+                                ResourceTypeId = existing.Id,
+                                MetricName = metric.Category,
+                                DisplayName = metric.DisplayName,
+                                Unit = metric.Unit,
+                                DatasourcePatternsJson = JsonSerializer.Serialize(new[] { metric.DatasourceName }),
+                                DatapointPatternsJson = JsonSerializer.Serialize(new[] { metric.DatapointName }),
+                                IsActive = true,
+                                SortOrder = GetMetricSortOrder(metric.Category),
+                                CreatedAt = DateTime.UtcNow,
+                                UpdatedAt = DateTime.UtcNow
+                            };
+
+                            SetDefaultThresholds(mapping, metric.Category);
+                            _db.LMMetricMappings.Add(mapping);
+                        }
+
+                        if (newMetrics.Any())
+                        {
+                            existing.UpdatedAt = DateTime.UtcNow;
+                            await _db.SaveChangesAsync();
+                            updated.Add($"{type.Code} (+{newMetrics.Count} metrics)");
+                        }
+                    }
+                }
+            }
+
+            var response = req.CreateResponse(HttpStatusCode.OK);
+            await response.WriteAsJsonAsync(new
+            {
+                success = true,
+                dryRun,
+                summary = new
+                {
+                    datasourcesDiscovered = discoveredDatasources.Count,
+                    resourceTypesFound = discoveredTypes.Count,
+                    typesWithMetrics = discoveredTypes.Values.Count(t => t.Metrics.Any()),
+                    totalMetricsFound = discoveredTypes.Values.Sum(t => t.Metrics.Count),
+                    created = created.Count,
+                    updated = updated.Count
+                },
+                created,
+                updated,
+                discoveredTypes = discoveredTypes.Values.Select(t => new
+                {
+                    code = t.Code,
+                    displayName = t.DisplayName,
+                    category = t.Category,
+                    datasources = t.Datasources,
+                    deviceCount = t.TotalDevices,
+                    metrics = t.Metrics.Select(m => new
+                    {
+                        name = m.DatapointName,
+                        displayName = m.DisplayName,
+                        category = m.Category,
+                        unit = m.Unit
+                    })
+                }),
+                scanLog
+            });
+            return response;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Azure resource type discovery failed");
+            var err = req.CreateResponse(HttpStatusCode.InternalServerError);
+            await err.WriteStringAsync($"Error: {ex.Message}");
+            return err;
+        }
+    }
+
+    // Helper classes for discovery
+    private class DiscoveredDatasource
+    {
+        public string Name { get; set; } = "";
+        public string DisplayName { get; set; } = "";
+        public int DeviceCount { get; set; }
+        public HashSet<string> Datapoints { get; set; } = new();
+    }
+
+    private class DiscoveredResourceType
+    {
+        public string Code { get; set; } = "";
+        public string DisplayName { get; set; } = "";
+        public string Category { get; set; } = "";
+        public List<string> Datasources { get; set; } = new();
+        public List<DiscoveredMetric> Metrics { get; set; } = new();
+        public int TotalDevices { get; set; }
+    }
+
+    private class DiscoveredMetric
+    {
+        public string DatapointName { get; set; } = "";
+        public string DisplayName { get; set; } = "";
+        public string Unit { get; set; } = "%";
+        public string DatasourceName { get; set; } = "";
+        public string Category { get; set; } = "";
+    }
+
+    // Helper methods for discovery
+    private string DetermineResourceTypeFromDatasource(string dsName)
+    {
+        // Map datasource names to resource type codes
+        if (dsName.Contains("SQLDatabases")) return "AzureSQL";
+        if (dsName.Contains("AppServicePlan")) return "AppServicePlan";
+        if (dsName.Contains("AppService") || dsName.Contains("WebApps")) return "AppService";
+        if (dsName.Contains("FunctionApps")) return "FunctionApp";
+        if (dsName.Contains("StorageAccount") || dsName.Contains("BlobStorage") || dsName.Contains("FileStorage"))
+            return "AzureStorage";
+        if (dsName.Contains("RedisCache")) return "Redis";
+        if (dsName.Contains("CosmosDB")) return "CosmosDB";
+        if (dsName.Contains("KubernetesService") || dsName.Contains("AKS")) return "AKS";
+        if (dsName.Contains("_VMs")) return "AzureVM";
+        if (dsName.Contains("_Disk")) return "AzureDisk";
+        if (dsName.Contains("PostgreSQL")) return "AzurePostgreSQL";
+        if (dsName.Contains("MySQL")) return "AzureMySQL";
+        if (dsName.Contains("MariaDB")) return "AzureMariaDB";
+        if (dsName.Contains("EventHub")) return "AzureEventHubs";
+        if (dsName.Contains("ServiceBus")) return "AzureServiceBus";
+        if (dsName.Contains("KeyVault")) return "AzureKeyVault";
+        if (dsName.Contains("LoadBalancer")) return "AzureLoadBalancer";
+        if (dsName.Contains("ApplicationGateway")) return "AzureAppGateway";
+        if (dsName.Contains("TrafficManager")) return "AzureTrafficManager";
+        if (dsName.Contains("FrontDoor")) return "AzureFrontDoor";
+        if (dsName.Contains("CDN")) return "AzureCDN";
+        if (dsName.Contains("ApplicationInsights")) return "AppInsights";
+        if (dsName.Contains("LogAnalytics")) return "LogAnalytics";
+        if (dsName.Contains("VirtualNetworks")) return "AzureVNet";
+        if (dsName.Contains("NetworkInterface")) return "AzureNIC";
+        if (dsName.Contains("PublicIP")) return "AzurePublicIP";
+        if (dsName.Contains("VPN")) return "AzureVPN";
+        if (dsName.Contains("ExpressRoute")) return "AzureExpressRoute";
+        if (dsName.Contains("Firewall")) return "AzureFirewall";
+        if (dsName.Contains("ContainerInstance")) return "AzureContainerInstance";
+        if (dsName.Contains("ContainerRegistry")) return "AzureContainerRegistry";
+        if (dsName.Contains("BatchAccount")) return "AzureBatch";
+        if (dsName.Contains("SignalR")) return "AzureSignalR";
+        if (dsName.Contains("APIManagement")) return "AzureAPIM";
+        if (dsName.Contains("Automation")) return "AzureAutomation";
+        if (dsName.Contains("LogicApp")) return "AzureLogicApps";
+
+        // Default - extract from datasource name
+        var suffix = dsName.Replace("Microsoft_Azure_", "").Split('_')[0];
+        return $"Azure{suffix}";
+    }
+
+    private string GetResourceTypeDisplayName(string code)
+    {
+        return code switch
+        {
+            "AzureVM" => "Azure Virtual Machine",
+            "AzureSQL" => "Azure SQL Database",
+            "AppService" => "Azure App Service",
+            "AppServicePlan" => "Azure App Service Plan",
+            "FunctionApp" => "Azure Function App",
+            "AzureStorage" => "Azure Storage Account",
+            "Redis" => "Azure Redis Cache",
+            "CosmosDB" => "Azure Cosmos DB",
+            "AKS" => "Azure Kubernetes Service",
+            "AzureDisk" => "Azure Managed Disk",
+            "AzurePostgreSQL" => "Azure PostgreSQL",
+            "AzureMySQL" => "Azure MySQL",
+            "AzureMariaDB" => "Azure MariaDB",
+            "AzureEventHubs" => "Azure Event Hubs",
+            "AzureServiceBus" => "Azure Service Bus",
+            "AzureKeyVault" => "Azure Key Vault",
+            "AzureLoadBalancer" => "Azure Load Balancer",
+            "AzureAppGateway" => "Azure Application Gateway",
+            "AzureTrafficManager" => "Azure Traffic Manager",
+            "AzureFrontDoor" => "Azure Front Door",
+            "AzureCDN" => "Azure CDN",
+            "AppInsights" => "Azure Application Insights",
+            "LogAnalytics" => "Azure Log Analytics",
+            "AzureVNet" => "Azure Virtual Network",
+            "AzureNIC" => "Azure Network Interface",
+            "AzurePublicIP" => "Azure Public IP",
+            "AzureVPN" => "Azure VPN Gateway",
+            "AzureExpressRoute" => "Azure ExpressRoute",
+            "AzureFirewall" => "Azure Firewall",
+            "AzureContainerInstance" => "Azure Container Instance",
+            "AzureContainerRegistry" => "Azure Container Registry",
+            "AzureBatch" => "Azure Batch",
+            "AzureSignalR" => "Azure SignalR",
+            "AzureAPIM" => "Azure API Management",
+            "AzureAutomation" => "Azure Automation",
+            "AzureLogicApps" => "Azure Logic Apps",
+            _ => code.Replace("Azure", "Azure ")
+        };
+    }
+
+    private string GetResourceTypeCategory(string code)
+    {
+        if (code.Contains("SQL") || code.Contains("Cosmos") || code.Contains("PostgreSQL") ||
+            code.Contains("MySQL") || code.Contains("MariaDB") || code.Contains("Redis"))
+            return "Database";
+        if (code.Contains("Storage") || code.Contains("Disk"))
+            return "Storage";
+        if (code.Contains("VM") || code.Contains("Container") || code.Contains("Batch"))
+            return "Compute";
+        if (code.Contains("App") || code.Contains("Function") || code.Contains("Logic"))
+            return "Application";
+        if (code.Contains("Event") || code.Contains("ServiceBus") || code.Contains("SignalR"))
+            return "Messaging";
+        if (code.Contains("Network") || code.Contains("LoadBalancer") || code.Contains("Gateway") ||
+            code.Contains("Traffic") || code.Contains("FrontDoor") || code.Contains("CDN") ||
+            code.Contains("VNet") || code.Contains("NIC") || code.Contains("VPN") ||
+            code.Contains("ExpressRoute") || code.Contains("Firewall") || code.Contains("PublicIP"))
+            return "Networking";
+        if (code.Contains("Insight") || code.Contains("Analytics"))
+            return "Monitoring";
+        if (code.Contains("KeyVault"))
+            return "Security";
+        if (code.Contains("AKS"))
+            return "Containers";
+        return "Other";
+    }
+
+    private bool IsUsefulPercentageMetric(string dpName)
+    {
+        // Metrics that are useful for performance/rightsizing recommendations
+        var usefulPatterns = new[]
+        {
+            // CPU metrics
+            "CPU", "Processor", "cpu_percent", "CpuPercentage",
+            // Memory metrics
+            "Memory", "memory_percent", "MemoryPercentage", "usedmemory",
+            // Disk/Storage metrics
+            "storage_percent", "DiskQueue", "DiskIOPS", "DiskBandwidth",
+            // Database-specific
+            "DTU", "dtu_", "RU", "RequestUnits", "connection",
+            // Network/throughput
+            "Throughput", "Bandwidth", "BytesIn", "BytesOut", "Requests", "Latency",
+            // Availability/health
+            "Availability", "Health", "Success", "Error", "Failed",
+            // Cache
+            "Hit", "Miss", "Evicted", "serverLoad"
+        };
+
+        // Exclude raw counters and non-useful metrics
+        var excludePatterns = new[]
+        {
+            "Total", "Count", "Bytes", "Time", "Seconds", "Period",
+            "Metadata", "Version", "Status"
+        };
+
+        // Must match a useful pattern
+        var matchesUseful = usefulPatterns.Any(p =>
+            dpName.Contains(p, StringComparison.OrdinalIgnoreCase));
+
+        // Must not be a raw counter (unless it's a percentage or rate)
+        var isExcluded = excludePatterns.Any(p =>
+            dpName.EndsWith(p, StringComparison.OrdinalIgnoreCase) &&
+            !dpName.Contains("Percent", StringComparison.OrdinalIgnoreCase) &&
+            !dpName.Contains("Rate", StringComparison.OrdinalIgnoreCase));
+
+        return matchesUseful && !isExcluded;
+    }
+
+    private string GetMetricDisplayName(string dpName)
+    {
+        // Convert datapoint name to human-readable display name
+        return dpName
+            .Replace("_", " ")
+            .Replace("Percent", " %")
+            .Replace("percent", " %")
+            .Replace("Average", "Avg")
+            .Replace("Maximum", "Max")
+            .Trim();
+    }
+
+    private string GetMetricUnit(string dpName)
+    {
+        if (dpName.Contains("Percent", StringComparison.OrdinalIgnoreCase) ||
+            dpName.Contains("percent", StringComparison.OrdinalIgnoreCase))
+            return "%";
+        if (dpName.Contains("Bytes", StringComparison.OrdinalIgnoreCase))
+            return "bytes";
+        if (dpName.Contains("Seconds", StringComparison.OrdinalIgnoreCase) ||
+            dpName.Contains("Latency", StringComparison.OrdinalIgnoreCase) ||
+            dpName.Contains("Time", StringComparison.OrdinalIgnoreCase))
+            return "ms";
+        if (dpName.Contains("Requests", StringComparison.OrdinalIgnoreCase) ||
+            dpName.Contains("Connections", StringComparison.OrdinalIgnoreCase))
+            return "count";
+        return "";
+    }
+
+    private string CategorizeMetric(string dpName)
+    {
+        var dpLower = dpName.ToLowerInvariant();
+        if (dpLower.Contains("cpu") || dpLower.Contains("processor")) return "CPU";
+        if (dpLower.Contains("memory") || dpLower.Contains("mem")) return "Memory";
+        if (dpLower.Contains("disk") || dpLower.Contains("storage") || dpLower.Contains("iops")) return "Disk";
+        if (dpLower.Contains("network") || dpLower.Contains("bytes") || dpLower.Contains("throughput")) return "Network";
+        if (dpLower.Contains("dtu") || dpLower.Contains("request") || dpLower.Contains("ru")) return "Throughput";
+        if (dpLower.Contains("connection")) return "Connections";
+        if (dpLower.Contains("latency") || dpLower.Contains("response")) return "Latency";
+        if (dpLower.Contains("error") || dpLower.Contains("failed")) return "Errors";
+        if (dpLower.Contains("hit") || dpLower.Contains("miss") || dpLower.Contains("cache")) return "Cache";
+        return "Other";
+    }
+
+    private int GetMetricSortOrder(string category)
+    {
+        return category switch
+        {
+            "CPU" => 10,
+            "Memory" => 20,
+            "Disk" => 30,
+            "Network" => 40,
+            "Throughput" => 50,
+            "Connections" => 60,
+            "Latency" => 70,
+            "Cache" => 80,
+            "Errors" => 90,
+            _ => 100
+        };
+    }
+
+    private void SetDefaultThresholds(LMMetricMapping mapping, string category)
+    {
+        // Set sensible default thresholds based on metric category
+        switch (category)
+        {
+            case "CPU":
+            case "Memory":
+            case "Disk":
+                mapping.WarningThreshold = 70;
+                mapping.CriticalThreshold = 85;
+                mapping.OversizedBelow = 20;
+                mapping.UndersizedAbove = 80;
+                break;
+            case "Throughput":
+                mapping.WarningThreshold = 80;
+                mapping.CriticalThreshold = 95;
+                mapping.OversizedBelow = 10;
+                mapping.UndersizedAbove = 85;
+                break;
+            case "Connections":
+                mapping.WarningThreshold = 80;
+                mapping.CriticalThreshold = 95;
+                break;
+            case "Latency":
+                // Latency is inverted - lower is better
+                mapping.WarningThreshold = 500;  // 500ms
+                mapping.CriticalThreshold = 1000; // 1s
+                mapping.InvertThreshold = true;
+                break;
+            case "Errors":
+                // Error rates - any errors are concerning
+                mapping.WarningThreshold = 1;
+                mapping.CriticalThreshold = 5;
+                break;
+            case "Cache":
+                // Cache hit rate - higher is better (inverted for miss rate)
+                if (mapping.DatapointPatternsJson.Contains("Hit"))
+                {
+                    mapping.WarningThreshold = 80;
+                    mapping.CriticalThreshold = 60;
+                    mapping.InvertThreshold = true; // Below threshold is bad
+                }
+                break;
+        }
+    }
 }

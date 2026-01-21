@@ -78,7 +78,7 @@
 ---
 
 ### Issue #11: Historical Sync Only Returns ~9 Days Instead of 90
-**Status**: ✅ FIXED - NEEDS DEPLOYMENT
+**Status**: ✅ FIXED - VERIFIED WORKING
 **Reported**: 2026-01-20
 **Updated**: 2026-01-21
 
@@ -204,15 +204,30 @@ GET /logicmonitor/customers/{customerId}/groups/{groupId}/subgroups
 ---
 
 ### Issue #9: FinOps Cost Analysis Missing Subscriptions
-**Status**: OPEN  
-**Reported**: 2026-01-20  
+**Status**: ✅ FIXED - VERIFIED WORKING
+**Reported**: 2026-01-20
+**Updated**: 2026-01-21
 
-**Problem**: FinOps Cost Analysis is not bringing through all the data - some subscriptions are missing.
+**Problem**: FinOps Cost Analysis not showing all subscriptions - e.g., Ovarro-hub-security (Advanced tier) missing despite exports running and files being created.
 
-**Investigation Needed**:
-- Which subscriptions are missing?
-- Is this a sync issue or a data source issue?
-- Check Azure Cost Management API scope/permissions
+**Root Cause Found**:
+The file selection logic only took files from the **most recent date**:
+```csharp
+var mostRecentDate = dateRangeGroup
+    .OrderByDescending(f => f.TimestampDate)
+    .First().TimestampDate;
+return dateRangeGroup.Where(f => f.TimestampDate == mostRecentDate);
+```
+
+Different subscriptions may export at different times/days. If Ovarro-hub-security exported on Jan 20 but another subscription exported on Jan 21, only the Jan 21 files were processed - excluding Ovarro-hub-security.
+
+**Fix Applied**:
+- Changed logic to include files from the **most recent 2 dates** instead of just 1
+- Existing deduplication logic prevents double-counting
+- Same fix applied to daily exports, monthly exports, and comparison files
+
+**Files Changed**:
+- `functions/TIEVA.Functions/Functions/FinOpsFunctions.cs` - Lines 1768-1807
 
 ---
 
@@ -282,23 +297,66 @@ if (_remainingRequests <= 5 && DateTime.UtcNow < _rateLimitReset)
 ---
 
 ### Issue #5: Azure Resource Type Metric Mappings Need Review
-**Status**: OPEN - LOW PRIORITY  
-**Reported**: 2026-01-20  
+**Status**: ✅ FIXED - NEEDS TESTING
+**Reported**: 2026-01-20
+**Updated**: 2026-01-21
 
 **Problem**: Many Azure resource types have metric mappings that don't match available datapoints or return non-percentage values.
 
-**Key Stats from Dashboard**:
+**Key Stats from Dashboard** (Before Fix):
 - **Unknown**: 438 resources (insufficient data)
 - **Critical**: 70 resources (needs attention)
 - **Azure VM**: 37 resources - ALL showing ✗ (failed metrics)
 
-**Affected Types** (from logs):
-| Resource Type | Issue |
-|--------------|-------|
-| AzureStorage | Latency in ms, Capacity datapoints unavailable |
-| AzureDisk | IOPS%/Bandwidth% don't exist |
-| AzureVM | 37 resources all failing - metrics outside 0-100 range |
-| AzureNetwork | Latency in ms, datasource mismatch |
+**Root Causes Found**:
+1. **DiskIOPSConsumedPercentage** and **DiskBandwidthConsumedPercentage** are NOT 0-100 percentages
+2. **AvailableMemoryBytes** and **MemoryWorkingSet** are raw byte values, not percentages
+3. Azure VMs via Azure Monitor only provide CPU % - Memory/Disk % require collector agent
+4. Missing patterns for many Azure PaaS resources (PostgreSQL, MySQL, EventHubs, etc.)
+
+**Fixes Applied**:
+
+1. **Updated FallbackDatapoints** in `LMPerformanceFunctions.cs`:
+   - Removed non-percentage datapoints from Disk mappings
+   - Removed raw byte values from Memory mappings
+   - Added correct Azure Monitor percentage metrics
+   - Added calculation datapoints (FreeSpace, Capacity, FreePhysicalMemory, etc.)
+
+2. **Added Azure PaaS Datasource Patterns**:
+   - PostgreSQL, MySQL, MariaDB
+   - EventHubs, ServiceBus
+   - CosmosDB additional patterns
+   - Container services, Cognitive services, ML
+
+3. **Expanded Resource Type Detection**:
+   - Added 15+ new Azure resource types
+   - LoadBalancer, ApplicationGateway
+   - PostgreSQL, MySQL, MariaDB
+   - EventHubs, ServiceBus
+   - ContainerInstances, ContainerRegistry
+   - CognitiveServices, MachineLearning
+
+4. **NEW: Auto-Discovery Function** (`DiscoverAzureResourceTypes`):
+   - Endpoint: `POST /api/v2/performance/admin/discover-azure`
+   - Scans devices to find all Azure datasources
+   - Discovers actual available datapoints
+   - Automatically creates/updates resource types and metric mappings
+   - Supports dry-run mode for preview
+   - Sets intelligent default thresholds per metric category
+
+**Files Changed**:
+- `functions/TIEVA.Functions/Functions/LMPerformanceFunctions.cs`
+  - Lines 27-138: Updated FallbackPatterns and FallbackDatapoints
+  - Lines 149-200: Added new resource type detection patterns
+- `functions/TIEVA.Functions/Functions/LMPerformanceV2Functions.cs`
+  - Lines 2855-3300: Added DiscoverAzureResourceTypes endpoint and helpers
+
+**Testing**:
+1. Deploy changes
+2. Run `POST /api/v2/performance/admin/discover-azure?dryRun=true` to preview
+3. Run `POST /api/v2/performance/admin/discover-azure` to apply
+4. Re-sync a customer's performance data
+5. Check if Azure VMs and PaaS resources now show correct metrics
 
 ---
 
@@ -332,7 +390,7 @@ if (_remainingRequests <= 5 && DateTime.UtcNow < _rateLimitReset)
 ---
 
 ### Issue #17: Assessment Scoring Too Aggressive
-**Status**: OPEN - INVESTIGATION NEEDED
+**Status**: ✅ FIXED - VERIFIED WORKING
 **Reported**: 2026-01-21
 
 **Problem**: Assessment scoring appears too aggressive - customers showing low scores (e.g., 40%) that may not accurately reflect their actual posture.
@@ -486,6 +544,44 @@ if (-not $r.AlwaysOnSoftDelete) {
 
 **Files Changed**:
 - `portal/index.html` - Added `loadUserInfo()` function
+
+---
+
+### Issue #22: Expiring Reservations on Overview Page
+**Status**: OPEN - ENHANCEMENT
+**Reported**: 2026-01-21
+
+**Request**: Add a section to the portal Overview page showing Azure reservations that are expiring soon.
+
+**Expected Behavior**:
+- Show reservations expiring within 30/60/90 days
+- Display reservation name, type, expiry date, and days remaining
+- Highlight urgency (e.g., red for <30 days, orange for <60 days)
+- Link to Azure portal for renewal/management
+
+**Implementation Notes**:
+- Need to determine data source (Azure Cost Management API, FinOps data, or direct Azure API)
+- May need to add backend endpoint to fetch reservation data
+- Consider caching to reduce API calls
+
+---
+
+### Issue #23: Alert Overview on Portal
+**Status**: OPEN - ENHANCEMENT
+**Reported**: 2026-01-21
+
+**Request**: Add an Alert Overview section to the portal showing aggregated alert information across customers.
+
+**Expected Behavior**:
+- Summary of alerts by severity (Critical, Error, Warning, Info)
+- Trend showing alert volume over time
+- Top alerting resources/customers
+- Quick filters to drill down by customer or severity
+
+**Implementation Notes**:
+- Data already exists in LogicMonitor integration
+- May need aggregate endpoint for cross-customer view
+- Consider dashboard widgets vs dedicated page
 
 ---
 

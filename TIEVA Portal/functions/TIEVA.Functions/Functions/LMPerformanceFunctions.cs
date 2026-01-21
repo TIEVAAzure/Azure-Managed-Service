@@ -24,98 +24,117 @@ public class LMPerformanceFunctions
 
     // Fallback patterns if database has no mappings (will be used initially)
     // These are the SAME as what's seeded in the database
+    // NOTE: Azure Monitor cloud metrics have LIMITED coverage - Memory % and Disk % require collector agent
     private static readonly Dictionary<string, string[]> FallbackPatterns = new()
     {
-        ["CPU"] = new[] { 
-            // Windows/Linux Servers
+        ["CPU"] = new[] {
+            // Windows/Linux Servers (with collector agent)
             "WinCPU", "Microsoft_Windows_CPU", "LinuxCPU", "snmp64_cpu",
             // Virtualization
             "VMware_vSphere_VMperformance", "ESXi_Host_CPU", "Hyper-V_Host_CPU",
-            // Azure IaaS
+            // Azure IaaS (via Azure Monitor)
             "Microsoft_Azure_VMs",
             // Azure PaaS with CPU metrics
             "Microsoft_Azure_AppServicePlan", "Microsoft_Azure_AppServices",
             "Microsoft_Azure_FunctionApps", "Microsoft_Azure_SQLDatabases",
-            "Microsoft_Azure_RedisCache", "Microsoft_Azure_KubernetesService"
+            "Microsoft_Azure_RedisCache", "Microsoft_Azure_KubernetesService",
+            // Additional Azure PaaS
+            "Microsoft_Azure_CosmosDB", "Microsoft_Azure_PostgreSQL",
+            "Microsoft_Azure_MySQL", "Microsoft_Azure_MariaDB",
+            "Microsoft_Azure_EventHubs", "Microsoft_Azure_ServiceBus"
         },
-        ["Memory"] = new[] { 
-            // Windows/Linux Servers
+        ["Memory"] = new[] {
+            // Windows/Linux Servers (with collector agent)
             "WinOS", "WinMemory64", "WinMemory", "Microsoft_Windows_Memory",
             "LinuxMemoryPerformance", "snmp64_memory",
             // Virtualization
             "VMware_vSphere_VMperformance", "Win2k12_HyperV_HypervisorMemory",
             "HyperV_HypervisorMemory", "ESXi_Host_Memory",
-            // Azure IaaS
+            // Azure IaaS (NOTE: requires collector agent for memory %)
             "Microsoft_Azure_VMs",
             // Azure PaaS with Memory metrics
             "Microsoft_Azure_AppServicePlan", "Microsoft_Azure_AppServices",
-            "Microsoft_Azure_RedisCache", "Microsoft_Azure_KubernetesService"
+            "Microsoft_Azure_RedisCache", "Microsoft_Azure_KubernetesService",
+            // Additional Azure PaaS
+            "Microsoft_Azure_CosmosDB", "Microsoft_Azure_PostgreSQL",
+            "Microsoft_Azure_MySQL", "Microsoft_Azure_MariaDB"
         },
-        ["Disk"] = new[] { 
-            // Windows/Linux Servers
+        ["Disk"] = new[] {
+            // Windows/Linux Servers (with collector agent)
             "WinVolumeUsage", "WinLogicalDisk", "WinLogicalDrivePerformance",
             "WinPhysicalDrive", "LinuxDiskSpace", "snmp64_disk",
-            // Azure IaaS
+            // Azure IaaS (NOTE: disk % requires collector agent)
             "Microsoft_Azure_VMs", "Microsoft_Azure_Disk",
-            // Azure Storage (capacity as disk metric)
+            // Azure Storage (capacity metrics)
             "Microsoft_Azure_StorageAccount", "Microsoft_Azure_StorageAccount_Capacity",
             "Microsoft_Azure_BlobStorage", "Microsoft_Azure_BlobStorage_Capacity",
             "Microsoft_Azure_FileStorage", "Microsoft_Azure_FileStorage_Capacity",
-            // Azure SQL (storage)
-            "Microsoft_Azure_SQLDatabases"
+            // Azure SQL/DB (storage metrics)
+            "Microsoft_Azure_SQLDatabases", "Microsoft_Azure_PostgreSQL",
+            "Microsoft_Azure_MySQL", "Microsoft_Azure_CosmosDB"
         }
     };
-    
+
     private static readonly Dictionary<string, string[]> FallbackDatapoints = new()
     {
-        ["CPU"] = new[] { 
-            // Windows
+        ["CPU"] = new[] {
+            // Windows (with collector)
             "CPUBusyPercent", "PercentProcessorTime", "ProcessorTimePercent",
-            // Linux
+            // Linux (with collector)
             "cpu_usage", "CPUUsage",
             // VMware
             "usage_average",
-            // Azure VMs
+            // Azure VMs (via Azure Monitor) - "Percentage CPU" is the Azure Monitor metric name
             "PercentageCPU", "Percentage CPU",
-            // Azure App Service
-            "CpuPercentage", "CpuTime",
-            // Azure SQL
-            "cpu_percent", "dtu_consumption_percent",
+            // Azure App Service Plan (has CpuPercentage - percentage metric)
+            "CpuPercentage",
+            // Azure SQL/DB (percentage metrics)
+            "cpu_percent", "CPUPercent", "dtu_consumption_percent",
             // Azure Redis
             "serverLoad", "percentProcessorTime",
             // Azure AKS
-            "node_cpu_usage_percentage"
+            "node_cpu_usage_percentage",
+            // Azure Cosmos DB
+            "TotalRequestUnits", "NormalizedRUConsumption",
+            // Azure PostgreSQL/MySQL/MariaDB
+            "cpu_percent", "CPUPercent"
         },
-        ["Memory"] = new[] { 
-            // Windows
+        ["Memory"] = new[] {
+            // Windows (with collector) - percentage metrics
             "MemoryUtilizationPercent", "PercentMemoryUsed", "UsedMemoryPercent",
-            // Linux
+            // Windows (with collector) - for CALC:MEMORY calculation
+            "FreePhysicalMemory", "TotalVisibleMemorySize",
+            // Linux (with collector)
             "mem_usage", "MemUsedPercent",
             // VMware
             "usage_average",
-            // Azure VMs
-            "PercentMemory", "AvailableMemoryBytes",
-            // Azure App Service
-            "MemoryPercentage", "MemoryWorkingSet",
-            // Azure Redis
-            "usedmemorypercentage", "usedmemory",
-            // Azure AKS  
-            "node_memory_working_set_percentage"
+            // Azure App Service Plan (has MemoryPercentage - percentage metric)
+            "MemoryPercentage",
+            // Azure Redis (percentage metric)
+            "usedmemorypercentage",
+            // Azure AKS
+            "node_memory_working_set_percentage",
+            // Azure PostgreSQL/MySQL/MariaDB (percentage metric)
+            "memory_percent", "MemoryPercent"
+            // NOTE: Azure VMs via Azure Monitor do NOT provide memory % - requires collector agent
+            // NOTE: AvailableMemoryBytes and MemoryWorkingSet are raw bytes, NOT percentages
         },
-        ["Disk"] = new[] { 
-            // Windows
+        ["Disk"] = new[] {
+            // Windows (with collector) - percentage metrics
             "PercentUsed", "PercentFull", "UsedPercent",
-            // Linux
+            // Windows (with collector) - for CALC:DISK calculation
+            "FreeSpace", "Capacity",
+            // Linux (with collector)
             "disk_usage",
-            // Azure VMs
-            "PercentageDisk",
-            // Azure Disk
-            "DiskIOPSConsumedPercentage", "DiskBandwidthConsumedPercentage",
-            // Azure Storage
-            "UsedCapacity", "BlobCapacity", "FileCapacity", "Availability",
-            "PercentUsed", "used_percent",
-            // Azure SQL
-            "storage_percent", "allocated_data_storage_percent"
+            // Azure SQL/DB (percentage metrics)
+            "storage_percent", "allocated_data_storage_percent",
+            // Azure PostgreSQL/MySQL (percentage metric)
+            "storage_percent",
+            // Azure Cosmos DB (percentage metric - if available)
+            "DataUsage"
+            // NOTE: Azure VMs via Azure Monitor do NOT provide disk % - requires collector agent
+            // NOTE: DiskIOPSConsumedPercentage/DiskBandwidthConsumedPercentage are NOT 0-100 percentages
+            // NOTE: UsedCapacity/BlobCapacity/FileCapacity are raw bytes, NOT percentages
         }
     };
     
@@ -151,7 +170,9 @@ public class LMPerformanceFunctions
         if (datasources.Any(d => d.StartsWith("Microsoft_Azure_ApplicationInsights", StringComparison.OrdinalIgnoreCase)))
             return "AppInsights";
         if (datasources.Any(d => d.StartsWith("Microsoft_Azure_NetworkInterface", StringComparison.OrdinalIgnoreCase) ||
-                                 d.StartsWith("Microsoft_Azure_VirtualNetworks", StringComparison.OrdinalIgnoreCase)))
+                                 d.StartsWith("Microsoft_Azure_VirtualNetworks", StringComparison.OrdinalIgnoreCase) ||
+                                 d.StartsWith("Microsoft_Azure_LoadBalancer", StringComparison.OrdinalIgnoreCase) ||
+                                 d.StartsWith("Microsoft_Azure_ApplicationGateway", StringComparison.OrdinalIgnoreCase)))
             return "AzureNetwork";
         if (datasources.Any(d => d.StartsWith("Microsoft_Azure_RecoveryService", StringComparison.OrdinalIgnoreCase) ||
                                  d.StartsWith("Microsoft_Azure_BackupJobStatus", StringComparison.OrdinalIgnoreCase) ||
@@ -159,8 +180,31 @@ public class LMPerformanceFunctions
             return "AzureBackup";
         if (datasources.Any(d => d.StartsWith("Microsoft_Azure_ActiveDirectory", StringComparison.OrdinalIgnoreCase)))
             return "AzureAD";
+        // Azure Database services (PaaS) - PostgreSQL, MySQL, MariaDB
+        if (datasources.Any(d => d.StartsWith("Microsoft_Azure_PostgreSQL", StringComparison.OrdinalIgnoreCase)))
+            return "AzurePostgreSQL";
+        if (datasources.Any(d => d.StartsWith("Microsoft_Azure_MySQL", StringComparison.OrdinalIgnoreCase)))
+            return "AzureMySQL";
+        if (datasources.Any(d => d.StartsWith("Microsoft_Azure_MariaDB", StringComparison.OrdinalIgnoreCase)))
+            return "AzureMariaDB";
+        // Azure Messaging services
+        if (datasources.Any(d => d.StartsWith("Microsoft_Azure_EventHubs", StringComparison.OrdinalIgnoreCase)))
+            return "AzureEventHubs";
+        if (datasources.Any(d => d.StartsWith("Microsoft_Azure_ServiceBus", StringComparison.OrdinalIgnoreCase)))
+            return "AzureServiceBus";
+        // Azure Container services
+        if (datasources.Any(d => d.StartsWith("Microsoft_Azure_ContainerInstances", StringComparison.OrdinalIgnoreCase)))
+            return "AzureContainerInstance";
+        if (datasources.Any(d => d.StartsWith("Microsoft_Azure_ContainerRegistry", StringComparison.OrdinalIgnoreCase)))
+            return "AzureContainerRegistry";
+        // Azure Analytics/AI services
+        if (datasources.Any(d => d.StartsWith("Microsoft_Azure_CognitiveServices", StringComparison.OrdinalIgnoreCase)))
+            return "AzureCognitive";
+        if (datasources.Any(d => d.StartsWith("Microsoft_Azure_MachineLearning", StringComparison.OrdinalIgnoreCase)))
+            return "AzureML";
+        // Generic Azure resource (fallback)
         if (datasources.Any(d => d.StartsWith("Microsoft_Azure_", StringComparison.OrdinalIgnoreCase)))
-            return "AzureResource";  // Generic Azure resource
+            return "AzureResource";
             
         // Check for VMware
         if (datasources.Any(d => d.StartsWith("VMware_", StringComparison.OrdinalIgnoreCase)))
