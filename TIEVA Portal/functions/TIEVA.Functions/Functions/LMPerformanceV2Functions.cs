@@ -3047,6 +3047,8 @@ public class LMPerformanceV2Functions
             }
 
             // Group datasources into resource types
+            var allDiscoveredDatapoints = new Dictionary<string, List<string>>(); // For debug output
+
             foreach (var ds in discoveredDatasources.Values)
             {
                 var resourceTypeCode = DetermineResourceTypeFromDatasource(ds.Name);
@@ -3070,6 +3072,12 @@ public class LMPerformanceV2Functions
                 // Mark as new if any datasource came from live scan
                 if (ds.IsNewFromLiveScan)
                     discoveredTypes[resourceTypeCode].IsNewFromLiveScan = true;
+
+                // Track ALL datapoints for debug output
+                if (ds.Datapoints.Any())
+                {
+                    allDiscoveredDatapoints[ds.Name] = ds.Datapoints.ToList();
+                }
 
                 // Identify percentage metrics that are useful for performance monitoring
                 var percentageDatapoints = ds.Datapoints
@@ -3238,6 +3246,13 @@ public class LMPerformanceV2Functions
                         category = m.Category,
                         unit = m.Unit
                     })
+                }),
+                // Debug: show all discovered datapoints (before filtering)
+                rawDatapoints = allDiscoveredDatapoints.Select(kvp => new
+                {
+                    datasource = kvp.Key,
+                    datapoints = kvp.Value,
+                    count = kvp.Value.Count
                 })
             });
             return response;
@@ -3409,22 +3424,34 @@ public class LMPerformanceV2Functions
             // Memory metrics
             "Memory", "memory_percent", "MemoryPercentage", "usedmemory",
             // Disk/Storage metrics
-            "storage_percent", "DiskQueue", "DiskIOPS", "DiskBandwidth",
+            "storage_percent", "DiskQueue", "DiskIOPS", "DiskBandwidth", "Used", "Free", "Capacity",
             // Database-specific
-            "DTU", "dtu_", "RU", "RequestUnits", "connection",
+            "DTU", "dtu_", "RU", "RequestUnits", "connection", "sessions", "workers",
             // Network/throughput
-            "Throughput", "Bandwidth", "BytesIn", "BytesOut", "Requests", "Latency",
+            "Throughput", "Bandwidth", "BytesIn", "BytesOut", "Requests", "Latency", "Packets",
             // Availability/health
-            "Availability", "Health", "Success", "Error", "Failed",
+            "Availability", "Health", "Success", "Error", "Failed", "Running", "Pending",
             // Cache
-            "Hit", "Miss", "Evicted", "serverLoad"
+            "Hit", "Miss", "Evicted", "serverLoad",
+            // Azure-specific metrics
+            "Percentage", "Percent", "Utilization", "Usage", "Rate", "Average", "Max", "Min",
+            "Ingress", "Egress", "Transactions", "Operations", "Messages", "Connections",
+            // App Service / Function
+            "Http", "Response", "Executions", "Duration", "PrivateBytes", "Handles",
+            // Container / Kubernetes
+            "Container", "Pod", "Node", "Restart",
+            // IoT / Event Hubs
+            "Events", "Throttled", "Quota",
+            // Logic Apps
+            "Action", "Trigger", "Run",
+            // Key Vault
+            "Saturation", "ServiceApi"
         };
 
-        // Exclude raw counters and non-useful metrics
+        // Exclude patterns that are typically not useful
         var excludePatterns = new[]
         {
-            "Total", "Count", "Bytes", "Time", "Seconds", "Period",
-            "Metadata", "Version", "Status"
+            "Metadata", "Version", "Status", "Info", "Name", "Type", "Id"
         };
 
         // Must match a useful pattern
