@@ -44,6 +44,19 @@ public class TierModule
     public AssessmentModule? Module { get; set; }
 }
 
+// Team Members
+public class TeamMember
+{
+    public Guid Id { get; set; }
+    public string Name { get; set; } = string.Empty;
+    public string Email { get; set; } = string.Empty;
+    public string? AzureAdObjectId { get; set; }  // For future Azure AD integration
+    public string? Role { get; set; }  // e.g., "Account Manager", "Technical Lead"
+    public bool IsActive { get; set; } = true;
+    public DateTime CreatedAt { get; set; }
+    public DateTime UpdatedAt { get; set; }
+}
+
 // Customers
 public class Customer
 {
@@ -60,6 +73,10 @@ public class Customer
     public DateTime UpdatedAt { get; set; }
     public DateTime? NextMeetingDate { get; set; }
     public bool SchedulingEnabled { get; set; } = true;
+
+    // Team Lead Assignment
+    public Guid? TeamLeadId { get; set; }
+    public TeamMember? TeamLead { get; set; }
     
     // FinOps Configuration
     public string? FinOpsStorageAccount { get; set; }

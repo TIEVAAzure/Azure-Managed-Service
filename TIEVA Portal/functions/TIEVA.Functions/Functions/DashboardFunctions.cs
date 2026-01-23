@@ -162,4 +162,160 @@ public class DashboardFunctions
         await response.WriteAsJsonAsync(stats);
         return response;
     }
+
+    /// <summary>
+    /// Get expiring reservations across all customers (for dashboard)
+    /// </summary>
+    [Function("GetExpiringReservations")]
+    public async Task<HttpResponseData> GetExpiringReservations(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "dashboard/expiring-reservations")] HttpRequestData req)
+    {
+        var expiringReservations = new List<object>();
+
+        // Get all reservation caches
+        var caches = await _db.CustomerReservationCache
+            .Include(c => c.Customer)
+            .Where(c => c.Customer!.IsActive && !string.IsNullOrEmpty(c.ReservationsJson))
+            .ToListAsync();
+
+        foreach (var cache in caches)
+        {
+            try
+            {
+                var reservations = System.Text.Json.JsonSerializer.Deserialize<List<Dictionary<string, object>>>(cache.ReservationsJson ?? "[]");
+                if (reservations == null) continue;
+
+                foreach (var res in reservations)
+                {
+                    // Get days to expiry
+                    int daysToExpiry = 9999;
+                    if (res.TryGetValue("DaysToExpiry", out var dte) && dte is System.Text.Json.JsonElement dteEl)
+                    {
+                        daysToExpiry = dteEl.TryGetInt32(out var d) ? d : 9999;
+                    }
+
+                    // Only include reservations expiring within 90 days (and not already expired beyond grace period)
+                    if (daysToExpiry >= -30 && daysToExpiry <= 90)
+                    {
+                        string? displayName = null;
+                        string? skuName = null;
+                        string? expiryDate = null;
+                        double? utilization = null;
+                        string? term = null;
+                        int? quantity = null;
+
+                        if (res.TryGetValue("DisplayName", out var dn) && dn is System.Text.Json.JsonElement dnEl)
+                            displayName = dnEl.GetString();
+                        if (res.TryGetValue("SkuName", out var sn) && sn is System.Text.Json.JsonElement snEl)
+                            skuName = snEl.GetString();
+                        if (res.TryGetValue("ExpiryDate", out var ed) && ed is System.Text.Json.JsonElement edEl)
+                            expiryDate = edEl.GetString();
+                        if (res.TryGetValue("Utilization30Day", out var u30) && u30 is System.Text.Json.JsonElement u30El)
+                            utilization = u30El.TryGetDouble(out var u) ? u : null;
+                        if (res.TryGetValue("Term", out var t) && t is System.Text.Json.JsonElement tEl)
+                            term = tEl.GetString();
+                        if (res.TryGetValue("Quantity", out var q) && q is System.Text.Json.JsonElement qEl)
+                            quantity = qEl.TryGetInt32(out var qi) ? qi : null;
+
+                        expiringReservations.Add(new
+                        {
+                            customerId = cache.CustomerId,
+                            customerName = cache.Customer?.Name,
+                            displayName,
+                            skuName,
+                            expiryDate,
+                            daysToExpiry,
+                            utilization,
+                            term,
+                            quantity
+                        });
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Error parsing reservations for customer {CustomerId}", cache.CustomerId);
+            }
+        }
+
+        // Sort by days to expiry (most urgent first)
+        var sorted = expiringReservations
+            .OrderBy(r => ((dynamic)r).daysToExpiry)
+            .ToList();
+
+        var response = req.CreateResponse(HttpStatusCode.OK);
+        await response.WriteAsJsonAsync(new
+        {
+            total = sorted.Count,
+            reservations = sorted
+        });
+        return response;
+    }
+
+    /// <summary>
+    /// Get alert summary across all customers (for dashboard)
+    /// </summary>
+    [Function("GetAlertSummary")]
+    public async Task<HttpResponseData> GetAlertSummary(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "dashboard/alerts")] HttpRequestData req)
+    {
+        // Get alert counts by severity across all customers
+        var alerts = await _db.LMAlerts
+            .Include(a => a.Customer)
+            .Where(a => a.Customer!.IsActive)
+            .ToListAsync();
+
+        var bySeverity = new
+        {
+            critical = alerts.Count(a => a.Severity == 4),
+            error = alerts.Count(a => a.Severity == 3),
+            warning = alerts.Count(a => a.Severity == 2),
+            info = alerts.Count(a => a.Severity <= 1)
+        };
+
+        // Get alerts by customer (top 5 with most critical/error alerts)
+        var byCustomer = alerts
+            .GroupBy(a => new { a.CustomerId, CustomerName = a.Customer?.Name })
+            .Select(g => new
+            {
+                customerId = g.Key.CustomerId,
+                customerName = g.Key.CustomerName,
+                critical = g.Count(a => a.Severity == 4),
+                error = g.Count(a => a.Severity == 3),
+                warning = g.Count(a => a.Severity == 2),
+                total = g.Count()
+            })
+            .OrderByDescending(c => c.critical)
+            .ThenByDescending(c => c.error)
+            .Take(10)
+            .ToList();
+
+        // Get recent alerts (all severities for filtering)
+        var recentAlerts = alerts
+            .OrderByDescending(a => a.Severity)
+            .ThenByDescending(a => a.StartTime)
+            .Take(50)
+            .Select(a => new
+            {
+                customerId = a.CustomerId,
+                customerName = a.Customer?.Name,
+                deviceName = a.DeviceDisplayName ?? a.MonitorObjectName,
+                dataSourceName = a.ResourceTemplateName,
+                alertValue = a.AlertValue,
+                severity = a.Severity,
+                severityText = a.Severity == 4 ? "Critical" : a.Severity == 3 ? "Error" : a.Severity == 2 ? "Warning" : "Info",
+                startTime = a.StartTime
+            })
+            .ToList();
+
+        var response = req.CreateResponse(HttpStatusCode.OK);
+        await response.WriteAsJsonAsync(new
+        {
+            total = alerts.Count,
+            bySeverity,
+            byCustomer,
+            recentAlerts
+        });
+        return response;
+    }
 }

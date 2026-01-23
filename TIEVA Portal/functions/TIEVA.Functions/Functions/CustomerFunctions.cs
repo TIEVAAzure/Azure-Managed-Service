@@ -51,6 +51,9 @@ public class CustomerFunctions
                 c.LogicMonitorGroupId,
                 c.LMEnabled,
                 c.LMHasCustomCredentials,
+                c.TeamLeadId,
+                TeamLeadName = c.TeamLead != null ? c.TeamLead.Name : null,
+                TeamLeadEmail = c.TeamLead != null ? c.TeamLead.Email : null,
                 ConnectionCount = c.Connections.Count(x => x.IsActive),
                 SubscriptionCount = c.Connections.Where(x => x.IsActive).SelectMany(x => x.Subscriptions).Count(s => s.IsInScope),
                 LastAssessment = c.Assessments.OrderByDescending(a => a.CompletedAt).Select(a => a.CompletedAt).FirstOrDefault(),
@@ -99,6 +102,8 @@ public class CustomerFunctions
                 c.LogicMonitorGroupId,
                 c.LMEnabled,
                 c.LMHasCustomCredentials,
+                c.TeamLeadId,
+                TeamLead = c.TeamLead != null ? new { c.TeamLead.Id, c.TeamLead.Name, c.TeamLead.Email, c.TeamLead.Role } : null,
                 Connections = c.Connections.Where(x => x.IsActive).Select(conn => new
                 {
                     conn.Id,

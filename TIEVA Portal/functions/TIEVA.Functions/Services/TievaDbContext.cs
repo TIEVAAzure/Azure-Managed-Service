@@ -10,6 +10,7 @@ public class TievaDbContext : DbContext
     public DbSet<ServiceTier> ServiceTiers => Set<ServiceTier>();
     public DbSet<AssessmentModule> AssessmentModules => Set<AssessmentModule>();
     public DbSet<TierModule> TierModules => Set<TierModule>();
+    public DbSet<TeamMember> TeamMembers => Set<TeamMember>();
     public DbSet<Customer> Customers => Set<Customer>();
     public DbSet<AzureConnection> AzureConnections => Set<AzureConnection>();
     public DbSet<CustomerSubscription> CustomerSubscriptions => Set<CustomerSubscription>();
@@ -61,11 +62,22 @@ public class TievaDbContext : DbContext
             e.HasOne(x => x.Module).WithMany(x => x.TierModules).HasForeignKey(x => x.ModuleId);
         });
 
+        // TeamMember
+        modelBuilder.Entity<TeamMember>(e =>
+        {
+            e.ToTable("TeamMembers");
+            e.HasKey(x => x.Id);
+            e.HasIndex(x => x.Email).IsUnique();
+            e.HasIndex(x => x.AzureAdObjectId);
+            e.HasIndex(x => x.IsActive);
+        });
+
         // Customer
         modelBuilder.Entity<Customer>(e =>
         {
             e.ToTable("Customers");
             e.HasKey(x => x.Id);
+            e.HasOne(x => x.TeamLead).WithMany().HasForeignKey(x => x.TeamLeadId);
         });
 
         // AzureConnection
